@@ -47,8 +47,6 @@ function doGet(e) {
       return jsonResponse(getTodayRecords());
     case 'getMonthlyRecords':
       const month = e.parameter.month; // YYYY-MM形式
-    case 'getMonthlyRecords':
-      const month = e.parameter.month; // YYYY-MM形式
       return jsonResponse(getMonthlyRecords(month));
     case 'getRequests':
       return jsonResponse(getRequests());
