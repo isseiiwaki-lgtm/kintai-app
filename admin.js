@@ -48,6 +48,42 @@ const TYPE_ICONS = {
 };
 
 // ========================================
+// 社員別 所定労働時間設定（分単位）
+// ========================================
+// 後から手動で追加・変更可能です
+// 形式: '社員番号': 所定労働時間（分）
+// 例: 8時間 = 480分, 5時間 = 300分, 6時間 = 360分
+const SCHEDULED_WORK_MINUTES = {
+    // === 正社員（8時間） ===
+    '003': 480,  // 鈴木一成
+    '004': 480,  // 鈴木亜佐子
+    '119': 480,  // 小河原裕美
+    '223': 480,  // 山崎公
+    '229': 480,  // 国井明日香
+    '239': 480,  // 小林匠
+    '240': 480,  // 古田部暁欧
+    '302': 480,  // 半沢昇一
+    '705': 480,  // 櫻田千恵美
+    '706': 480,  // 熊谷和樹
+
+    // === パート（個別設定） ===
+    '108': 300,  // 坂本緩奈（5時間）
+    '120': 300,  // 石井章子（5時間）
+    '121': 300,  // 根本桜子（5時間）
+    '122': 300,  // 須田育美（5時間）
+    '334': 300,  // 野木理絵（5時間）
+    '337': 300,  // 羽山明子（5時間）
+    '606': 300,  // 布施由美（5時間）
+    '610': 300,  // 岡田友美（5時間）
+    '620': 300,  // 野崎瑤子（5時間）
+    '622': 300,  // 工藤三帆（5時間）
+    '707': 300,  // 櫻井祐輔（5時間）
+};
+
+// デフォルト所定労働時間（リストにない人）
+const DEFAULT_SCHEDULED_WORK_MINUTES = 480; // 8時間
+
+// ========================================
 // 初期化
 // ========================================
 document.addEventListener('DOMContentLoaded', () => {
@@ -505,6 +541,7 @@ function initFilters() {
  * エクスポート機能の初期化
  */
 function initExport() {
+    document.getElementById('export-excel').addEventListener('click', exportExcel);
     document.getElementById('export-csv').addEventListener('click', exportTKC);
     document.getElementById('export-log').addEventListener('click', exportLog);
 }
@@ -583,4 +620,222 @@ function downloadCSV(content, filename) {
     a.click();
 
     URL.revokeObjectURL(url);
+}
+
+// ========================================
+// エクセル出力機能
+// ========================================
+
+/**
+ * UTCタイムスタンプをJSTに変換
+ */
+function toJST(timestamp) {
+    const date = new Date(timestamp);
+    // UTCからJST (+9時間)
+    return new Date(date.getTime() + 9 * 60 * 60 * 1000);
+}
+
+/**
+ * 時刻文字列を分に変換 (例: "08:30" → 510)
+ */
+function timeToMinutes(timeStr) {
+    if (!timeStr) return null;
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+}
+
+/**
+ * 分を時刻文字列に変換 (例: 510 → "8:30")
+ */
+function minutesToTime(minutes) {
+    if (minutes === null || minutes === undefined || isNaN(minutes)) return '';
+    const h = Math.floor(minutes / 60);
+    const m = minutes % 60;
+    return `${h}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * 15分単位で切り上げ (出勤用)
+ */
+function roundUpTo15(timeStr) {
+    const minutes = timeToMinutes(timeStr);
+    if (minutes === null) return '';
+    const rounded = Math.ceil(minutes / 15) * 15;
+    return minutesToTime(rounded);
+}
+
+/**
+ * 15分単位で切り捨て (退勤用)
+ */
+function roundDownTo15(timeStr) {
+    const minutes = timeToMinutes(timeStr);
+    if (minutes === null) return '';
+    const rounded = Math.floor(minutes / 15) * 15;
+    return minutesToTime(rounded);
+}
+
+/**
+ * 社員の所定労働時間を取得（分単位）
+ */
+function getScheduledWorkMinutes(employeeId) {
+    const id = String(employeeId);
+    return SCHEDULED_WORK_MINUTES[id] || DEFAULT_SCHEDULED_WORK_MINUTES;
+}
+
+/**
+ * 勤怠エクセル出力
+ */
+async function exportExcel() {
+    try {
+        // 今日のレコードを取得
+        const todayRecords = await getTodayRecords();
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0];
+
+        // 日付・社員番号でグループ化
+        const grouped = {};
+
+        todayRecords.forEach(record => {
+            // タイムスタンプをJSTに変換して日付を取得
+            const jstDate = toJST(record.timestamp);
+            const dateKey = jstDate.toISOString().split('T')[0];
+            const empId = String(record.user?.id || '');
+            const empName = record.user?.name || '';
+
+            if (!empId) return;
+
+            const key = `${dateKey}_${empId}`;
+            if (!grouped[key]) {
+                grouped[key] = {
+                    date: dateKey,
+                    employeeId: empId,
+                    employeeName: empName,
+                    punchInRecords: [],
+                    punchOutRecords: []
+                };
+            }
+
+            // 時刻を取得（JST）
+            const timeStr = jstDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+            if (record.type === 'punch-in' || record.typeLabel === '出勤') {
+                grouped[key].punchInRecords.push({
+                    time: timeStr,
+                    minutes: timeToMinutes(timeStr)
+                });
+            } else if (record.type === 'punch-out' || record.typeLabel === '退勤') {
+                grouped[key].punchOutRecords.push({
+                    time: timeStr,
+                    minutes: timeToMinutes(timeStr)
+                });
+            }
+        });
+
+        // エクセルデータを作成
+        const excelData = [];
+
+        Object.values(grouped).forEach(group => {
+            // 出勤: 最も早い時刻
+            let rawPunchIn = '';
+            if (group.punchInRecords.length > 0) {
+                const earliest = group.punchInRecords.reduce((min, r) =>
+                    r.minutes < min.minutes ? r : min
+                );
+                rawPunchIn = earliest.time;
+            }
+
+            // 退勤: 最も遅い時刻
+            let rawPunchOut = '';
+            if (group.punchOutRecords.length > 0) {
+                const latest = group.punchOutRecords.reduce((max, r) =>
+                    r.minutes > max.minutes ? r : max
+                );
+                rawPunchOut = latest.time;
+            }
+
+            // 計算用時刻（15分丸め）
+            const calcPunchIn = roundUpTo15(rawPunchIn);
+            const calcPunchOut = roundDownTo15(rawPunchOut);
+
+            // 実働時間の計算
+            let workTime = '';
+            let overtime = '';
+
+            const calcInMinutes = timeToMinutes(calcPunchIn);
+            const calcOutMinutes = timeToMinutes(calcPunchOut);
+
+            if (calcInMinutes !== null && calcOutMinutes !== null && calcOutMinutes > calcInMinutes) {
+                let workMinutes = calcOutMinutes - calcInMinutes;
+
+                // 休憩時間の自動控除（6時間超で1時間）
+                if (workMinutes > 360) {
+                    workMinutes -= 60;
+                }
+
+                // マイナス防止
+                if (workMinutes < 0) workMinutes = 0;
+
+                workTime = minutesToTime(workMinutes);
+
+                // 残業計算（個人の所定労働時間を参照）
+                const scheduledMinutes = getScheduledWorkMinutes(group.employeeId);
+                let overtimeMinutes = workMinutes - scheduledMinutes;
+                if (overtimeMinutes < 0) overtimeMinutes = 0;
+
+                overtime = minutesToTime(overtimeMinutes);
+            }
+
+            excelData.push({
+                '日付': group.date,
+                '社員番号': group.employeeId,
+                '氏名': group.employeeName,
+                '実勢出勤': rawPunchIn,
+                '実勢退勤': rawPunchOut,
+                '計算出勤': calcPunchIn,
+                '計算退勤': calcPunchOut,
+                '実働時間': workTime,
+                '残業時間': overtime
+            });
+        });
+
+        // データがない場合
+        if (excelData.length === 0) {
+            alert('出力するデータがありません');
+            return;
+        }
+
+        // 日付順・社員番号順にソート
+        excelData.sort((a, b) => {
+            if (a['日付'] !== b['日付']) return a['日付'].localeCompare(b['日付']);
+            return a['社員番号'].localeCompare(b['社員番号']);
+        });
+
+        // SheetJSでエクセルファイルを作成
+        const worksheet = XLSX.utils.json_to_sheet(excelData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, '勤怠データ');
+
+        // カラム幅を設定
+        worksheet['!cols'] = [
+            { wch: 12 },  // 日付
+            { wch: 10 },  // 社員番号
+            { wch: 15 },  // 氏名
+            { wch: 10 },  // 実勢出勤
+            { wch: 10 },  // 実勢退勤
+            { wch: 10 },  // 計算出勤
+            { wch: 10 },  // 計算退勤
+            { wch: 10 },  // 実働時間
+            { wch: 10 },  // 残業時間
+        ];
+
+        // ダウンロード
+        const filename = `勤怠データ_${todayStr}.xlsx`;
+        XLSX.writeFile(workbook, filename);
+
+        console.log('✅ エクセル出力完了:', filename);
+
+    } catch (error) {
+        console.error('❌ エクセル出力エラー:', error);
+        alert('エクセル出力中にエラーが発生しました: ' + error.message);
+    }
 }
