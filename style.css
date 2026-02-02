@@ -1,0 +1,808 @@
+/* ========================================
+   勤怠アプリ - スタイルシート
+   ======================================== */
+
+/* CSS変数（デザイントークン） */
+:root {
+    /* カラーパレット */
+    --primary: #4F46E5;
+    --primary-dark: #4338CA;
+    --primary-light: #818CF8;
+    --success: #10B981;
+    --success-dark: #059669;
+    --warning: #F59E0B;
+    --danger: #EF4444;
+    --info: #06B6D4;
+
+    /* 中性色 */
+    --gray-50: #F9FAFB;
+    --gray-100: #F3F4F6;
+    --gray-200: #E5E7EB;
+    --gray-300: #D1D5DB;
+    --gray-400: #9CA3AF;
+    --gray-500: #6B7280;
+    --gray-600: #4B5563;
+    --gray-700: #374151;
+    --gray-800: #1F2937;
+    --gray-900: #111827;
+
+    /* 背景・テキスト */
+    --bg-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --bg-card: rgba(255, 255, 255, 0.95);
+    --text-primary: #1F2937;
+    --text-secondary: #6B7280;
+    --text-light: #9CA3AF;
+
+    /* シャドウ */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
+
+    /* ボーダー */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 24px;
+
+    /* トランジション */
+    --transition-fast: 0.15s ease;
+    --transition-normal: 0.3s ease;
+}
+
+/* リセット・ベース */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 16px;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    font-family: 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    line-height: 1.6;
+}
+
+/* アプリコンテナ */
+.app-container {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 16px;
+    min-height: 100vh;
+}
+
+/* ========================================
+   ヘッダー
+   ======================================== */
+.header {
+    text-align: center;
+    padding: 24px 0;
+    color: white;
+}
+
+.header-title {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.current-time {
+    font-size: 2.5rem;
+    font-weight: 700;
+    font-feature-settings: "tnum";
+    letter-spacing: 2px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* ========================================
+   ユーザーセクション
+   ======================================== */
+.user-section {
+    margin-bottom: 16px;
+}
+
+.user-card {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(10px);
+}
+
+.user-avatar {
+    font-size: 2rem;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--gray-100);
+    border-radius: 50%;
+}
+
+.user-info {
+    flex: 1;
+}
+
+.user-name {
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--text-primary);
+}
+
+.user-email {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.login-btn {
+    background: var(--primary);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: var(--radius-md);
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.login-btn:hover {
+    background: var(--primary-dark);
+    transform: translateY(-1px);
+}
+
+.login-btn.logged-in {
+    background: var(--gray-200);
+    color: var(--text-secondary);
+}
+
+/* ========================================
+   位置情報セクション
+   ======================================== */
+.location-section {
+    margin-bottom: 20px;
+}
+
+.location-status {
+    background: var(--bg-card);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: var(--shadow-md);
+    font-size: 0.9rem;
+}
+
+.location-status.success {
+    border-left: 4px solid var(--success);
+}
+
+.location-status.error {
+    border-left: 4px solid var(--warning);
+}
+
+.location-status.loading {
+    border-left: 4px solid var(--info);
+}
+
+.location-icon {
+    font-size: 1.2rem;
+}
+
+/* ========================================
+   打刻ボタンセクション
+   ======================================== */
+.punch-section {
+    margin-bottom: 20px;
+}
+
+.punch-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.punch-btn {
+    background: var(--bg-card);
+    border: none;
+    border-radius: var(--radius-lg);
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    transition: var(--transition-normal);
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    overflow: hidden;
+}
+
+.punch-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.punch-btn:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-xl);
+}
+
+.punch-btn:active {
+    transform: translateY(-2px);
+}
+
+/* 出勤ボタン */
+.punch-btn.punch-in::before {
+    background: linear-gradient(90deg, #10B981, #34D399);
+}
+
+.punch-btn.punch-in:hover {
+    background: linear-gradient(180deg, #ECFDF5 0%, white 100%);
+}
+
+/* 退勤ボタン */
+.punch-btn.punch-out::before {
+    background: linear-gradient(90deg, #EF4444, #F87171);
+}
+
+.punch-btn.punch-out:hover {
+    background: linear-gradient(180deg, #FEF2F2 0%, white 100%);
+}
+
+/* 中抜け開始ボタン */
+.punch-btn.break-start::before {
+    background: linear-gradient(90deg, #F59E0B, #FBBF24);
+}
+
+.punch-btn.break-start:hover {
+    background: linear-gradient(180deg, #FFFBEB 0%, white 100%);
+}
+
+/* 中抜け終了ボタン */
+.punch-btn.break-end::before {
+    background: linear-gradient(90deg, #3B82F6, #60A5FA);
+}
+
+.punch-btn.break-end:hover {
+    background: linear-gradient(180deg, #EFF6FF 0%, white 100%);
+}
+
+.punch-icon {
+    font-size: 2.5rem;
+}
+
+.punch-label {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* ========================================
+   理由選択セクション
+   ======================================== */
+.reason-section {
+    margin-bottom: 20px;
+}
+
+.reason-form {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    box-shadow: var(--shadow-md);
+}
+
+.form-label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.reason-select {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    font-family: inherit;
+    background: white;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236B7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    background-size: 20px;
+}
+
+.reason-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.note-input-container {
+    margin-top: 16px;
+}
+
+.note-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    font-family: inherit;
+    transition: var(--transition-fast);
+}
+
+.note-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+/* ========================================
+   モーダル
+   ======================================== */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 1000;
+    opacity: 0;
+    visibility: hidden;
+    transition: var(--transition-normal);
+}
+
+.modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.modal {
+    background: white;
+    border-radius: var(--radius-xl);
+    width: 100%;
+    max-width: 360px;
+    overflow: hidden;
+    transform: scale(0.9);
+    transition: var(--transition-normal);
+    box-shadow: var(--shadow-xl);
+}
+
+.modal-overlay.active .modal {
+    transform: scale(1);
+}
+
+.modal-header {
+    background: var(--primary);
+    color: white;
+    padding: 20px;
+    text-align: center;
+}
+
+.modal-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.modal-body {
+    padding: 24px;
+    text-align: center;
+}
+
+.modal-time {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    font-feature-settings: "tnum";
+}
+
+.modal-message {
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.modal-details {
+    background: var(--gray-50);
+    border-radius: var(--radius-md);
+    padding: 12px;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    text-align: left;
+}
+
+.modal-details:empty {
+    display: none;
+}
+
+.modal-actions {
+    display: flex;
+    border-top: 1px solid var(--gray-200);
+}
+
+.modal-btn {
+    flex: 1;
+    padding: 16px;
+    border: none;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.modal-btn.cancel {
+    background: var(--gray-100);
+    color: var(--text-secondary);
+}
+
+.modal-btn.cancel:hover {
+    background: var(--gray-200);
+}
+
+.modal-btn.confirm {
+    background: var(--primary);
+    color: white;
+}
+
+.modal-btn.confirm:hover {
+    background: var(--primary-dark);
+}
+
+/* ========================================
+   トースト通知
+   ======================================== */
+.toast {
+    position: fixed;
+    bottom: 100px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--gray-800);
+    color: white;
+    padding: 16px 24px;
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: var(--shadow-xl);
+    opacity: 0;
+    visibility: hidden;
+    transition: var(--transition-normal);
+    z-index: 1001;
+}
+
+.toast.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+.toast-icon {
+    font-size: 1.5rem;
+}
+
+.toast-message {
+    font-size: 0.95rem;
+}
+
+/* ========================================
+   打刻履歴セクション
+   ======================================== */
+.history-section {
+    margin-bottom: 24px;
+}
+
+.section-title {
+    color: white;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.history-list {
+    background: var(--bg-card);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+}
+
+.no-history {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.history-item {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--gray-100);
+    gap: 12px;
+}
+
+.history-item:last-child {
+    border-bottom: none;
+}
+
+.history-time {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    font-feature-settings: "tnum";
+    min-width: 60px;
+}
+
+.history-type {
+    flex: 1;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+}
+
+.history-tag {
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    border-radius: 20px;
+    font-weight: 500;
+}
+
+.history-tag.punch-in {
+    background: #ECFDF5;
+    color: #059669;
+}
+
+.history-tag.punch-out {
+    background: #FEF2F2;
+    color: #DC2626;
+}
+
+.history-tag.break-start {
+    background: #FFFBEB;
+    color: #D97706;
+}
+
+.history-tag.break-end {
+    background: #EFF6FF;
+    color: #2563EB;
+}
+
+/* ========================================
+   写真撮影セクション
+   ======================================== */
+.photo-section {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--gray-200);
+}
+
+.photo-preview {
+    width: 100%;
+    height: 160px;
+    background: var(--gray-100);
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    overflow: hidden;
+    border: 2px dashed var(--gray-300);
+    transition: var(--transition-fast);
+}
+
+.photo-preview:hover {
+    border-color: var(--primary);
+    background: var(--gray-50);
+}
+
+.photo-preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.photo-placeholder {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.photo-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.photo-btn {
+    flex: 1;
+    padding: 10px 16px;
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    background: var(--primary);
+    color: white;
+}
+
+.photo-btn:hover {
+    background: var(--primary-dark);
+}
+
+.photo-btn.secondary {
+    background: var(--gray-200);
+    color: var(--text-secondary);
+}
+
+.photo-btn.secondary:hover {
+    background: var(--gray-300);
+}
+
+/* ========================================
+   申請セクション
+   ======================================== */
+.request-section {
+    margin-bottom: 20px;
+}
+
+.request-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+}
+
+.request-btn {
+    background: var(--bg-card);
+    border: none;
+    border-radius: var(--radius-md);
+    padding: 16px 12px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    transition: var(--transition-fast);
+    box-shadow: var(--shadow-md);
+}
+
+.request-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.request-btn:active {
+    transform: translateY(0);
+}
+
+.request-icon {
+    font-size: 1.5rem;
+}
+
+.request-label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+/* ========================================
+   フォーム要素（共通）
+   ======================================== */
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    font-family: inherit;
+    transition: var(--transition-fast);
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.form-textarea {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid var(--gray-200);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 80px;
+    transition: var(--transition-fast);
+}
+
+.form-textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+/* ========================================
+   フッター
+   ======================================== */
+.footer {
+    text-align: center;
+    padding: 16px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8rem;
+}
+
+.admin-link {
+    display: inline-block;
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+    transition: 0.2s ease;
+}
+
+.admin-link:hover {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+/* ========================================
+   レスポンシブ
+   ======================================== */
+@media (max-width: 360px) {
+    .punch-icon {
+        font-size: 2rem;
+    }
+
+    .punch-label {
+        font-size: 0.9rem;
+    }
+
+    .current-time {
+        font-size: 2rem;
+    }
+}
+
+@media (min-width: 481px) {
+    .app-container {
+        padding: 24px;
+    }
+
+    .punch-btn {
+        padding: 32px 20px;
+    }
+}

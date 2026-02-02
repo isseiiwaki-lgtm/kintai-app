@@ -1,0 +1,16 @@
+# 依存関係
+node_modules/
+
+# ログファイル
+*.log
+
+# OS生成ファイル
+.DS_Store
+Thumbs.db
+
+# IDEファイル
+.vscode/
+.idea/
+
+# clasp関連（GAS用）
+.clasp.json

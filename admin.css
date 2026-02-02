@@ -1,0 +1,404 @@
+/* ========================================
+   管理者画面 - 追加スタイル
+   ======================================== */
+
+/* 管理者ボディ */
+.admin-body {
+    background: linear-gradient(135deg, #1e3a5f 0%, #2d5a87 100%);
+}
+
+/* 管理者コンテナ */
+.admin-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 16px;
+    min-height: 100vh;
+}
+
+/* ========================================
+   ヘッダー
+   ======================================== */
+.admin-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 20px 0;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.admin-header-content {
+    flex: 1;
+}
+
+.admin-title {
+    color: white;
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.admin-date {
+    color: rgba(255, 255, 255, 0.8);
+    font-size: 1rem;
+}
+
+.back-link {
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    transition: 0.2s ease;
+}
+
+.back-link:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* ========================================
+   サマリーカード
+   ======================================== */
+.summary-section {
+    margin-bottom: 24px;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+@media (min-width: 600px) {
+    .summary-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.summary-card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.summary-icon {
+    font-size: 2rem;
+}
+
+.summary-data {
+    display: flex;
+    flex-direction: column;
+}
+
+.summary-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.summary-label {
+    font-size: 0.8rem;
+    color: #6B7280;
+}
+
+.summary-card.total .summary-value {
+    color: #4F46E5;
+}
+
+.summary-card.present .summary-value {
+    color: #10B981;
+}
+
+.summary-card.absent .summary-value {
+    color: #EF4444;
+}
+
+.summary-card.break .summary-value {
+    color: #F59E0B;
+}
+
+/* ========================================
+   セクション共通
+   ======================================== */
+.section-title {
+    color: white;
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+
+/* ========================================
+   アラートセクション
+   ======================================== */
+.alert-section {
+    margin-bottom: 24px;
+}
+
+.alert-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.alert-item {
+    background: #FEF2F2;
+    border-left: 4px solid #EF4444;
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.alert-item.warning {
+    background: #FFFBEB;
+    border-left-color: #F59E0B;
+}
+
+.alert-icon {
+    font-size: 1.5rem;
+}
+
+.alert-content {
+    flex: 1;
+}
+
+.alert-title {
+    font-weight: 600;
+    color: #1F2937;
+}
+
+.alert-description {
+    font-size: 0.85rem;
+    color: #6B7280;
+}
+
+/* ========================================
+   フィルターバー
+   ======================================== */
+.attendance-section {
+    margin-bottom: 24px;
+}
+
+.filter-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+}
+
+.filter-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: 0.2s ease;
+}
+
+.filter-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.filter-btn.active {
+    background: white;
+    color: #1e3a5f;
+    font-weight: 600;
+}
+
+/* ========================================
+   出勤一覧
+   ======================================== */
+.attendance-list {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.attendance-item {
+    display: flex;
+    align-items: center;
+    padding: 14px 16px;
+    border-bottom: 1px solid #E5E7EB;
+    gap: 12px;
+}
+
+.attendance-item:last-child {
+    border-bottom: none;
+}
+
+.attendance-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #E5E7EB;
+    font-size: 1.2rem;
+}
+
+.attendance-info {
+    flex: 1;
+}
+
+.attendance-name {
+    font-weight: 600;
+    color: #1F2937;
+}
+
+.attendance-detail {
+    font-size: 0.8rem;
+    color: #6B7280;
+}
+
+.attendance-status {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.attendance-status.present {
+    background: #ECFDF5;
+    color: #059669;
+}
+
+.attendance-status.absent {
+    background: #FEF2F2;
+    color: #DC2626;
+}
+
+.attendance-status.break {
+    background: #FFFBEB;
+    color: #D97706;
+}
+
+.attendance-status.left {
+    background: #F3F4F6;
+    color: #6B7280;
+}
+
+.no-data {
+    padding: 24px;
+    text-align: center;
+    color: #6B7280;
+}
+
+/* ========================================
+   打刻ログ
+   ======================================== */
+.log-section {
+    margin-bottom: 24px;
+}
+
+.log-list {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 12px;
+    overflow: hidden;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.log-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid #E5E7EB;
+    gap: 12px;
+    font-size: 0.9rem;
+}
+
+.log-item:last-child {
+    border-bottom: none;
+}
+
+.log-time {
+    font-weight: 600;
+    color: #4F46E5;
+    min-width: 50px;
+}
+
+.log-name {
+    font-weight: 500;
+    min-width: 80px;
+}
+
+.log-type {
+    flex: 1;
+    color: #6B7280;
+}
+
+.log-tag {
+    font-size: 1.2rem;
+}
+
+/* ========================================
+   エクスポート
+   ======================================== */
+.export-section {
+    margin-bottom: 24px;
+}
+
+.export-buttons {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.export-btn {
+    flex: 1;
+    min-width: 180px;
+    background: white;
+    border: none;
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1e3a5f;
+    cursor: pointer;
+    transition: 0.2s ease;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.export-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+
+.export-btn.secondary {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+}
+
+.export-btn.secondary:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.export-icon {
+    font-size: 1.3rem;
+}
+
+/* ========================================
+   フッター
+   ======================================== */
+.admin-footer {
+    text-align: center;
+    padding: 16px;
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.8rem;
+}

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者ダッシュボード | 勤怠管理</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="admin.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+
+<body class="admin-body">
+    <div class="admin-container">
+        <!-- ヘッダー -->
+        <header class="admin-header">
+            <div class="admin-header-content">
+                <h1 class="admin-title">📊 管理者ダッシュボード</h1>
+                <div class="admin-date" id="current-date"></div>
+            </div>
+            <a href="index.html" class="back-link">← 打刻画面へ</a>
+        </header>
+
+        <!-- サマリーカード -->
+        <section class="summary-section">
+            <div class="summary-grid">
+                <div class="summary-card total">
+                    <span class="summary-icon">👥</span>
+                    <div class="summary-data">
+                        <span class="summary-value" id="total-employees">0</span>
+                        <span class="summary-label">全社員</span>
+                    </div>
+                </div>
+                <div class="summary-card present">
+                    <span class="summary-icon">✅</span>
+                    <div class="summary-data">
+                        <span class="summary-value" id="present-count">0</span>
+                        <span class="summary-label">出勤中</span>
+                    </div>
+                </div>
+                <div class="summary-card absent">
+                    <span class="summary-icon">⚠️</span>
+                    <div class="summary-data">
+                        <span class="summary-value" id="absent-count">0</span>
+                        <span class="summary-label">未出勤</span>
+                    </div>
+                </div>
+                <div class="summary-card break">
+                    <span class="summary-icon">☕</span>
+                    <div class="summary-data">
+                        <span class="summary-value" id="break-count">0</span>
+                        <span class="summary-label">中抜け中</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- アラートセクション -->
+        <section class="alert-section" id="alert-section" style="display: none;">
+            <h2 class="section-title">⚠️ アラート</h2>
+            <div class="alert-list" id="alert-list"></div>
+        </section>
+
+        <!-- 今日の出勤一覧 -->
+        <section class="attendance-section">
+            <h2 class="section-title">今日の出勤一覧</h2>
+            <div class="filter-bar">
+                <button class="filter-btn active" data-filter="all">全員</button>
+                <button class="filter-btn" data-filter="present">出勤中</button>
+                <button class="filter-btn" data-filter="absent">未出勤</button>
+                <button class="filter-btn" data-filter="break">中抜け中</button>
+                <button class="filter-btn" data-filter="left">退勤済</button>
+            </div>
+            <div class="attendance-list" id="attendance-list">
+                <p class="no-data">データを読み込み中...</p>
+            </div>
+        </section>
+
+        <!-- 申請一覧 -->
+        <section class="request-section">
+            <h2 class="section-title">📩 申請一覧</h2>
+            <div class="request-list" id="request-list">
+                <p class="no-data">申請データを読み込み中...</p>
+            </div>
+        </section>
+
+        <!-- 打刻ログ -->
+        <section class="log-section">
+            <h2 class="section-title">📋 今日の打刻ログ</h2>
+            <div class="log-list" id="log-list">
+                <p class="no-data">打刻データがありません</p>
+            </div>
+        </section>
+
+        <!-- TKC出力 -->
+        <section class="export-section">
+            <h2 class="section-title">📤 データ出力</h2>
+            <div class="export-buttons">
+                <button class="export-btn" id="export-csv">
+                    <span class="export-icon">📄</span>
+                    TKC用CSV出力
+                </button>
+                <button class="export-btn secondary" id="export-log">
+                    <span class="export-icon">📋</span>
+                    打刻ログ出力
+                </button>
+            </div>
+        </section>
+
+        <!-- フッター -->
+        <footer class="admin-footer">
+            <p>© 2026 勤怠管理システム - 管理者画面</p>
+        </footer>
+    </div>
+
+    <!-- 管理画面用スクリプト -->
+    <script src="admin.js?v=4"></script>
+</body>
+
+</html>

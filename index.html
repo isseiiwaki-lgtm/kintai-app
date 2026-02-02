@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>勤怠打刻 | Kintai App</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- ヘッダー -->
+        <header class="header">
+            <h1 class="header-title">勤怠打刻</h1>
+            <div class="current-time" id="current-time"></div>
+        </header>
+
+        <!-- ユーザー情報 -->
+        <section class="user-section">
+            <div class="user-card">
+                <div class="user-avatar" id="user-avatar">👤</div>
+                <div class="user-info">
+                    <p class="user-name" id="user-name">ゲスト</p>
+                    <p class="user-email" id="user-email">ログインしてください</p>
+                </div>
+                <button class="login-btn" id="login-btn">ログイン</button>
+            </div>
+        </section>
+
+        <!-- 位置情報ステータス -->
+        <section class="location-section">
+            <div class="location-status" id="location-status">
+                <span class="location-icon">📍</span>
+                <span class="location-text">位置情報を取得中...</span>
+            </div>
+        </section>
+
+        <!-- 打刻ボタン -->
+        <section class="punch-section">
+            <div class="punch-grid">
+                <button class="punch-btn punch-in" id="btn-punch-in" data-type="出勤">
+                    <span class="punch-icon">🌅</span>
+                    <span class="punch-label">出勤</span>
+                </button>
+                <button class="punch-btn punch-out" id="btn-punch-out" data-type="退勤">
+                    <span class="punch-icon">🌆</span>
+                    <span class="punch-label">退勤</span>
+                </button>
+                <button class="punch-btn break-start" id="btn-break-start" data-type="中抜け開始">
+                    <span class="punch-icon">☕</span>
+                    <span class="punch-label">中抜け開始</span>
+                </button>
+                <button class="punch-btn break-end" id="btn-break-end" data-type="中抜け終了">
+                    <span class="punch-icon">💼</span>
+                    <span class="punch-label">中抜け終了</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 理由選択 -->
+        <section class="reason-section">
+            <div class="reason-form">
+                <label class="form-label">理由タグ</label>
+                <select class="reason-select" id="reason-select">
+                    <option value="">なし（通常）</option>
+                    <option value="遅刻">遅刻</option>
+                    <option value="早退">早退</option>
+                    <option value="直行">直行</option>
+                    <option value="直帰">直帰</option>
+                    <option value="その他">その他</option>
+                </select>
+                <div class="note-input-container" id="note-container" style="display: none;">
+                    <label class="form-label">備考</label>
+                    <input type="text" class="note-input" id="note-input" placeholder="理由を入力してください">
+                </div>
+            </div>
+        </section>
+
+        <!-- 申請ボタン -->
+        <section class="request-section">
+            <h2 class="section-title">申請</h2>
+            <div class="request-grid">
+                <button class="request-btn" data-type="absence">
+                    <span class="request-icon">🏠</span>
+                    <span class="request-label">欠勤申請</span>
+                </button>
+                <button class="request-btn" data-type="paid-leave">
+                    <span class="request-icon">🏖️</span>
+                    <span class="request-label">有給休暇</span>
+                </button>
+                <button class="request-btn" data-type="half-day">
+                    <span class="request-icon">🌓</span>
+                    <span class="request-label">半休申請</span>
+                </button>
+                <button class="request-btn" data-type="overtime">
+                    <span class="request-icon">🌙</span>
+                    <span class="request-label">残業申請</span>
+                </button>
+                <button class="request-btn" data-type="holiday-work">
+                    <span class="request-icon">📅</span>
+                    <span class="request-label">休日出勤</span>
+                </button>
+                <button class="request-btn" data-type="compensatory">
+                    <span class="request-icon">🔄</span>
+                    <span class="request-label">代休申請</span>
+                </button>
+                <button class="request-btn" data-type="special-leave">
+                    <span class="request-icon">🎊</span>
+                    <span class="request-label">特別休暇</span>
+                </button>
+                <button class="request-btn" data-type="late-early">
+                    <span class="request-icon">⏰</span>
+                    <span class="request-label">遅刻・早退</span>
+                </button>
+                <button class="request-btn" data-type="direct">
+                    <span class="request-icon">🚗</span>
+                    <span class="request-label">直行直帰</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- 打刻確認モーダル -->
+        <div class="modal-overlay" id="modal-overlay">
+            <div class="modal">
+                <div class="modal-header">
+                    <h2 class="modal-title" id="modal-title">出勤</h2>
+                </div>
+                <div class="modal-body">
+                    <p class="modal-time" id="modal-time">09:00:00</p>
+                    <p class="modal-message">この時刻で打刻しますか？</p>
+                    <div class="modal-details" id="modal-details"></div>
+                </div>
+                <div class="modal-actions">
+                    <button class="modal-btn cancel" id="modal-cancel">キャンセル</button>
+                    <button class="modal-btn confirm" id="modal-confirm">打刻する</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 打刻完了トースト -->
+        <div class="toast" id="toast">
+            <span class="toast-icon">✅</span>
+            <span class="toast-message" id="toast-message">打刻が完了しました</span>
+        </div>
+
+        <!-- 今日の打刻履歴 -->
+        <section class="history-section">
+            <h2 class="section-title">今日の打刻履歴</h2>
+            <div class="history-list" id="history-list">
+                <p class="no-history">まだ打刻がありません</p>
+            </div>
+        </section>
+
+        <!-- 申請モーダル -->
+        <div class="modal-overlay" id="request-modal-overlay">
+            <div class="modal" style="max-height: 90vh; overflow-y: auto;">
+                <div class="modal-header" id="request-modal-header">
+                    <h2 class="modal-title" id="request-modal-title">欠勤申請</h2>
+                </div>
+                <div class="modal-body" style="text-align: left;">
+                    <div class="form-group">
+                        <label class="form-label">日付</label>
+                        <input type="date" class="form-input" id="request-date">
+                    </div>
+                    <div class="form-group" id="request-end-date-group" style="display: none;">
+                        <label class="form-label">終了日</label>
+                        <input type="date" class="form-input" id="request-end-date">
+                    </div>
+                    <div class="form-group" id="request-half-day-group" style="display: none;">
+                        <label class="form-label">区分</label>
+                        <select class="form-input" id="request-half-day-type">
+                            <option value="午前">午前半休</option>
+                            <option value="午後">午後半休</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="request-time-group" style="display: none;">
+                        <label class="form-label">開始時刻</label>
+                        <input type="time" class="form-input" id="request-time">
+                    </div>
+                    <div class="form-group" id="request-end-time-group" style="display: none;">
+                        <label class="form-label">終了時刻</label>
+                        <input type="time" class="form-input" id="request-end-time">
+                    </div>
+                    <div class="form-group" id="request-leave-type-group" style="display: none;">
+                        <label class="form-label">休暇種別</label>
+                        <select class="form-input" id="request-leave-type">
+                            <option value="慶弔">慶弔休暇</option>
+                            <option value="結婚">結婚休暇</option>
+                            <option value="産前産後">産前産後休暇</option>
+                            <option value="育児">育児休暇</option>
+                            <option value="介護">介護休暇</option>
+                            <option value="看護">看護休暇</option>
+                            <option value="その他">その他</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">理由・備考</label>
+                        <textarea class="form-textarea" id="request-reason" rows="3"
+                            placeholder="理由を入力してください"></textarea>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="modal-btn cancel" id="request-cancel">キャンセル</button>
+                    <button class="modal-btn confirm" id="request-submit">申請する</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- フッター -->
+        <footer class="footer">
+            <a href="admin.html" class="admin-link">📊 管理者画面</a>
+            <p>© 2026 勤怠管理システム</p>
+        </footer>
+    </div>
+
+    <!-- メインスクリプト -->
+    <script src="script.js?v=5"></script>
+</body>
+
+</html>
