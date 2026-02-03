@@ -128,25 +128,32 @@ function recordPunch(data) {
     sheet = ss.insertSheet(SHEET_NAMES.PUNCH_LOG);
     sheet.appendRow([
       '日時', '社員番号', '氏名', '種別', '理由', 
-      '緯度', '経度', '位置取得', '仮打刻', 'Googleメール'
+      '仮打刻', 'Googleメール'
     ]);
   }
   
   const now = new Date();
+  
+  // A列: 日時を日本時間で見やすく保存
+  const jstNow = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+  
   const row = [
-    now.toISOString(),
+    jstNow,
     data.employeeId,
     data.employeeName,
     data.punchType,
     data.reason || '',
-    data.latitude || '',
-    data.longitude || '',
-    data.locationStatus || '',
     data.isTemporary ? 'TRUE' : 'FALSE',
     data.email || ''
   ];
   
   sheet.appendRow(row);
+  
+  // 追加した行のB列（社員番号）の書式をテキストにして0落ちを防ぐ
+  const lastRow = sheet.getLastRow();
+  const idCell = sheet.getRange(lastRow, 2); // 2列目 = 社員番号
+  idCell.setNumberFormat('@');
+  idCell.setValue(String(data.employeeId).padStart(3, '0')); // 3桁ゼロ埋めして再セット
   
   return { 
     success: true, 
@@ -219,16 +226,13 @@ function getTodayRecords() {
     
     if (recordDate === today) {
       records.push({
-        timestamp: row[0],
+        timestamp: new Date(row[0]).toISOString(), // 文字列JSTでもDateでもISO化
         employeeId: row[1],
         employeeName: row[2],
         punchType: row[3],
         reason: row[4],
-        latitude: row[5],
-        longitude: row[6],
-        locationStatus: row[7],
-        isTemporary: row[8] === 'TRUE',
-        email: row[9]
+        isTemporary: row[5] === 'TRUE', // F列
+        email: row[6] // G列
       });
     }
   }
@@ -256,16 +260,13 @@ function getMonthlyRecords(month) {
     
     if (recordMonth === month) {
       records.push({
-        timestamp: row[0],
+        timestamp: new Date(row[0]).toISOString(),
         employeeId: row[1],
         employeeName: row[2],
         punchType: row[3],
         reason: row[4],
-        latitude: row[5],
-        longitude: row[6],
-        locationStatus: row[7],
-        isTemporary: row[8] === 'TRUE',
-        email: row[9]
+        isTemporary: row[5] === 'TRUE',
+        email: row[6]
       });
     }
   }
@@ -540,6 +541,10 @@ function onOpen() {
   ui.createMenu('勤怠管理')
     .addItem('初期設定', 'setupSpreadsheet')
     .addItem('TKC CSV出力', 'showTKCDialog')
+    .addItem('社員番号を3桁に変換', 'convertEmployeeIdsTo3Digits')
+    .addItem('日時を日本時間に変換', 'convertTimestampsToJST')
+    .addSeparator()
+    .addItem('🚫 位置情報列(F-H)を削除', 'deleteLocationColumns')
     .addToUi();
 }
 
@@ -552,3 +557,143 @@ function showTKCDialog() {
     .setHeight(200);
   SpreadsheetApp.getUi().showModalDialog(html, 'TKC CSV出力');
 }
+
+/**
+ * 打刻ログの社員番号を3桁にゼロ埋めする
+ * スプレッドシートのメニューから実行: 勤怠管理 → 社員番号を3桁に変換
+ */
+function convertEmployeeIdsTo3Digits() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_NAMES.PUNCH_LOG);
+  
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert('打刻ログシートが見つかりません');
+    return;
+  }
+  
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    SpreadsheetApp.getUi().alert('データがありません');
+    return;
+  }
+  
+  // B列（社員番号）を取得 (2行目から)
+  const range = sheet.getRange(2, 2, lastRow - 1, 1);
+  const values = range.getValues();
+  
+  let updatedCount = 0;
+  
+  // 3桁にゼロ埋め
+  const newValues = values.map(row => {
+    const id = row[0];
+    if (id === '' || id === null) return [id];
+    
+    const numId = parseInt(id, 10);
+    if (isNaN(numId)) return [id];
+    
+    const paddedId = String(numId).padStart(3, '0');
+    if (paddedId !== String(id)) {
+      updatedCount++;
+    }
+    return [paddedId];
+  });
+  
+  // 書式をテキスト（"@"）に設定して、0落ちを防ぐ
+  range.setNumberFormat('@');
+  
+  // 書き戻し
+  range.setValues(newValues);
+  
+  SpreadsheetApp.getUi().alert('完了しました！\\n変換した件数: ' + updatedCount + '件');
+}
+
+/**
+ * 打刻ログの日時をUTCから日本時間（JST）に変換する
+ * スプレッドシートのメニューから実行: 勤怠管理 → 日時を日本時間に変換
+ */
+function convertTimestampsToJST() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_NAMES.PUNCH_LOG);
+  
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert('打刻ログシートが見つかりません');
+    return;
+  }
+  
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    SpreadsheetApp.getUi().alert('データがありません');
+    return;
+  }
+  
+  // A列（日時）を取得 (2行目から)
+  const range = sheet.getRange(2, 1, lastRow - 1, 1);
+  const values = range.getValues();
+  
+  let updatedCount = 0;
+  
+  // UTCからJSTに変換
+  const newValues = values.map(row => {
+    const timestamp = row[0];
+    if (timestamp === '' || timestamp === null) return [timestamp];
+    
+    // 既に日本時間形式（yyyy/MM/dd HH:mm:ss）の場合はスキップ
+    if (typeof timestamp === 'string' && !timestamp.includes('T') && !timestamp.includes('Z')) {
+      return [timestamp];
+    }
+    
+    try {
+      let date;
+      if (typeof timestamp === 'string') {
+        date = new Date(timestamp);
+      } else if (timestamp instanceof Date) {
+        date = timestamp;
+      } else {
+        return [timestamp];
+      }
+      
+      if (isNaN(date.getTime())) return [timestamp];
+      
+      // 日本時間にフォーマット（yyyy/MM/dd HH:mm:ss）
+      const jstDate = Utilities.formatDate(date, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+      updatedCount++;
+      return [jstDate];
+    } catch (e) {
+      return [timestamp];
+    }
+  });
+  
+  // 書き戻し
+  range.setValues(newValues);
+  
+  SpreadsheetApp.getUi().alert('完了しました！\\n変換した件数: ' + updatedCount + '件');
+}
+
+/**
+ * 位置情報関連の列（F, G, H列）を物理的に削除する
+ * スプレッドシートのメニューから実行
+ */
+function deleteLocationColumns() {
+  const ui = SpreadsheetApp.getUi();
+  const response = ui.alert('確認', '打刻ログのF, G, H列（緯度・経度・位置取得）を削除して詰め込みますか？\\n※GASのコード更新後に必ず1回だけ実行してください。', ui.ButtonSet.YES_NO);
+  
+  if (response !== ui.Button.YES) return;
+  
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_NAMES.PUNCH_LOG);
+  
+  if (!sheet) {
+    ui.alert('打刻ログシートが見つかりません');
+    return;
+  }
+  
+  // F列(6)から3列分を削除
+  sheet.deleteColumns(6, 3);
+  
+  // ヘッダーを修正（念のため）
+  const headerRange = sheet.getRange(1, 1, 1, 7);
+  headerRange.setValues([['日時', '社員番号', '氏名', '種別', '理由', '仮打刻', 'Googleメール']]);
+  
+  ui.alert('削除しました。列が詰められました。');
+}
+

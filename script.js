@@ -520,36 +520,36 @@ function initModal() {
 }
 
 function showPunchModal(type) {
-    pendingPunchType = type;
-    const typeInfo = PUNCH_TYPES[type];
+    try {
+        pendingPunchType = type;
+        const typeInfo = PUNCH_TYPES[type];
+        if (!typeInfo) throw new Error('不明な打刻タイプ: ' + type);
 
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString('ja-JP', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('ja-JP', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
 
-    document.getElementById('modal-title').textContent = typeInfo.label;
-    document.getElementById('modal-time').textContent = timeStr;
+        document.getElementById('modal-title').textContent = typeInfo.label;
+        document.getElementById('modal-time').textContent = timeStr;
 
-    // 詳細情報の表示
-    const reason = document.getElementById('reason-select').value;
-    const note = document.getElementById('note-input').value;
-    let details = [];
+        // 詳細情報の表示
+        const reason = document.getElementById('reason-select').value;
+        const note = document.getElementById('note-input').value;
+        let details = [];
 
-    details.push(`社員: ${currentUser.name}`);
-    if (reason) details.push(`理由: ${reason}`);
-    if (note) details.push(`備考: ${note}`);
-    if (currentLocation) {
-        details.push(`位置: 取得済み`);
-    } else {
-        details.push(`位置: 未取得`);
+        details.push(`社員: ${currentUser.name}`);
+        if (reason) details.push(`理由: ${reason}`);
+        if (note) details.push(`備考: ${note}`);
+
+        document.getElementById('modal-details').innerHTML = details.join('<br>');
+        document.getElementById('modal-overlay').classList.add('active');
+    } catch (e) {
+        console.error(e);
+        showToast('エラー: ' + e.message);
     }
-
-    document.getElementById('modal-details').innerHTML = details.join('<br>');
-
-    document.getElementById('modal-overlay').classList.add('active');
 }
 
 function hideModal() {
