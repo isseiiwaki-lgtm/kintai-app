@@ -297,6 +297,21 @@ body {
     color: var(--text-primary);
 }
 
+/* 無効化されたボタン */
+.punch-btn.disabled,
+.punch-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
+.punch-btn.disabled:hover,
+.punch-btn:disabled:hover {
+    transform: none !important;
+    box-shadow: var(--shadow-sm) !important;
+}
+
 /* ========================================
    理由選択セクション
    ======================================== */

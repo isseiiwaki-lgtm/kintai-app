@@ -655,22 +655,24 @@ function minutesToTime(minutes) {
 }
 
 /**
- * 15分単位で切り上げ (出勤用)
+ * 30分単位で切り上げ (出勤用)
+ * 例: 8:01 → 8:30, 8:31 → 9:00, 9:00 → 9:00
  */
-function roundUpTo15(timeStr) {
+function roundUpTo30(timeStr) {
     const minutes = timeToMinutes(timeStr);
     if (minutes === null) return '';
-    const rounded = Math.ceil(minutes / 15) * 15;
+    const rounded = Math.ceil(minutes / 30) * 30;
     return minutesToTime(rounded);
 }
 
 /**
- * 15分単位で切り捨て (退勤用)
+ * 30分単位で切り捨て (退勤用)
+ * 例: 17:29 → 17:00, 17:30 → 17:30, 17:59 → 17:30
  */
-function roundDownTo15(timeStr) {
+function roundDownTo30(timeStr) {
     const minutes = timeToMinutes(timeStr);
     if (minutes === null) return '';
-    const rounded = Math.floor(minutes / 15) * 15;
+    const rounded = Math.floor(minutes / 30) * 30;
     return minutesToTime(rounded);
 }
 
@@ -753,9 +755,9 @@ async function exportExcel() {
                 rawPunchOut = latest.time;
             }
 
-            // 計算用時刻（15分丸め）
-            const calcPunchIn = roundUpTo15(rawPunchIn);
-            const calcPunchOut = roundDownTo15(rawPunchOut);
+            // 計算用時刻（30分丸め）
+            const calcPunchIn = roundUpTo30(rawPunchIn);
+            const calcPunchOut = roundDownTo30(rawPunchOut);
 
             // 実働時間の計算
             let workTime = '';

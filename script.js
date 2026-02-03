@@ -59,8 +59,6 @@ const PUNCH_TYPES = {
 // ========================================
 // 状態管理
 // ========================================
-let currentLocation = null;
-let locationStatus = 'loading';
 let currentUser = null;
 let googleUser = null;
 
@@ -69,7 +67,6 @@ let googleUser = null;
 // ========================================
 document.addEventListener('DOMContentLoaded', () => {
     initClock();
-    initLocation();
     initPunchButtons();
     initReasonSelect();
     initModal();
@@ -80,6 +77,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 保存されたユーザー情報を復元
     restoreUser();
+
+    // ステータスに基づいてボタンを更新
+    updatePunchButtonStates();
 });
 
 // ========================================
@@ -351,58 +351,89 @@ function updateClock() {
 }
 
 // ========================================
-// 位置情報機能
+// 打刻ステータス管理（重複打刻防止）
 // ========================================
-function initLocation() {
-    const statusEl = document.getElementById('location-status');
 
-    if (!navigator.geolocation) {
-        updateLocationStatus('error', '位置情報に対応していません');
-        return;
+/**
+ * 現在のユーザーの打刻ステータスを取得
+ * @returns {string} 'not-punched' | 'working' | 'on-break'
+ */
+async function getEmployeeStatus() {
+    if (!currentUser) return 'not-punched';
+
+    const records = await getRecords();
+    const today = new Date().toISOString().split('T')[0];
+
+    // 今日の自分の打刻を取得
+    const myTodayRecords = records.filter(r =>
+        r.date === today &&
+        String(r.user?.id) === String(currentUser.id)
+    );
+
+    if (myTodayRecords.length === 0) {
+        return 'not-punched'; // 未出勤
     }
 
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            currentLocation = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                accuracy: position.coords.accuracy
-            };
-            updateLocationStatus('success', '位置情報を取得しました');
-        },
-        (error) => {
-            let message = '位置情報を取得できません';
-            switch (error.code) {
-                case error.PERMISSION_DENIED:
-                    message = '位置情報の許可が必要です';
-                    break;
-                case error.POSITION_UNAVAILABLE:
-                    message = '位置情報を取得できません';
-                    break;
-                case error.TIMEOUT:
-                    message = '位置情報の取得がタイムアウトしました';
-                    break;
-            }
-            updateLocationStatus('error', message);
-        },
-        {
-            enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 60000
-        }
-    );
+    // 最新の打刻を取得
+    const lastRecord = myTodayRecords[myTodayRecords.length - 1];
+    const lastType = lastRecord.type || lastRecord.typeLabel;
+
+    if (lastType === 'punch-out' || lastType === '退勤') {
+        return 'not-punched'; // 退勤済み（再出勤可能）
+    } else if (lastType === 'break-start' || lastType === '中抜け開始') {
+        return 'on-break'; // 中抜け中
+    } else if (lastType === 'punch-in' || lastType === '出勤' || lastType === 'break-end' || lastType === '中抜け終了') {
+        return 'working'; // 出勤中
+    }
+
+    return 'not-punched';
 }
 
-function updateLocationStatus(status, message) {
-    const statusEl = document.getElementById('location-status');
-    locationStatus = status;
+/**
+ * ステータスに基づいてボタンの有効/無効を更新
+ */
+async function updatePunchButtonStates() {
+    const status = await getEmployeeStatus();
 
-    statusEl.className = 'location-status ' + status;
-    statusEl.querySelector('.location-text').textContent = message;
+    const punchInBtn = document.getElementById('btn-punch-in');
+    const punchOutBtn = document.getElementById('btn-punch-out');
+    const breakStartBtn = document.getElementById('btn-break-start');
+    const breakEndBtn = document.getElementById('btn-break-end');
 
-    const icon = status === 'success' ? '✅' :
-        status === 'error' ? '⚠️' : '📍';
-    statusEl.querySelector('.location-icon').textContent = icon;
+    // 全ボタンを一旦無効化
+    [punchInBtn, punchOutBtn, breakStartBtn, breakEndBtn].forEach(btn => {
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('disabled');
+        }
+    });
+
+    // ステータスに応じて有効化
+    if (status === 'not-punched') {
+        // 未出勤: 出勤のみ可能
+        if (punchInBtn) {
+            punchInBtn.disabled = false;
+            punchInBtn.classList.remove('disabled');
+        }
+    } else if (status === 'working') {
+        // 出勤中: 退勤・中抜け開始が可能
+        if (punchOutBtn) {
+            punchOutBtn.disabled = false;
+            punchOutBtn.classList.remove('disabled');
+        }
+        if (breakStartBtn) {
+            breakStartBtn.disabled = false;
+            breakStartBtn.classList.remove('disabled');
+        }
+    } else if (status === 'on-break') {
+        // 中抜け中: 中抜け終了のみ可能
+        if (breakEndBtn) {
+            breakEndBtn.disabled = false;
+            breakEndBtn.classList.remove('disabled');
+        }
+    }
+
+    console.log('📊 ステータス更新:', status);
 }
 
 // ========================================
@@ -410,10 +441,16 @@ function updateLocationStatus(status, message) {
 // ========================================
 function initPunchButtons() {
     document.querySelectorAll('.punch-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             // ログインチェック
             if (!currentUser) {
                 showToast('ログインしてください');
+                return;
+            }
+
+            // ボタンが無効化されている場合は処理しない
+            if (btn.disabled) {
+                showToast('この操作は現在できません');
                 return;
             }
 
@@ -510,8 +547,8 @@ async function confirmPunch() {
         note: note || null,
         photo: currentPhoto || null,
         user: currentUser,
-        location: currentLocation,
-        locationStatus: locationStatus
+        location: null,
+        locationStatus: ''
     };
 
     // 保存（非同期処理を待つ）
@@ -545,6 +582,9 @@ async function confirmPunch() {
 
     // 履歴更新
     loadTodayHistory();
+
+    // ボタン状態を更新（重複打刻防止）
+    updatePunchButtonStates();
 }
 
 // ========================================
