@@ -384,8 +384,15 @@ async function getEmployeeStatus() {
             return jstD.toISOString().split('T')[0];
         })();
 
-        const userIdMatch = String(r.user?.id) === String(currentUser.id);
+        // 社員番号を数値で比較（先頭ゼロを無視）
+        const recordUserId = parseInt(r.user?.id, 10);
+        const currentUserId = parseInt(currentUser.id, 10);
+        const userIdMatch = recordUserId === currentUserId;
         const dateMatch = recordDate === today;
+
+        if (userIdMatch) {
+            console.log('  📋 レコード:', r.time, r.typeLabel || r.type, '日付:', recordDate, '一致:', dateMatch);
+        }
 
         return dateMatch && userIdMatch;
     });
