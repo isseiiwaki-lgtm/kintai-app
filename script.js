@@ -359,16 +359,41 @@ function updateClock() {
  * @returns {string} 'not-punched' | 'working' | 'on-break'
  */
 async function getEmployeeStatus() {
-    if (!currentUser) return 'not-punched';
+    if (!currentUser) {
+        console.log('📊 ステータス取得: ユーザー未ログイン');
+        return 'not-punched';
+    }
 
     const records = await getRecords();
-    const today = new Date().toISOString().split('T')[0];
+
+    // 今日の日付（JST）
+    const now = new Date();
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const today = jstNow.toISOString().split('T')[0];
+
+    console.log('📊 今日の日付(JST):', today);
+    console.log('📊 全レコード数:', records.length);
+    console.log('📊 ログインユーザーID:', currentUser.id);
 
     // 今日の自分の打刻を取得
-    const myTodayRecords = records.filter(r =>
-        r.date === today &&
-        String(r.user?.id) === String(currentUser.id)
-    );
+    const myTodayRecords = records.filter(r => {
+        // レコードの日付をJSTで取得
+        const recordDate = r.date || (() => {
+            const d = new Date(r.timestamp);
+            const jstD = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+            return jstD.toISOString().split('T')[0];
+        })();
+
+        const userIdMatch = String(r.user?.id) === String(currentUser.id);
+        const dateMatch = recordDate === today;
+
+        return dateMatch && userIdMatch;
+    });
+
+    console.log('📊 今日の自分の打刻数:', myTodayRecords.length);
+    myTodayRecords.forEach(r => {
+        console.log('  - ', r.time, r.typeLabel || r.type);
+    });
 
     if (myTodayRecords.length === 0) {
         return 'not-punched'; // 未出勤
@@ -377,6 +402,8 @@ async function getEmployeeStatus() {
     // 最新の打刻を取得
     const lastRecord = myTodayRecords[myTodayRecords.length - 1];
     const lastType = lastRecord.type || lastRecord.typeLabel;
+
+    console.log('📊 最新打刻:', lastType);
 
     if (lastType === 'punch-out' || lastType === '退勤') {
         return 'not-punched'; // 退勤済み（再出勤可能）
