@@ -94,6 +94,8 @@ function doPost(e) {
         return jsonResponse(recordRequest(data));
       case 'editRecord':
         return jsonResponse(editRecord(data));
+      case 'updateRequestStatus':
+        return jsonResponse(updateRequestStatus(data));
       default:
         return jsonResponse({ error: '不明なアクション: ' + action });
     }
@@ -120,46 +122,121 @@ function jsonResponse(data) {
  * 打刻を記録
  */
 function recordPunch(data) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  let sheet = ss.getSheetByName(SHEET_NAMES.PUNCH_LOG);
+  const lock = LockService.getScriptLock();
   
-  // シートがなければ作成
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAMES.PUNCH_LOG);
-    sheet.appendRow([
-      '日時', '社員番号', '氏名', '種別', '理由', 
-      '仮打刻', 'Googleメール'
-    ]);
+  try {
+    // 他の実行を最大5秒待つ
+    if (!lock.tryLock(5000)) {
+      throw new Error('サーバーが混み合っています。しばらく待ってから再試行してください。');
+    }
+
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    let sheet = ss.getSheetByName(SHEET_NAMES.PUNCH_LOG);
+    
+    // シートがなければ作成
+    if (!sheet) {
+      sheet = ss.insertSheet(SHEET_NAMES.PUNCH_LOG);
+      sheet.appendRow([
+        '日時', '社員番号', '氏名', '種別', '理由', 
+        '仮打刻', 'Googleメール', '打刻ID' // H列に追加
+      ]);
+    }
+
+    // ========================================
+    // 重複チェック
+    // ========================================
+    const lastRow = sheet.getLastRow();
+    
+    // データがある場合のみチェック（直近50件）
+    if (lastRow > 1) {
+      const checkRows = Math.min(lastRow - 1, 50);
+      const startRow = lastRow - checkRows + 1;
+      // H列(8列目)まで取得
+      const dataRange = sheet.getRange(startRow, 1, checkRows, 8);
+      const values = dataRange.getValues();
+      
+      const requestPunchId = data.punchId;
+      const requestTime = new Date().getTime(); // 現在時刻
+      const requestEmpId = String(data.employeeId); // 文字列比較
+      const requestType = data.punchType;
+
+      // 新しい順にチェック（後ろから）
+      for (let i = values.length - 1; i >= 0; i--) {
+        const row = values[i];
+        
+        // 1. 打刻IDによる完全重複チェック（冪等性担保）
+        const rowPunchId = row[7]; // H列 = index 7
+        if (requestPunchId && rowPunchId === requestPunchId) {
+          console.log('重複スキップ(ID一致): ' + requestPunchId);
+          // 成功として返す（クライアントは完了とみなす）
+          return { 
+            success: true, 
+            message: '打刻済みです（重複）',
+            timestamp: new Date().toISOString()
+          };
+        }
+        
+        // 2. 時間差による重複チェック（意図しない連打防止）
+        // 同じ社員、同じ種別で
+        const rowEmpId = String(row[1]);
+        const rowType = row[3];
+        
+        if (rowEmpId === requestEmpId && rowType === requestType) {
+          const rowTime = new Date(row[0]).getTime();
+          // 1分(60000ms)以内なら重複とみなす
+          if (Math.abs(requestTime - rowTime) < 60 * 1000) {
+             console.log('重複スキップ(時間差): ' + rowEmpId + ' ' + rowType);
+             return { 
+               success: true, 
+               message: '打刻済みです（連打防止）',
+               timestamp: new Date().toISOString()
+             };
+          }
+        }
+      }
+    }
+    
+    // ========================================
+    // 保存処理
+    // ========================================
+    
+    const now = new Date();
+    
+    // A列: 日時を日本時間で見やすく保存
+    const jstNow = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
+    
+    const row = [
+      jstNow,
+      data.employeeId,
+      data.employeeName,
+      data.punchType,
+      data.reason || '',
+      data.isTemporary ? 'TRUE' : 'FALSE',
+      data.email || '',
+      data.punchId || '' // H列: 打刻ID
+    ];
+    
+    sheet.appendRow(row);
+    
+    // 追加した行のB列（社員番号）の書式をテキストにして0落ちを防ぐ
+    const newLastRow = sheet.getLastRow();
+    const idCell = sheet.getRange(newLastRow, 2); // 2列目 = 社員番号
+    idCell.setNumberFormat('@');
+    idCell.setValue(String(data.employeeId).padStart(3, '0')); // 3桁ゼロ埋めして再セット
+    
+    return { 
+      success: true, 
+      message: '打刻を記録しました',
+      timestamp: now.toISOString()
+    };
+
+  } catch (error) {
+    console.error('Record Punch Error: ' + error.toString());
+    // エラー情報を返す
+    return { error: error.toString() };
+  } finally {
+    lock.releaseLock();
   }
-  
-  const now = new Date();
-  
-  // A列: 日時を日本時間で見やすく保存
-  const jstNow = Utilities.formatDate(now, 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-  
-  const row = [
-    jstNow,
-    data.employeeId,
-    data.employeeName,
-    data.punchType,
-    data.reason || '',
-    data.isTemporary ? 'TRUE' : 'FALSE',
-    data.email || ''
-  ];
-  
-  sheet.appendRow(row);
-  
-  // 追加した行のB列（社員番号）の書式をテキストにして0落ちを防ぐ
-  const lastRow = sheet.getLastRow();
-  const idCell = sheet.getRange(lastRow, 2); // 2列目 = 社員番号
-  idCell.setNumberFormat('@');
-  idCell.setValue(String(data.employeeId).padStart(3, '0')); // 3桁ゼロ埋めして再セット
-  
-  return { 
-    success: true, 
-    message: '打刻を記録しました',
-    timestamp: now.toISOString()
-  };
 }
 
 /**
@@ -309,6 +386,75 @@ function getRequests() {
   }
   
   return { requests: requests };
+}
+
+/**
+ * 申請ステータスを更新（承認/却下）
+ */
+function updateRequestStatus(data) {
+  const lock = LockService.getScriptLock();
+  
+  try {
+    if (!lock.tryLock(5000)) {
+      throw new Error('サーバーが混み合っています。しばらく待ってから再試行してください。');
+    }
+
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAMES.REQUEST_LOG);
+    
+    if (!sheet) {
+      return { error: '申請ログシートが見つかりません' };
+    }
+    
+    const requestTimestamp = data.requestTimestamp;
+    const newStatus = data.status; // '承認' or '却下'
+    const adminEmail = data.adminEmail || '';
+    
+    if (!requestTimestamp || !newStatus) {
+      return { error: '必須パラメータが不足しています' };
+    }
+    
+    // 申請を検索（A列のタイムスタンプで照合）
+    const dataRange = sheet.getDataRange();
+    const values = dataRange.getValues();
+    
+    let updated = false;
+    for (let i = 1; i < values.length; i++) {
+      const rowTimestamp = values[i][0];
+      
+      // タイムスタンプの比較（文字列 or Date）
+      let match = false;
+      if (typeof rowTimestamp === 'string') {
+        match = rowTimestamp === requestTimestamp;
+      } else if (rowTimestamp instanceof Date) {
+        match = rowTimestamp.toISOString() === requestTimestamp;
+      }
+      
+      if (match) {
+        // L列(12列目)のステータスを更新
+        sheet.getRange(i + 1, 12).setValue(newStatus);
+        updated = true;
+        console.log('申請ステータス更新: 行' + (i + 1) + ' → ' + newStatus);
+        break;
+      }
+    }
+    
+    if (!updated) {
+      return { error: '対象の申請が見つかりませんでした' };
+    }
+    
+    return { 
+      success: true, 
+      message: `申請を${newStatus}しました`,
+      status: newStatus
+    };
+
+  } catch (error) {
+    console.error('Update Request Status Error: ' + error.toString());
+    return { error: error.toString() };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ========================================
@@ -494,7 +640,7 @@ function setupSpreadsheet() {
     punchSheet = ss.insertSheet(SHEET_NAMES.PUNCH_LOG);
     punchSheet.appendRow([
       '日時', '社員番号', '氏名', '種別', '理由', 
-      '緯度', '経度', '位置取得', '仮打刻', 'Googleメール'
+      '緯度', '経度', '位置取得', '仮打刻', 'Googleメール', '打刻ID'
     ]);
     punchSheet.setFrozenRows(1);
   }

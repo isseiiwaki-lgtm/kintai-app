@@ -402,3 +402,136 @@
     color: rgba(255, 255, 255, 0.6);
     font-size: 0.8rem;
 }
+
+/* ========================================
+   申請一覧
+   ======================================== */
+.request-section {
+    margin-bottom: 24px;
+}
+
+.request-list {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.request-item {
+    padding: 16px;
+    border-bottom: 1px solid #E5E7EB;
+}
+
+.request-item:last-child {
+    border-bottom: none;
+}
+
+.request-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.request-type {
+    font-weight: 600;
+    color: #1F2937;
+    font-size: 0.95rem;
+}
+
+.request-status {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.request-status.pending {
+    background: #FEF3C7;
+    color: #D97706;
+}
+
+.request-status.approved {
+    background: #ECFDF5;
+    color: #059669;
+}
+
+.request-status.rejected {
+    background: #FEF2F2;
+    color: #DC2626;
+}
+
+.request-user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.user-icon {
+    font-size: 1.1rem;
+}
+
+.user-name {
+    font-weight: 500;
+    color: #374151;
+}
+
+.request-details {
+    font-size: 0.85rem;
+    color: #6B7280;
+    margin-bottom: 8px;
+    line-height: 1.5;
+}
+
+.request-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.request-date {
+    font-size: 0.75rem;
+    color: #9CA3AF;
+}
+
+/* 承認/却下ボタン */
+.request-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #E5E7EB;
+}
+
+.approve-btn,
+.reject-btn {
+    flex: 1;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s ease;
+}
+
+.approve-btn {
+    background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+    color: white;
+}
+
+.approve-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+}
+
+.reject-btn {
+    background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+    color: white;
+}
+
+.reject-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}

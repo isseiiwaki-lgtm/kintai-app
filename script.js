@@ -2,6 +2,7 @@
  * 勤怠アプリ - メインスクリプト
  * 打刻機能、位置情報取得、Googleログイン、ローカルストレージ管理
  */
+console.log('🚀🚀🚀 スクリプトバージョン: v12 高速化版 🚀🚀🚀');
 
 // ========================================
 // 定数・設定
@@ -23,30 +24,45 @@ const GOOGLE_CLIENT_ID = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
 // 許可するメールドメイン（Workspaceの場合）
 const ALLOWED_DOMAIN = 'iwaki-i.com';
 
-// 社員データ（CSVから読み込む想定）
-const EMPLOYEES = [
-    { id: '003', name: '鈴木一成', email: 'issei@iwaki-i.com' },
-    { id: '004', name: '鈴木亜佐子', email: 'a-suzuki@iwaki-i.com' },
-    { id: '108', name: '坂本緩奈', email: 'k-sakamoto@iwaki-i.com' },
-    { id: '119', name: '小河原裕美', email: 'y-ogawara@iwaki-i.com' },
-    { id: '120', name: '石井章子', email: 's-ishii@iwaki-i.com' },
-    { id: '121', name: '根本桜子', email: 'nemoto@iwaki-i.com' },
-    { id: '122', name: '須田育美', email: 'suda@iwaki-i.com' },
-    { id: '223', name: '山崎公', email: 'yamazaki@iwaki-i.com' },
-    { id: '229', name: '国井明日香', email: 'a-kunii@iwaki-i.com' },
-    { id: '239', name: '小林匠', email: 't-kobayashi@iwaki-i.com' },
-    { id: '240', name: '古田部暁欧', email: 'a-kotabe@iwaki-i.com' },
-    { id: '302', name: '半沢昇一', email: 'hanzawa@iwaki-i.com' },
-    { id: '334', name: '野木理絵', email: 'nogi@iwaki-i.com' },
-    { id: '337', name: '羽山明子', email: 'hayama@iwaki-i.com' },
-    { id: '606', name: '布施由美', email: '' },
-    { id: '610', name: '岡田友美', email: '' },
-    { id: '620', name: '野崎瑤子', email: 'y-nozaki@iwaki-i.com' },
-    { id: '622', name: '工藤三帆', email: 'm-kudo@iwaki-i.com' },
-    { id: '705', name: '櫻田千恵美', email: 'sakurada@iwaki-i.com' },
-    { id: '706', name: '熊谷和樹', email: 'kumagai@iwaki-i.com' },
-    { id: '707', name: '櫻井祐輔', email: 'sakurai@iwaki-i.com' }
-];
+// 社員データ（GASから取得）
+let EMPLOYEES = [];
+
+/**
+ * 社員データを取得
+ */
+async function fetchEmployees() {
+    // 1. LocalStorageからキャッシュを取得（高速表示用）
+    const stored = localStorage.getItem(EMPLOYEES_KEY);
+    if (stored) {
+        try {
+            EMPLOYEES = JSON.parse(stored);
+            console.log('📦 LocalStorageから社員データを読み込みました:', EMPLOYEES.length, '件');
+        } catch (e) {
+            console.error('社員データ読み込みエラー:', e);
+        }
+    }
+
+    if (!GAS_URL) {
+        console.warn('GAS_URLが設定されていないため、社員データの更新をスキップします');
+        return;
+    }
+
+    // 2. GASから最新データを取得
+    try {
+        console.log('🔄 社員データを更新中...');
+        const response = await fetch(`${GAS_URL}?action=getEmployees`);
+        const data = await response.json();
+
+        if (data.employees && data.employees.length > 0) {
+            EMPLOYEES = data.employees;
+            localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(EMPLOYEES));
+            console.log('✅ GASから社員データを更新しました:', EMPLOYEES.length, '件');
+        }
+    } catch (error) {
+        console.error('⚠️ 社員データ取得エラー:', error);
+        // エラー時はキャッシュ（あれば）をそのまま使う
+    }
+}
 
 // 打刻タイプの定義
 const PUNCH_TYPES = {
@@ -65,7 +81,10 @@ let googleUser = null;
 // ========================================
 // 初期化
 // ========================================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // まず社員データを取得
+    await fetchEmployees();
+
     initClock();
     initPunchButtons();
     initReasonSelect();
@@ -355,16 +374,16 @@ function updateClock() {
 // ========================================
 
 /**
- * 現在のユーザーの打刻ステータスを取得
- * @returns {string} 'not-punched' | 'working' | 'on-break'
+ * 現在の社員ステータスを取得
+ * @param {boolean} localOnly - trueならLocalStorageのみ参照（高速）
  */
-async function getEmployeeStatus() {
+async function getEmployeeStatus(localOnly = false) {
     if (!currentUser) {
         console.log('📊 ステータス取得: ユーザー未ログイン');
         return 'not-punched';
     }
 
-    const records = await getRecords();
+    const records = await getRecords(localOnly);
 
     // 今日の日付（JST）
     const now = new Date();
@@ -425,9 +444,10 @@ async function getEmployeeStatus() {
 
 /**
  * ステータスに基づいてボタンの有効/無効を更新
+ * @param {boolean} localOnly - trueならLocalStorageのみ参照（高速）
  */
-async function updatePunchButtonStates() {
-    const status = await getEmployeeStatus();
+async function updatePunchButtonStates(localOnly = false) {
+    const status = await getEmployeeStatus(localOnly);
 
     const punchInBtn = document.getElementById('btn-punch-in');
     const punchOutBtn = document.getElementById('btn-punch-out');
@@ -557,21 +577,30 @@ function hideModal() {
     pendingPunchType = null;
 }
 
-async function confirmPunch() {
+function confirmPunch() {
+    console.time('⏱️ 打刻処理全体');
+    console.time('⏱️ 1.初期チェック');
+
     if (!pendingPunchType) return;
     if (!currentUser) {
         showToast('ログインしてください');
         hideModal();
         return;
     }
+    console.timeEnd('⏱️ 1.初期チェック');
 
+    // ========================================
+    // 即座に実行する処理（同期）
+    // ========================================
+    console.time('⏱️ 2.レコード作成');
     const now = new Date();
     const typeInfo = PUNCH_TYPES[pendingPunchType];
     const reason = document.getElementById('reason-select').value;
     const note = document.getElementById('note-input').value;
+    const punchId = generateId();
 
     const record = {
-        id: generateId(),
+        id: punchId,
         timestamp: now.toISOString(),
         date: now.toISOString().split('T')[0],
         time: now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
@@ -584,16 +613,22 @@ async function confirmPunch() {
         location: null,
         locationStatus: ''
     };
+    console.timeEnd('⏱️ 2.レコード作成');
 
-    // 保存（非同期処理を待つ）
-    await saveRecord(record);
+    // LocalStorageに即座に保存（同期処理）
+    console.time('⏱️ 3.LocalStorage保存');
+    const localData = localStorage.getItem(STORAGE_KEY);
+    const records = localData ? JSON.parse(localData) : [];
+    records.push(record);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    console.timeEnd('⏱️ 3.LocalStorage保存');
+    console.log('✅ 打刻保存完了:', record.time, record.typeLabel);
 
-    // UIリセット
+    // UIリセット（同期処理）
+    console.time('⏱️ 4.UIリセット');
     document.getElementById('reason-select').value = '';
     document.getElementById('note-input').value = '';
     document.getElementById('note-container').style.display = 'none';
-
-    // 写真リセット
     currentPhoto = null;
     const photoPreview = document.getElementById('photo-preview');
     if (photoPreview) {
@@ -607,18 +642,124 @@ async function confirmPunch() {
     if (photoInput) {
         photoInput.value = '';
     }
+    console.timeEnd('⏱️ 4.UIリセット');
 
-    // モーダル閉じる
+    // モーダルを閉じる（同期処理）
+    console.time('⏱️ 5.モーダル閉じる');
     hideModal();
+    console.timeEnd('⏱️ 5.モーダル閉じる');
 
-    // トースト表示
+    // 完了トースト
+    console.time('⏱️ 6.トースト表示');
     showToast(`${typeInfo.label}を打刻しました`);
+    console.timeEnd('⏱️ 6.トースト表示');
 
-    // 履歴更新
-    loadTodayHistory();
+    console.timeEnd('⏱️ 打刻処理全体');
 
-    // ボタン状態を更新（重複打刻防止）
-    updatePunchButtonStates();
+    // ========================================
+    // バックグラウンド処理（遅延実行）
+    // ========================================
+    setTimeout(() => {
+        console.log('🔄 バックグラウンド処理開始');
+        // GASへ送信
+        if (GAS_URL) {
+            sendToGAS(record);
+        }
+        // 履歴とボタン状態を更新（ローカルのみ）
+        loadTodayHistoryLocal();
+        updateButtonStatesLocal();
+        console.log('🔄 バックグラウンド処理完了');
+    }, 0);
+}
+
+/**
+ * 履歴を更新（ローカルのみ、同期的）
+ */
+function loadTodayHistoryLocal() {
+    const localData = localStorage.getItem(STORAGE_KEY);
+    const allRecords = localData ? JSON.parse(localData) : [];
+    const today = new Date().toISOString().split('T')[0];
+    const todayRecords = allRecords.filter(r => r.date === today);
+
+    const listEl = document.getElementById('history-list');
+    if (!currentUser) return;
+
+    const filteredRecords = todayRecords.filter(r => r.user?.id === currentUser.id);
+
+    if (filteredRecords.length === 0) {
+        listEl.innerHTML = '<p class="no-history">まだ打刻がありません</p>';
+        return;
+    }
+
+    filteredRecords.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    listEl.innerHTML = filteredRecords.map(record => {
+        const typeInfo = PUNCH_TYPES[record.type];
+        let reasonText = '';
+        if (record.reason) {
+            reasonText = `<span class="history-reason">(${record.reason})</span>`;
+        }
+        return `
+            <div class="history-item">
+                <span class="history-time">${record.time}</span>
+                <span class="history-type">${record.typeLabel} ${reasonText}</span>
+                <span class="history-tag ${typeInfo?.class || ''}">${typeInfo?.icon || '📌'}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+/**
+ * ボタン状態を更新（ローカルのみ、同期的）
+ */
+function updateButtonStatesLocal() {
+    if (!currentUser) return;
+
+    const localData = localStorage.getItem(STORAGE_KEY);
+    const allRecords = localData ? JSON.parse(localData) : [];
+    const today = new Date().toISOString().split('T')[0];
+
+    const myTodayRecords = allRecords.filter(r => {
+        const recordDate = r.date || new Date(r.timestamp).toISOString().split('T')[0];
+        const recordUserId = parseInt(r.user?.id, 10);
+        const currentUserId = parseInt(currentUser.id, 10);
+        return recordDate === today && recordUserId === currentUserId;
+    });
+
+    let status = 'not-punched';
+    if (myTodayRecords.length > 0) {
+        const lastRecord = myTodayRecords[myTodayRecords.length - 1];
+        const lastType = lastRecord.type || lastRecord.typeLabel;
+
+        if (lastType === 'punch-out' || lastType === '退勤') {
+            status = 'not-punched';
+        } else if (lastType === 'break-start' || lastType === '中抜け開始') {
+            status = 'on-break';
+        } else if (lastType === 'punch-in' || lastType === '出勤' || lastType === 'break-end' || lastType === '中抜け終了') {
+            status = 'working';
+        }
+    }
+
+    const punchInBtn = document.getElementById('btn-punch-in');
+    const punchOutBtn = document.getElementById('btn-punch-out');
+    const breakStartBtn = document.getElementById('btn-break-start');
+    const breakEndBtn = document.getElementById('btn-break-end');
+
+    [punchInBtn, punchOutBtn, breakStartBtn, breakEndBtn].forEach(btn => {
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add('disabled');
+        }
+    });
+
+    if (status === 'not-punched') {
+        if (punchInBtn) { punchInBtn.disabled = false; punchInBtn.classList.remove('disabled'); }
+    } else if (status === 'working') {
+        if (punchOutBtn) { punchOutBtn.disabled = false; punchOutBtn.classList.remove('disabled'); }
+        if (breakStartBtn) { breakStartBtn.disabled = false; breakStartBtn.classList.remove('disabled'); }
+    } else if (status === 'on-break') {
+        if (breakEndBtn) { breakEndBtn.disabled = false; breakEndBtn.classList.remove('disabled'); }
+    }
 }
 
 // ========================================
@@ -629,87 +770,93 @@ function generateId() {
 }
 
 async function saveRecord(record) {
-    // LocalStorageにも保存（オフライン対応）
-    const records = await getRecords();
+    // ========================================
+    // 1. LocalStorageに即座に保存（楽観的更新）
+    // ========================================
+    const localData = localStorage.getItem(STORAGE_KEY);
+    const records = localData ? JSON.parse(localData) : [];
     records.push(record);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
-    console.log('✅ LocalStorageに保存:', record);
+    console.log('✅ LocalStorageに保存:', record.typeLabel, record.time);
 
-    // Google Apps Scriptに送信（オンライン）
+    // ========================================
+    // 2. GASへバックグラウンド送信（待たない）
+    // ========================================
     if (GAS_URL) {
-        try {
-            // ----------------------------------------
-            // 確実な送信のためのForm送信（iFrameターゲット）
-            // ----------------------------------------
-
-            // 送信用の隠しiFrameを作成（なければ）
-            const iframeId = 'gas-hidden-frame';
-            let iframe = document.getElementById(iframeId);
-            if (!iframe) {
-                iframe = document.createElement('iframe');
-                iframe.id = iframeId;
-                iframe.name = iframeId;
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-            }
-
-            // 送信用のFormを作成
-            const form = document.createElement('form');
-            form.method = 'POST';
-            form.action = GAS_URL;
-            form.target = iframeId; // レスポンスで画面遷移しないようにiFrameに向ける
-            form.style.display = 'none';
-
-            // データをInputタグとして追加
-            const data = {
-                action: 'punch',
-                employeeId: record.user.id,
-                employeeName: record.user.name,
-                punchType: record.typeLabel,
-                reason: record.reason || '',
-                latitude: record.location?.latitude || '',
-                longitude: record.location?.longitude || '',
-                locationStatus: record.locationStatus || '',
-                isTemporary: 'false',
-                email: record.user.email || ''
-            };
-
-            for (const key in data) {
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = key;
-                input.value = data[key];
-                form.appendChild(input);
-            }
-
-            document.body.appendChild(form);
-
-            // 送信実行
-            form.submit();
-            console.log('☁️ Googleスプレッドシートへ送信実行（Form送信）');
-
-            // フォームは用済みなので少し待ってから削除
-            setTimeout(() => {
-                document.body.removeChild(form);
-            }, 1000);
-
-        } catch (error) {
-            console.error('⚠️ GAS保存エラー:', error);
-            console.log('💾 LocalStorageのみに保存しました');
-        }
-    } else {
-        console.log('ℹ️ GAS_URLが未設定のため、LocalStorageのみに保存');
+        // 非同期で送信開始（awaitしない）
+        sendToGAS(record).catch(error => {
+            console.error('⚠️ GAS送信エラー（バックグラウンド）:', error);
+        });
     }
 }
 
-async function getRecords() {
+/**
+ * GASへデータを送信（バックグラウンド処理）
+ */
+async function sendToGAS(record) {
+    // 送信用の隠しiFrameを作成（なければ）
+    const iframeId = 'gas-hidden-frame';
+    let iframe = document.getElementById(iframeId);
+    if (!iframe) {
+        iframe = document.createElement('iframe');
+        iframe.id = iframeId;
+        iframe.name = iframeId;
+        iframe.style.display = 'none';
+        document.body.appendChild(iframe);
+    }
+
+    // 送信用のFormを作成
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = GAS_URL;
+    form.target = iframeId;
+    form.style.display = 'none';
+
+    // データをInputタグとして追加
+    const data = {
+        action: 'punch',
+        employeeId: record.user.id,
+        employeeName: record.user.name,
+        punchType: record.typeLabel,
+        reason: record.reason || '',
+        latitude: record.location?.latitude || '',
+        longitude: record.location?.longitude || '',
+        locationStatus: record.locationStatus || '',
+        isTemporary: 'false',
+        email: record.user.email || '',
+        punchId: record.id || ''
+    };
+
+    for (const key in data) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = data[key];
+        form.appendChild(input);
+    }
+
+    document.body.appendChild(form);
+    form.submit();
+    console.log('☁️ Googleスプレッドシートへ送信開始（バックグラウンド）');
+
+    // フォーム削除
+    setTimeout(() => {
+        document.body.removeChild(form);
+    }, 1000);
+}
+
+/**
+ * 打刻記録を取得
+ * @param {boolean} localOnly - trueならLocalStorageのみ参照（高速）
+ */
+async function getRecords(localOnly = false) {
     // 1. LocalStorageから取得（常に取得しておく）
     console.log('💾 LocalStorageから取得');
     const localData = localStorage.getItem(STORAGE_KEY);
     const localRecords = localData ? JSON.parse(localData) : [];
 
-    // GAS_URLがない場合はローカルのみ返す
-    if (!GAS_URL) {
+    // localOnlyモードまたはGAS_URLがない場合はローカルのみ返す
+    if (localOnly || !GAS_URL) {
         return localRecords;
     }
 
@@ -792,17 +939,25 @@ function convertPunchType(typeLabel) {
     return typeMap[typeLabel] || 'punch-in';
 }
 
-async function getTodayRecords() {
+/**
+ * 今日の打刻記録を取得
+ * @param {boolean} localOnly - trueならLocalStorageのみ参照（高速）
+ */
+async function getTodayRecords(localOnly = false) {
     const today = new Date().toISOString().split('T')[0];
-    const records = await getRecords();
+    const records = await getRecords(localOnly);
     return records.filter(r => r.date === today);
 }
 
 // ========================================
 // 履歴表示機能
 // ========================================
-async function loadTodayHistory() {
-    const records = await getTodayRecords();
+/**
+ * 今日の履歴を読み込んで表示
+ * @param {boolean} localOnly - trueならLocalStorageのみ参照（高速）
+ */
+async function loadTodayHistory(localOnly = false) {
+    const records = await getTodayRecords(localOnly);
     const listEl = document.getElementById('history-list');
 
     // ログイン中のユーザーの打刻のみ表示

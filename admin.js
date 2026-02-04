@@ -14,30 +14,42 @@ const STORAGE_KEY = 'kintai_records';
 // 設定方法: gas/README.mdを参照
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwddm7bng-cpFydXcwiOuOQrnIP5p2sk7TUFkMYAjdFaYLKpN-fFXckjdJIcieqt75O/exec';
 
-// 社員データ（CSVから読み込む想定、ここではハードコード）
-const EMPLOYEES = [
-    { id: '003', name: '鈴木一成', email: 'issei@iwaki-i.com', type: '正社員' },
-    { id: '004', name: '鈴木亜佐子', email: 'a-suzuki@iwaki-i.com', type: '正社員' },
-    { id: '108', name: '坂本緩奈', email: 'k-sakamoto@iwaki-i.com', type: 'パート' },
-    { id: '119', name: '小河原裕美', email: 'y-ogawara@iwaki-i.com', type: '正社員' },
-    { id: '120', name: '石井章子', email: 's-ishii@iwaki-i.com', type: 'パート' },
-    { id: '121', name: '根本桜子', email: 'nemoto@iwaki-i.com', type: 'パート' },
-    { id: '122', name: '須田育美', email: 'suda@iwaki-i.com', type: 'パート' },
-    { id: '223', name: '山崎公', email: 'yamazaki@iwaki-i.com', type: '正社員' },
-    { id: '229', name: '国井明日香', email: 'a-kunii@iwaki-i.com', type: '正社員' },
-    { id: '239', name: '小林匠', email: 't-kobayashi@iwaki-i.com', type: '正社員' },
-    { id: '240', name: '古田部暁欧', email: 'a-kotabe@iwaki-i.com', type: '正社員' },
-    { id: '302', name: '半沢昇一', email: 'hanzawa@iwaki-i.com', type: '正社員' },
-    { id: '334', name: '野木理絵', email: 'nogi@iwaki-i.com', type: 'パート' },
-    { id: '337', name: '羽山明子', email: 'hayama@iwaki-i.com', type: 'パート' },
-    { id: '606', name: '布施由美', email: '', type: 'パート' },
-    { id: '610', name: '岡田友美', email: '', type: 'パート' },
-    { id: '620', name: '野崎瑤子', email: 'y-nozaki@iwaki-i.com', type: 'パート' },
-    { id: '622', name: '工藤三帆', email: 'm-kudo@iwaki-i.com', type: 'パート' },
-    { id: '705', name: '櫻田千恵美', email: 'sakurada@iwaki-i.com', type: '正社員' },
-    { id: '706', name: '熊谷和樹', email: 'kumagai@iwaki-i.com', type: '正社員' },
-    { id: '707', name: '櫻井祐輔', email: 'sakurai@iwaki-i.com', type: 'パート' }
-];
+// 社員データ（GASから取得）
+let EMPLOYEES = [];
+const EMPLOYEES_KEY = 'kintai_employees';
+
+/**
+ * 社員データを取得
+ */
+async function fetchEmployees() {
+    // 1. LocalStorageからキャッシュを取得
+    const stored = localStorage.getItem(EMPLOYEES_KEY);
+    if (stored) {
+        try {
+            EMPLOYEES = JSON.parse(stored);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    if (!GAS_URL) {
+        return;
+    }
+
+    // 2. GASから最新データを取得
+    try {
+        const response = await fetch(`${GAS_URL}?action=getEmployees`);
+        const data = await response.json();
+
+        if (data.employees && data.employees.length > 0) {
+            EMPLOYEES = data.employees;
+            localStorage.setItem(EMPLOYEES_KEY, JSON.stringify(EMPLOYEES));
+            // 所定労働時間設定の更新などが必要ならここで行う
+        }
+    } catch (error) {
+        console.error('社員データ取得エラー:', error);
+    }
+}
 
 // 打刻タイプのアイコン
 const TYPE_ICONS = {
@@ -50,35 +62,9 @@ const TYPE_ICONS = {
 // ========================================
 // 社員別 所定労働時間設定（分単位）
 // ========================================
-// 後から手動で追加・変更可能です
-// 形式: '社員番号': 所定労働時間（分）
-// 例: 8時間 = 480分, 5時間 = 300分, 6時間 = 360分
-const SCHEDULED_WORK_MINUTES = {
-    // === 正社員（8時間） ===
-    '003': 480,  // 鈴木一成
-    '004': 480,  // 鈴木亜佐子
-    '119': 480,  // 小河原裕美
-    '223': 480,  // 山崎公
-    '229': 480,  // 国井明日香
-    '239': 480,  // 小林匠
-    '240': 480,  // 古田部暁欧
-    '302': 480,  // 半沢昇一
-    '705': 480,  // 櫻田千恵美
-    '706': 480,  // 熊谷和樹
-
-    // === パート（個別設定） ===
-    '108': 300,  // 坂本緩奈（5時間）
-    '120': 300,  // 石井章子（5時間）
-    '121': 300,  // 根本桜子（5時間）
-    '122': 300,  // 須田育美（5時間）
-    '334': 300,  // 野木理絵（5時間）
-    '337': 300,  // 羽山明子（5時間）
-    '606': 300,  // 布施由美（5時間）
-    '610': 300,  // 岡田友美（5時間）
-    '620': 300,  // 野崎瑤子（5時間）
-    '622': 300,  // 工藤三帆（5時間）
-    '707': 300,  // 櫻井祐輔（5時間）
-};
+// 社員マスタの雇用区分に基づいて自動計算します
+// 正社員: 8時間 (480分)
+// パート: 5時間 (300分)
 
 // デフォルト所定労働時間（リストにない人）
 const DEFAULT_SCHEDULED_WORK_MINUTES = 480; // 8時間
@@ -86,8 +72,9 @@ const DEFAULT_SCHEDULED_WORK_MINUTES = 480; // 8時間
 // ========================================
 // 初期化
 // ========================================
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initDate();
+    await fetchEmployees();
     loadData();
     initFilters();
     initExport();
@@ -174,8 +161,18 @@ function updateRequestList(requests) {
         if (req.time) details.push(`時間: ${req.time}〜${req.endTime || ''}`);
         if (req.reason) details.push(`理由: ${req.reason}`);
 
+        // 承認・却下済み以外の場合にボタンを表示（より堅牢な判定）
+        const isProcessed = req.status === '承認' || req.status === '却下';
+        console.log('申請ステータス:', req.status, '| 処理済み:', isProcessed, '| ボタン表示:', !isProcessed);
+        const actionsHtml = !isProcessed ? `
+            <div class="request-actions">
+                <button class="approve-btn" data-timestamp="${req.timestamp}" onclick="handleApprove(this)">✓ 承認</button>
+                <button class="reject-btn" data-timestamp="${req.timestamp}" onclick="handleReject(this)">✗ 却下</button>
+            </div>
+        ` : '';
+
         return `
-            <div class="request-item">
+            <div class="request-item" data-timestamp="${req.timestamp}">
                 <div class="request-header">
                     <span class="request-type">${req.typeLabel}</span>
                     <span class="request-status ${req.status === '承認' ? 'approved' : req.status === '却下' ? 'rejected' : 'pending'}">${req.status}</span>
@@ -190,9 +187,65 @@ function updateRequestList(requests) {
                 <div class="request-footer">
                     <span class="request-date">申請日: ${new Date(req.timestamp || req.createdAt).toLocaleString('ja-JP')}</span>
                 </div>
+                ${actionsHtml}
             </div>
         `;
     }).join('');
+}
+
+/**
+ * 承認ボタンのハンドラ
+ */
+async function handleApprove(button) {
+    const timestamp = button.dataset.timestamp;
+    await updateRequestStatus(timestamp, '承認');
+}
+
+/**
+ * 却下ボタンのハンドラ
+ */
+async function handleReject(button) {
+    const timestamp = button.dataset.timestamp;
+    if (confirm('この申請を却下しますか？')) {
+        await updateRequestStatus(timestamp, '却下');
+    }
+}
+
+/**
+ * 申請ステータスを更新
+ */
+async function updateRequestStatus(requestTimestamp, status) {
+    if (!GAS_URL) {
+        alert('GAS URLが設定されていません');
+        return;
+    }
+
+    try {
+        const response = await fetch(GAS_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                action: 'updateRequestStatus',
+                requestTimestamp: requestTimestamp,
+                status: status
+            })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            alert(result.message);
+            // 一覧を再読み込み
+            loadRequests();
+        } else {
+            alert('エラー: ' + (result.error || '不明なエラー'));
+        }
+    } catch (error) {
+        console.error('申請ステータス更新エラー:', error);
+        alert('通信エラーが発生しました');
+    }
 }
 
 /**
@@ -681,7 +734,20 @@ function roundDownTo30(timeStr) {
  */
 function getScheduledWorkMinutes(employeeId) {
     const id = String(employeeId);
-    return SCHEDULED_WORK_MINUTES[id] || DEFAULT_SCHEDULED_WORK_MINUTES;
+
+    // 社員マスタから検索
+    const emp = EMPLOYEES.find(e => e.id === id);
+    if (!emp) {
+        return DEFAULT_SCHEDULED_WORK_MINUTES;
+    }
+
+    // 雇用区分に基づく判定
+    if (emp.employmentType === 'パート') {
+        return 300; // 5時間
+    }
+
+    // デフォルト（正社員など）
+    return 480; // 8時間
 }
 
 /**
