@@ -282,6 +282,40 @@ function recordRequest(data) {
 }
 
 /**
+ * 社員一覧を取得
+ */
+function getEmployees() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEET_NAMES.EMPLOYEES);
+  
+  if (!sheet) {
+    return { employees: [] };
+  }
+  
+  const data = sheet.getDataRange().getValues();
+  const employees = [];
+  
+  // ヘッダー行を除いてデータを取得
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    // 有効フラグがFALSEでないものだけ（空も含める）
+    const isActive = row[5] !== 'FALSE' && row[5] !== false;
+    
+    if (row[0] && isActive) { // 社員番号があり、有効なもの
+      employees.push({
+        id: String(row[0]),      // 社員番号
+        name: row[1],            // 氏名
+        furigana: row[2],        // フリガナ
+        email: row[3] || '',     // Googleメール
+        employmentType: row[4] || '' // 雇用区分
+      });
+    }
+  }
+  
+  return { employees: employees };
+}
+
+/**
  * 今日の打刻記録を取得
  */
 function getTodayRecords() {
@@ -457,40 +491,7 @@ function updateRequestStatus(data) {
   }
 }
 
-// ========================================
-// 社員マスタ機能
-// ========================================
-
-/**
- * 社員一覧を取得
- */
-function getEmployees() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(SHEET_NAMES.EMPLOYEES);
-  
-  if (!sheet) {
-    return { employees: [] };
-  }
-  
-  const data = sheet.getDataRange().getValues();
-  const employees = [];
-  
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    if (row[5] === 'TRUE' || row[5] === true) { // 有効フラグ
-      employees.push({
-        id: String(row[0]),
-        name: row[1],
-        furigana: row[2],
-        email: row[3],
-        employmentType: row[4],
-        active: true
-      });
-    }
-  }
-  
-  return { employees: employees };
-}
+// (getEmployees関数は上で定義済み)
 
 // ========================================
 // 修正機能（管理者用）
