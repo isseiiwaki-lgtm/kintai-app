@@ -673,7 +673,12 @@ function confirmPunch() {
 function loadTodayHistoryLocal() {
     const localData = localStorage.getItem(STORAGE_KEY);
     const allRecords = localData ? JSON.parse(localData) : [];
-    const today = new Date().toISOString().split('T')[0];
+
+    // JSTでの今日の日付文字列を取得
+    const now = new Date();
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const today = jstNow.toISOString().split('T')[0];
+
     const todayRecords = allRecords.filter(r => r.date === today);
 
     const listEl = document.getElementById('history-list');
@@ -909,7 +914,11 @@ function convertPunchType(typeLabel) {
  * @param {boolean} localOnly - trueならLocalStorageのみ参照（高速）
  */
 async function getTodayRecords(localOnly = false) {
-    const today = new Date().toISOString().split('T')[0];
+    // JSTでの今日の日付文字列を取得
+    const now = new Date();
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const today = jstNow.toISOString().split('T')[0];
+
     const records = await getRecords(localOnly);
     return records.filter(r => r.date === today);
 }
