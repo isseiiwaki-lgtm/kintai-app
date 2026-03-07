@@ -589,6 +589,9 @@ function confirmPunch() {
     // ========================================
     console.time('⏱️ 2.レコード作成');
     const now = new Date();
+    // JSTの日付文字列を生成
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+
     const typeInfo = PUNCH_TYPES[pendingPunchType];
     const reason = document.getElementById('reason-select').value;
     const note = document.getElementById('note-input').value;
@@ -596,8 +599,8 @@ function confirmPunch() {
 
     const record = {
         id: punchId,
-        timestamp: now.toISOString(),
-        date: now.toISOString().split('T')[0],
+        timestamp: now.toISOString(), // GAS側の互換性のためUTCのまま
+        date: jstNow.toISOString().split('T')[0], // ローカル保存用のdateはJST基準
         time: now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
         type: pendingPunchType,
         typeLabel: typeInfo.label,
@@ -679,7 +682,16 @@ function loadTodayHistoryLocal() {
     const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
     const today = jstNow.toISOString().split('T')[0];
 
-    const todayRecords = allRecords.filter(r => r.date === today);
+    // 既存のローカルキャッシュの date がUTC由来の場合は timestamp からJSTを計算して補正
+    const todayRecords = allRecords.filter(r => {
+        let recordDate = r.date;
+        if (recordDate !== today && r.timestamp) {
+            const d = new Date(r.timestamp);
+            const rJstD = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+            recordDate = rJstD.toISOString().split('T')[0];
+        }
+        return recordDate === today;
+    });
 
     const listEl = document.getElementById('history-list');
     if (!currentUser) return;
