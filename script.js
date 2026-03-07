@@ -92,13 +92,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     initGoogleAuth();
     initPhoto();
     initRequest();
-    loadTodayHistory();
+    // 初期化時は currentUser が null のため、
+    // 履歴とボタン状態の更新は currentUser がセットされた後（restoreUser 内）で行う
 
-    // 保存されたユーザー情報を復元
+    // 保存されたユーザー情報を復元し、その中で履歴・ボタンを更新
     restoreUser();
-
-    // ステータスに基づいてボタンを更新
-    updatePunchButtonStates();
 });
 
 // ========================================
@@ -307,8 +305,25 @@ function setCurrentUser(user) {
     // ローカルストレージに保存
     localStorage.setItem(USER_KEY, JSON.stringify(user));
 
-    // 履歴を再読み込み（ユーザーの打刻のみ表示する場合）
-    loadTodayHistory();
+    // ユーザー設定後に、最新の打刻データ（GAS + ローカル）を取得して画面を更新する
+    updateDashboard();
+}
+
+/**
+ * ダッシュボード（打刻履歴・ボタン状態）を最新化する
+ */
+async function updateDashboard() {
+    if (!currentUser) return;
+
+    // 1. ローカルデータで即時描画（チラつき防止）
+    loadTodayHistoryLocal();
+    updateButtonStatesLocal();
+
+    // 2. GAS領域から最新データを取得して再描画（iPad⇔PC間の同期）
+    console.log('🔄 GASから最新の打刻データを取得中...');
+    await loadTodayHistory(false); // localOnly = false (GASから取得)
+    await updatePunchButtonStates(false); // localOnly = false (GASから取得)
+    console.log('✅ ダッシュボードの更新完了');
 }
 
 /**
@@ -373,73 +388,89 @@ function updateClock() {
 // 打刻ステータス管理（重複打刻防止）
 // ========================================
 
+// ========================================
+// 状態遷移（ステートマシン）の定義
+// ========================================
+const BUTTON_DISABLED_MAP = {
+    'loading': { 'btn-punch-in': true, 'btn-punch-out': true, 'btn-break-start': true, 'btn-break-end': true },
+    'BEFORE_WORK': { 'btn-punch-in': false, 'btn-punch-out': true, 'btn-break-start': true, 'btn-break-end': true },
+    'WORKING': { 'btn-punch-in': true, 'btn-punch-out': false, 'btn-break-start': false, 'btn-break-end': true },
+    'BREAKING': { 'btn-punch-in': true, 'btn-punch-out': true, 'btn-break-start': true, 'btn-break-end': false },
+    'FINISHED': { 'btn-punch-in': true, 'btn-punch-out': true, 'btn-break-start': true, 'btn-break-end': true },
+    'NO_USER': { 'btn-punch-in': true, 'btn-punch-out': true, 'btn-break-start': true, 'btn-break-end': true }
+};
+
 /**
- * 現在の社員ステータスを取得
- * @param {boolean} localOnly - trueならLocalStorageのみ参照（高速）
+ * 表示更新処理：状態に基づくボタン制御
  */
-async function getEmployeeStatus(localOnly = false) {
-    if (!currentUser) {
+function updateButtonDisplay(status) {
+    const disableState = BUTTON_DISABLED_MAP[status] || BUTTON_DISABLED_MAP['loading'];
+    Object.keys(disableState).forEach(btnId => {
+        const btn = document.getElementById(btnId);
+        if (btn) {
+            btn.disabled = disableState[btnId];
+            if (disableState[btnId]) {
+                btn.classList.add('disabled');
+            } else {
+                btn.classList.remove('disabled');
+            }
+        }
+    });
+    console.log(`📊 ボタン状態更新: status=${status}`);
+}
+
+/**
+ * レコードとユーザーIDから現在のステータスを計算する
+ */
+function calculateStatusFromRecords(records, userId) {
+    if (!userId) {
         console.log('📊 ステータス取得: ユーザー未ログイン');
-        return 'not-punched';
+        return 'NO_USER';
     }
 
-    const records = await getRecords(localOnly);
-
-    // 今日の日付（JST）
+    // 今日の日付を取得(JST)
     const now = new Date();
     const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
     const today = jstNow.toISOString().split('T')[0];
 
-    console.log('📊 今日の日付(JST):', today);
-    console.log('📊 全レコード数:', records.length);
-    console.log('📊 ログインユーザーID:', currentUser.id);
-
     // 今日の自分の打刻を取得
     const myTodayRecords = records.filter(r => {
-        // レコードの日付をJSTで取得
-        const recordDate = r.date || (() => {
+        // GAS側から来る date は '2026-03-08' のような形式。localRecordも同様。
+        // パースできなかった場合や r.date がない場合は timestamp から JST で計算
+        let recordDate = r.date;
+        if (!recordDate) {
             const d = new Date(r.timestamp);
             const jstD = new Date(d.getTime() + 9 * 60 * 60 * 1000);
-            return jstD.toISOString().split('T')[0];
-        })();
-
-        // 社員番号を数値で比較（先頭ゼロを無視）
-        const recordUserId = parseInt(r.user?.id, 10);
-        const currentUserId = parseInt(currentUser.id, 10);
-        const userIdMatch = recordUserId === currentUserId;
-        const dateMatch = recordDate === today;
-
-        if (userIdMatch) {
-            console.log('  📋 レコード:', r.time, r.typeLabel || r.type, '日付:', recordDate, '一致:', dateMatch);
+            recordDate = jstD.toISOString().split('T')[0];
         }
 
-        return dateMatch && userIdMatch;
+        // Stringでの比較に統一 (GASからのIDがStringでローカルがNumberなどの差異を吸収)
+        const recordUserId = String(r.user?.id || '').replace(/^0+/, '');
+        const currentUserId = String(userId).replace(/^0+/, '');
+
+        return recordDate === today && recordUserId === currentUserId;
     });
 
-    console.log('📊 今日の自分の打刻数:', myTodayRecords.length);
-    myTodayRecords.forEach(r => {
-        console.log('  - ', r.time, r.typeLabel || r.type);
-    });
+    if (myTodayRecords.length === 0) return 'BEFORE_WORK';
 
-    if (myTodayRecords.length === 0) {
-        return 'not-punched'; // 未出勤
-    }
-
-    // 最新の打刻を取得
     const lastRecord = myTodayRecords[myTodayRecords.length - 1];
     const lastType = lastRecord.type || lastRecord.typeLabel;
 
-    console.log('📊 最新打刻:', lastType);
+    if (lastType === 'punch-out' || lastType === '退勤') return 'FINISHED';
+    if (lastType === 'break-start' || lastType === '中抜け開始') return 'BREAKING';
+    if (lastType === 'punch-in' || lastType === '出勤' || lastType === 'break-end' || lastType === '中抜け終了') return 'WORKING';
 
-    if (lastType === 'punch-out' || lastType === '退勤') {
-        return 'not-punched'; // 退勤済み（再出勤可能）
-    } else if (lastType === 'break-start' || lastType === '中抜け開始') {
-        return 'on-break'; // 中抜け中
-    } else if (lastType === 'punch-in' || lastType === '出勤' || lastType === 'break-end' || lastType === '中抜け終了') {
-        return 'working'; // 出勤中
-    }
+    return 'BEFORE_WORK';
+}
 
-    return 'not-punched';
+/**
+ * 現在の社員ステータスを取得（非同期）
+ * @param {boolean} localOnly - trueならLocalStorageのみ参照（高速）
+ */
+async function getEmployeeStatus(localOnly = false) {
+    if (!currentUser) return 'NO_USER';
+    const records = await getRecords(localOnly);
+    return calculateStatusFromRecords(records, currentUser.id);
 }
 
 /**
@@ -447,47 +478,11 @@ async function getEmployeeStatus(localOnly = false) {
  * @param {boolean} localOnly - trueならLocalStorageのみ参照（高速）
  */
 async function updatePunchButtonStates(localOnly = false) {
+    // データ取得前はloading状態にしてチラつき防止
+    updateButtonDisplay('loading');
+
     const status = await getEmployeeStatus(localOnly);
-
-    const punchInBtn = document.getElementById('btn-punch-in');
-    const punchOutBtn = document.getElementById('btn-punch-out');
-    const breakStartBtn = document.getElementById('btn-break-start');
-    const breakEndBtn = document.getElementById('btn-break-end');
-
-    // 全ボタンを一旦無効化
-    [punchInBtn, punchOutBtn, breakStartBtn, breakEndBtn].forEach(btn => {
-        if (btn) {
-            btn.disabled = true;
-            btn.classList.add('disabled');
-        }
-    });
-
-    // ステータスに応じて有効化
-    if (status === 'not-punched') {
-        // 未出勤: 出勤のみ可能
-        if (punchInBtn) {
-            punchInBtn.disabled = false;
-            punchInBtn.classList.remove('disabled');
-        }
-    } else if (status === 'working') {
-        // 出勤中: 退勤・中抜け開始が可能
-        if (punchOutBtn) {
-            punchOutBtn.disabled = false;
-            punchOutBtn.classList.remove('disabled');
-        }
-        if (breakStartBtn) {
-            breakStartBtn.disabled = false;
-            breakStartBtn.classList.remove('disabled');
-        }
-    } else if (status === 'on-break') {
-        // 中抜け中: 中抜け終了のみ可能
-        if (breakEndBtn) {
-            breakEndBtn.disabled = false;
-            breakEndBtn.classList.remove('disabled');
-        }
-    }
-
-    console.log('📊 ステータス更新:', status);
+    updateButtonDisplay(status);
 }
 
 // ========================================
@@ -717,49 +712,9 @@ function updateButtonStatesLocal() {
 
     const localData = localStorage.getItem(STORAGE_KEY);
     const allRecords = localData ? JSON.parse(localData) : [];
-    const today = new Date().toISOString().split('T')[0];
 
-    const myTodayRecords = allRecords.filter(r => {
-        const recordDate = r.date || new Date(r.timestamp).toISOString().split('T')[0];
-        const recordUserId = parseInt(r.user?.id, 10);
-        const currentUserId = parseInt(currentUser.id, 10);
-        return recordDate === today && recordUserId === currentUserId;
-    });
-
-    let status = 'not-punched';
-    if (myTodayRecords.length > 0) {
-        const lastRecord = myTodayRecords[myTodayRecords.length - 1];
-        const lastType = lastRecord.type || lastRecord.typeLabel;
-
-        if (lastType === 'punch-out' || lastType === '退勤') {
-            status = 'not-punched';
-        } else if (lastType === 'break-start' || lastType === '中抜け開始') {
-            status = 'on-break';
-        } else if (lastType === 'punch-in' || lastType === '出勤' || lastType === 'break-end' || lastType === '中抜け終了') {
-            status = 'working';
-        }
-    }
-
-    const punchInBtn = document.getElementById('btn-punch-in');
-    const punchOutBtn = document.getElementById('btn-punch-out');
-    const breakStartBtn = document.getElementById('btn-break-start');
-    const breakEndBtn = document.getElementById('btn-break-end');
-
-    [punchInBtn, punchOutBtn, breakStartBtn, breakEndBtn].forEach(btn => {
-        if (btn) {
-            btn.disabled = true;
-            btn.classList.add('disabled');
-        }
-    });
-
-    if (status === 'not-punched') {
-        if (punchInBtn) { punchInBtn.disabled = false; punchInBtn.classList.remove('disabled'); }
-    } else if (status === 'working') {
-        if (punchOutBtn) { punchOutBtn.disabled = false; punchOutBtn.classList.remove('disabled'); }
-        if (breakStartBtn) { breakStartBtn.disabled = false; breakStartBtn.classList.remove('disabled'); }
-    } else if (status === 'on-break') {
-        if (breakEndBtn) { breakEndBtn.disabled = false; breakEndBtn.classList.remove('disabled'); }
-    }
+    const status = calculateStatusFromRecords(allRecords, currentUser.id);
+    updateButtonDisplay(status);
 }
 
 // ========================================
@@ -868,31 +823,37 @@ async function getRecords(localOnly = false) {
         if (data.records && data.records.length > 0) {
             console.log('☁️ Googleスプレッドシートから取得:', data.records.length, '件');
             // GASのデータ形式をローカル形式に変換
-            gasRecords = data.records.map(r => ({
-                id: r.timestamp, // GASデータはタイムスタンプをIDとする
-                timestamp: r.timestamp,
-                date: new Date(r.timestamp).toISOString().split('T')[0],
-                time: new Date(r.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-                type: convertPunchType(r.punchType),
-                typeLabel: r.punchType,
-                reason: r.reason || null,
-                note: null,
-                photo: null,
-                user: {
-                    id: r.employeeId,
-                    name: r.employeeName,
-                    email: r.email
-                },
-                location: r.latitude ? {
-                    latitude: r.latitude,
-                    longitude: r.longitude
-                } : null,
-                locationStatus: r.locationStatus
-            }));
+            gasRecords = data.records.map(r => {
+                // GAS側は「2026/03/08 07:42:00」などのJST文字列が来る場合があるため、パースを工夫
+                const tsDate = new Date(r.timestamp);
+                const jstD = new Date(tsDate.getTime() + 9 * 60 * 60 * 1000);
+                const dateStr = !isNaN(tsDate.getTime()) ? jstD.toISOString().split('T')[0] : '';
+
+                return {
+                    id: r.timestamp, // GASデータはタイムスタンプをIDとする
+                    timestamp: r.timestamp,
+                    date: dateStr, // JST基準の日付文字列 (e.g. "2026-03-08")
+                    time: !isNaN(tsDate.getTime()) ? tsDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '',
+                    type: convertPunchType(r.punchType),
+                    typeLabel: r.punchType,
+                    reason: r.reason || null,
+                    note: null,
+                    photo: null,
+                    user: {
+                        id: r.employeeId,
+                        name: r.employeeName,
+                        email: r.email
+                    },
+                    location: r.latitude ? {
+                        latitude: r.latitude,
+                        longitude: r.longitude
+                    } : null,
+                    locationStatus: r.locationStatus
+                };
+            });
         }
     } catch (error) {
         console.error('⚠️ GAS取得エラー:', error);
-        // エラー時はローカルデータを返す
         return localRecords;
     }
 
@@ -900,9 +861,13 @@ async function getRecords(localOnly = false) {
     // GASのデータを正とするが、GASに無い（反映待ちの）ローカルデータを追加する
     const mergedRecords = [...gasRecords];
 
+    // JSTでの今日の日付文字列を取得
+    const now = new Date();
+    const jstNow = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+    const today = jstNow.toISOString().split('T')[0];
+
     localRecords.forEach(localRecord => {
         // 今日のデータのみ対象
-        const today = new Date().toISOString().split('T')[0];
         if (localRecord.date !== today) return;
 
         // 重複チェック: 同じユーザー、同じタイプ、時刻が近い(±2分)データがGASにあれば、それは反映済みとみなす
@@ -964,7 +929,11 @@ async function loadTodayHistory(localOnly = false) {
     let filteredRecords = records;
     if (currentUser) {
         console.log('👤 ユーザーフィルタ:', currentUser.id);
-        filteredRecords = records.filter(r => r.user?.id === currentUser.id);
+        const currentUserId = String(currentUser.id).replace(/^0+/, '');
+        filteredRecords = records.filter(r => {
+            const recordUserId = String(r.user?.id || '').replace(/^0+/, '');
+            return recordUserId === currentUserId;
+        });
     }
 
     console.log('📜 表示件数:', filteredRecords.length);
