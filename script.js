@@ -889,7 +889,7 @@ async function getRecords(localOnly = false) {
 
         // 重複チェック: 同じユーザー、同じタイプ、時刻が近い(±2分)データがGASにあれば、それは反映済みとみなす
         const isSynced = gasRecords.some(gasRecord => {
-            if (gasRecord.user.id !== localRecord.user.id) return false;
+            if (String(gasRecord.user.id) !== String(localRecord.user.id)) return false;
             // タイプ比較（localRecord.type は 'punch-in' 等。gasRecord.type も変換済みなので 'punch-in' 等）
             if (gasRecord.type !== localRecord.type) return false;
 
