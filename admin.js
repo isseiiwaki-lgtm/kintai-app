@@ -562,13 +562,78 @@ function updateLogList(records) {
     );
 
     list.innerHTML = sorted.map(record => `
-        <div class="log-item">
+        <div class="log-item" data-ts="${record.timestamp}">
             <span class="log-time">${record.time}</span>
             <span class="log-name">${record.user?.name || '不明'}</span>
             <span class="log-type">${record.typeLabel}${record.reason ? ` (${record.reason})` : ''}</span>
             <span class="log-tag">${TYPE_ICONS[record.type] || '📌'}</span>
+            <button class="log-delete-btn" title="削除" onclick="confirmDeleteRecord('${encodeURIComponent(record.timestamp)}', '${record.user?.name || '不明'}', '${record.typeLabel}', '${record.time}')">🗑️</button>
         </div>
     `).join('');
+}
+
+/**
+ * 打刻削除の確認ダイアログ
+ */
+function confirmDeleteRecord(encodedTimestamp, userName, typeLabel, time) {
+    const timestamp = decodeURIComponent(encodedTimestamp);
+    const confirmed = window.confirm(`以下の打刻を削除しますか？\n\n${userName} ／ ${typeLabel} ／ ${time}\n\n※この操作は元に戻せません`);
+    if (confirmed) {
+        deleteRecord(timestamp, userName, typeLabel);
+    }
+}
+
+/**
+ * 打刻をGASから削除する
+ */
+async function deleteRecord(timestamp, userName, typeLabel) {
+    if (!GAS_URL) {
+        alert('GAS URLが設定されていません');
+        return;
+    }
+
+    try {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = GAS_URL;
+        form.style.display = 'none';
+        form.target = 'delete-result-frame';
+
+        const params = {
+            action: 'deleteRecord',
+            timestamp: timestamp,
+            employeeName: userName,
+            punchType: typeLabel
+        };
+
+        for (const key in params) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = key;
+            input.value = params[key];
+            form.appendChild(input);
+        }
+
+        // 非表示iframeで結果を受け取る
+        let frame = document.getElementById('delete-result-frame');
+        if (!frame) {
+            frame = document.createElement('iframe');
+            frame.name = 'delete-result-frame';
+            frame.style.display = 'none';
+            document.body.appendChild(frame);
+        }
+
+        document.body.appendChild(form);
+        form.submit();
+        setTimeout(() => document.body.removeChild(form), 1000);
+
+        // 少し待ってから画面を再読み込み
+        alert('削除しました！画面を更新します。');
+        await loadData();
+    } catch (error) {
+        console.error('削除エラー:', error);
+        alert('削除中にエラーが発生しました。');
+    }
 }
 
 /**

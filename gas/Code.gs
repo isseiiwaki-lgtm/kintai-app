@@ -96,6 +96,8 @@ function doPost(e) {
         return jsonResponse(editRecord(data));
       case 'updateRequestStatus':
         return jsonResponse(updateRequestStatus(data));
+      case 'deleteRecord':
+        return jsonResponse(deletePunchRecord(data));
       default:
         return jsonResponse({ error: '不明なアクション: ' + action });
     }
@@ -548,6 +550,77 @@ function editRecord(data) {
     success: true, 
     message: '修正を記録しました' 
   };
+}
+
+/**
+ * 打刻を削除（管理者画面から呼び出し）
+ */
+function deletePunchRecord(data) {
+  const lock = LockService.getScriptLock();
+  try {
+    if (!lock.tryLock(5000)) {
+      return { error: 'サーバーが混み合っています。しばらく待って再試行してください。' };
+    }
+
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEET_NAMES.PUNCH_LOG);
+
+    if (!sheet) {
+      return { error: '打刻ログシートが見つかりません' };
+    }
+
+    const targetTimestamp = data.timestamp; // "2026-03-09T01:03:00+09:00" などのISO形式
+    const targetName = data.employeeName;
+    const targetType = data.punchType;
+
+    const values = sheet.getDataRange().getValues();
+    let deletedRow = -1;
+
+    // タイムスタンプが一致する行を検索
+    for (let i = 1; i < values.length; i++) {
+      const rowTs = Utilities.formatDate(new Date(values[i][0]), 'Asia/Tokyo', "yyyy-MM-dd'T'HH:mm:ssXXX");
+      const rowName = String(values[i][2]);
+      const rowType = String(values[i][3]);
+
+      if (rowTs === targetTimestamp && rowName === targetName && rowType === targetType) {
+        deletedRow = i + 1; // シートは1-indexed
+        break;
+      }
+    }
+
+    // 見つからない場合は社員名+種別+時刻(分単位)でフォールバック検索
+    if (deletedRow === -1 && targetTimestamp) {
+      const targetDate = new Date(targetTimestamp);
+      for (let i = 1; i < values.length; i++) {
+        const rowDate = new Date(values[i][0]);
+        const timeDiff = Math.abs(rowDate.getTime() - targetDate.getTime());
+        const rowName = String(values[i][2]);
+        const rowType = String(values[i][3]);
+        if (timeDiff < 120000 && rowName === targetName && rowType === targetType) {
+          deletedRow = i + 1;
+          break;
+        }
+      }
+    }
+
+    if (deletedRow === -1) {
+      return { error: '対象の打刻が見つかりませんでした（すでに削除済みの可能性があります）' };
+    }
+
+    sheet.deleteRow(deletedRow);
+    console.log('打刻削除: 行' + deletedRow + ' - ' + targetName + ' / ' + targetType + ' / ' + targetTimestamp);
+
+    return {
+      success: true,
+      message: '打刻を削除しました'
+    };
+
+  } catch (error) {
+    console.error('deletePunchRecord Error: ' + error.toString());
+    return { error: error.toString() };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ========================================
