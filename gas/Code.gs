@@ -333,11 +333,16 @@ function getTodayRecords() {
   const records = [];
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
+    // row[0]はスプレッドシート上ではJSTの文字列(例: "2026/03/08 10:03:00")になっていることが多い
     const recordDate = Utilities.formatDate(new Date(row[0]), 'Asia/Tokyo', 'yyyy-MM-dd');
     
     if (recordDate === today) {
+      // JSTの文字列を正しくISOフォーマット(YYYY-MM-DDTHH:mm:ss+09:00など)として渡せるようにJST時刻文字列を生成
+      const d = new Date(row[0]); // ただしGAS環境のタイムゾーン影響を受ける
+      const jstString = Utilities.formatDate(d, 'Asia/Tokyo', "yyyy-MM-dd'T'HH:mm:ssXXX");
+
       records.push({
-        timestamp: new Date(row[0]).toISOString(), // 文字列JSTでもDateでもISO化
+        timestamp: jstString, // 正しいJSTオフセット付きのISO文字列
         employeeId: row[1],
         employeeName: row[2],
         punchType: row[3],
