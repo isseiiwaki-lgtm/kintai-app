@@ -584,56 +584,82 @@ function confirmDeleteRecord(encodedTimestamp, userName, typeLabel, time) {
 }
 
 /**
- * 打刻をGASから削除する
+ * 打刻をGASから削除する（ローカルも即座に削除）
  */
 async function deleteRecord(timestamp, userName, typeLabel) {
-    if (!GAS_URL) {
-        alert('GAS URLが設定されていません');
-        return;
-    }
-
+    // ========================================
+    // 1. ローカルストレージから即削除
+    // ========================================
     try {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = GAS_URL;
-        form.style.display = 'none';
-        form.target = 'delete-result-frame';
+        const localRaw = localStorage.getItem(STORAGE_KEY);
+        if (localRaw) {
+            const localRecords = JSON.parse(localRaw);
+            const targetTs = new Date(timestamp).getTime();
 
-        const params = {
-            action: 'deleteRecord',
-            timestamp: timestamp,
-            employeeName: userName,
-            punchType: typeLabel
-        };
+            const filtered = localRecords.filter(r => {
+                const rName = r.user?.name || '';
+                const rType = r.typeLabel || '';
+                const rTs = new Date(r.timestamp).getTime();
+                const timeDiff = Math.abs(rTs - targetTs);
+                // 同じ人・同じ種別・2分以内の誤差 → 削除対象
+                const isMatch = rName === userName && rType === typeLabel && timeDiff < 120000;
+                return !isMatch;
+            });
 
-        for (const key in params) {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = key;
-            input.value = params[key];
-            form.appendChild(input);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(filtered));
+            console.log('🗑️ ローカルStorage削除完了:', userName, typeLabel);
         }
-
-        // 非表示iframeで結果を受け取る
-        let frame = document.getElementById('delete-result-frame');
-        if (!frame) {
-            frame = document.createElement('iframe');
-            frame.name = 'delete-result-frame';
-            frame.style.display = 'none';
-            document.body.appendChild(frame);
-        }
-
-        document.body.appendChild(form);
-        form.submit();
-        setTimeout(() => document.body.removeChild(form), 1000);
-
-        // 少し待ってから画面を再読み込み
-        alert('削除しました！画面を更新します。');
-        await loadData();
-    } catch (error) {
-        console.error('削除エラー:', error);
-        alert('削除中にエラーが発生しました。');
+    } catch (e) {
+        console.error('ローカル削除エラー:', e);
     }
+
+    // ========================================
+    // 2. GASにも削除リクエスト（非同期・失敗してもOK）
+    // ========================================
+    if (GAS_URL) {
+        try {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = GAS_URL;
+            form.style.display = 'none';
+            form.target = 'delete-result-frame';
+
+            const params = {
+                action: 'deleteRecord',
+                timestamp: timestamp,
+                employeeName: userName,
+                punchType: typeLabel
+            };
+
+            for (const key in params) {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = key;
+                input.value = params[key];
+                form.appendChild(input);
+            }
+
+            let frame = document.getElementById('delete-result-frame');
+            if (!frame) {
+                frame = document.createElement('iframe');
+                frame.name = 'delete-result-frame';
+                frame.style.display = 'none';
+                document.body.appendChild(frame);
+            }
+
+            document.body.appendChild(form);
+            form.submit();
+            setTimeout(() => document.body.removeChild(form), 2000);
+            console.log('☁️ GAS削除リクエスト送信:', userName, typeLabel);
+        } catch (e) {
+            console.error('GAS削除エラー（ローカルは削除済み）:', e);
+        }
+    }
+
+    // ========================================
+    // 3. 画面を再描画
+    // ========================================
+    await loadData();
 }
 
 /**
