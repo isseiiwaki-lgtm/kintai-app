@@ -7,6 +7,33 @@
 // 定数・設定
 // ========================================
 const STORAGE_KEY = 'kintai_records';
+const DELETED_KEY = 'kintai_deleted_ids'; // 削除済みレコードのキー(タイムスタンプ+名前+種別)を保管
+
+/**
+ * 削除済みリストに追加
+ */
+function addToDeletedList(timestamp, userName, typeLabel) {
+    const raw = localStorage.getItem(DELETED_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    list.push({ timestamp, userName, typeLabel, deletedAt: Date.now() });
+    localStorage.setItem(DELETED_KEY, JSON.stringify(list));
+}
+
+/**
+ * レコードが削除済みかチェック
+ */
+function isDeleted(record) {
+    const raw = localStorage.getItem(DELETED_KEY);
+    if (!raw) return false;
+    const list = JSON.parse(raw);
+    const rTs = new Date(record.timestamp).getTime();
+    const rName = record.user?.name || record.employeeName || '';
+    const rType = record.typeLabel || record.punchType || '';
+    return list.some(d => {
+        const dTs = new Date(d.timestamp).getTime();
+        return Math.abs(dTs - rTs) < 120000 && d.userName === rName && d.typeLabel === rType;
+    });
+}
 
 // Google Apps Script URL（セットアップ後に設定）
 // 設定方法: gas/README.mdを参照
@@ -267,26 +294,28 @@ async function getTodayRecords() {
                 console.log('📅 今日のデータ件数:', data.records.length);
                 console.log('📅 今日の日付:', today);
 
-                // GASのデータ形式をローカル形式に変換
-                return data.records.map(r => ({
-                    id: r.timestamp,
-                    timestamp: r.timestamp,
-                    date: new Date(r.timestamp).toISOString().split('T')[0],
-                    time: new Date(r.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
-                    type: convertPunchType(r.punchType),
-                    typeLabel: r.punchType,
-                    reason: r.reason || null,
-                    user: {
-                        id: r.employeeId,
-                        name: r.employeeName,
-                        email: r.email
-                    },
-                    location: r.latitude ? {
-                        latitude: r.latitude,
-                        longitude: r.longitude
-                    } : null,
-                    locationStatus: r.locationStatus
-                }));
+                // GASのデータ形式をローカル形式に変換し、削除済みをフィルタリング
+                return data.records
+                    .filter(r => !isDeleted({ timestamp: r.timestamp, user: { name: r.employeeName }, typeLabel: r.punchType }))
+                    .map(r => ({
+                        id: r.timestamp,
+                        timestamp: r.timestamp,
+                        date: new Date(r.timestamp).toISOString().split('T')[0],
+                        time: new Date(r.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+                        type: convertPunchType(r.punchType),
+                        typeLabel: r.punchType,
+                        reason: r.reason || null,
+                        user: {
+                            id: r.employeeId,
+                            name: r.employeeName,
+                            email: r.email
+                        },
+                        location: r.latitude ? {
+                            latitude: r.latitude,
+                            longitude: r.longitude
+                        } : null,
+                        locationStatus: r.locationStatus
+                    }));
             }
         } catch (error) {
             console.error('⚠️ GAS取得エラー:', error);
@@ -588,6 +617,12 @@ function confirmDeleteRecord(encodedTimestamp, userName, typeLabel, time) {
  */
 async function deleteRecord(timestamp, userName, typeLabel) {
     // ========================================
+    // 0. 削除済みリストに登録（最重要：GAS再取得時もフィルタされる）
+    // ========================================
+    addToDeletedList(timestamp, userName, typeLabel);
+    console.log('🚫 削除済みリストに登録:', userName, typeLabel, timestamp);
+
+    // ========================================
     // 1. ローカルストレージから即削除
     // ========================================
     try {
@@ -612,6 +647,7 @@ async function deleteRecord(timestamp, userName, typeLabel) {
     } catch (e) {
         console.error('ローカル削除エラー:', e);
     }
+
 
     // ========================================
     // 2. GASにも削除リクエスト（非同期・失敗してもOK）

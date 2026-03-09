@@ -10,6 +10,23 @@ console.log('🚀🚀🚀 スクリプトバージョン: v12 高速化版 🚀�
 const STORAGE_KEY = 'kintai_records';
 const EMPLOYEES_KEY = 'kintai_employees';
 const USER_KEY = 'kintai_user';
+const DELETED_KEY = 'kintai_deleted_ids'; // 削除済みリスト
+
+/**
+ * レコードが削除済みかチェック
+ */
+function isDeletedRecord(timestamp, userName, typeLabel) {
+    try {
+        const raw = localStorage.getItem(DELETED_KEY);
+        if (!raw) return false;
+        const list = JSON.parse(raw);
+        const rTs = new Date(timestamp).getTime();
+        return list.some(d => {
+            const dTs = new Date(d.timestamp).getTime();
+            return Math.abs(dTs - rTs) < 120000 && d.userName === userName && d.typeLabel === typeLabel;
+        });
+    } catch { return false; }
+}
 
 // Google Apps Script URL（セットアップ後に設定）
 // 設定方法: gas/README.mdを参照
@@ -839,35 +856,37 @@ async function getRecords(localOnly = false) {
         const data = await response.json();
         if (data.records && data.records.length > 0) {
             console.log('☁️ Googleスプレッドシートから取得:', data.records.length, '件');
-            // GASのデータ形式をローカル形式に変換
-            gasRecords = data.records.map(r => {
-                // GAS側は「2026/03/08 07:42:00」などのJST文字列が来る場合があるため、パースを工夫
-                const tsDate = new Date(r.timestamp);
-                const jstD = new Date(tsDate.getTime() + 9 * 60 * 60 * 1000);
-                const dateStr = !isNaN(tsDate.getTime()) ? jstD.toISOString().split('T')[0] : '';
+            // GASのデータ形式をローカル形式に変換（削除済みをフィルタリング）
+            gasRecords = data.records
+                .filter(r => !isDeletedRecord(r.timestamp, r.employeeName, r.punchType))
+                .map(r => {
+                    // GAS側は「2026/03/08 07:42:00」などのJST文字列が来る場合があるため、パースを工夫
+                    const tsDate = new Date(r.timestamp);
+                    const jstD = new Date(tsDate.getTime() + 9 * 60 * 60 * 1000);
+                    const dateStr = !isNaN(tsDate.getTime()) ? jstD.toISOString().split('T')[0] : '';
 
-                return {
-                    id: r.timestamp, // GASデータはタイムスタンプをIDとする
-                    timestamp: r.timestamp,
-                    date: dateStr, // JST基準の日付文字列 (e.g. "2026-03-08")
-                    time: !isNaN(tsDate.getTime()) ? tsDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '',
-                    type: convertPunchType(r.punchType),
-                    typeLabel: r.punchType,
-                    reason: r.reason || null,
-                    note: null,
-                    photo: null,
-                    user: {
-                        id: r.employeeId,
-                        name: r.employeeName,
-                        email: r.email
-                    },
-                    location: r.latitude ? {
-                        latitude: r.latitude,
-                        longitude: r.longitude
-                    } : null,
-                    locationStatus: r.locationStatus
-                };
-            });
+                    return {
+                        id: r.timestamp, // GASデータはタイムスタンプをIDとする
+                        timestamp: r.timestamp,
+                        date: dateStr, // JST基準の日付文字列 (e.g. "2026-03-08")
+                        time: !isNaN(tsDate.getTime()) ? tsDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '',
+                        type: convertPunchType(r.punchType),
+                        typeLabel: r.punchType,
+                        reason: r.reason || null,
+                        note: null,
+                        photo: null,
+                        user: {
+                            id: r.employeeId,
+                            name: r.employeeName,
+                            email: r.email
+                        },
+                        location: r.latitude ? {
+                            latitude: r.latitude,
+                            longitude: r.longitude
+                        } : null,
+                        locationStatus: r.locationStatus
+                    };
+                });
         }
     } catch (error) {
         console.error('⚠️ GAS取得エラー:', error);
