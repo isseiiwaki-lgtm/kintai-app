@@ -94,9 +94,27 @@
             </div>
         </section>
 
-        <!-- TKC出力 -->
+        <!-- データ出力 -->
         <section class="export-section">
             <h2 class="section-title">📤 データ出力</h2>
+
+            <!-- 期間選択 -->
+            <div class="export-period-bar">
+                <div class="export-period-group">
+                    <label class="export-period-label">対象年月</label>
+                    <input type="month" id="export-month" class="export-month-input">
+                </div>
+                <div class="export-period-group">
+                    <label class="export-period-label">期間指定（オプション）</label>
+                    <div class="export-date-range">
+                        <input type="date" id="export-start-date" class="export-date-input" placeholder="開始日">
+                        <span class="export-date-sep">〜</span>
+                        <input type="date" id="export-end-date" class="export-date-input" placeholder="終了日">
+                    </div>
+                    <p class="export-period-note">※ 日付範囲を指定した場合、年月より優先されます</p>
+                </div>
+            </div>
+
             <div class="export-buttons">
                 <button class="export-btn primary" id="export-excel">
                     <span class="export-icon">📊</span>
@@ -120,7 +138,8 @@
     </div>
 
     <!-- 管理画面用スクリプト -->
-    <script src="admin.js?v=11"></script>
+    <script src="admin.js?v=12"></script>
+
 </body>
 
 </html>

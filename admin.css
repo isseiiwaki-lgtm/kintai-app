@@ -557,3 +557,70 @@
     background: #FEF2F2;
     transform: scale(1.1);
 }
+
+/* ========================================
+   期間選択バー
+   ======================================== */
+.export-period-bar {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.export-period-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.export-period-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #4B5563;
+}
+
+.export-month-input,
+.export-date-input {
+    padding: 10px 14px;
+    border: 2px solid #E5E7EB;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    color: #1F2937;
+    background: white;
+    transition: border-color 0.2s;
+}
+
+.export-month-input:focus,
+.export-date-input:focus {
+    outline: none;
+    border-color: #4F46E5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.export-date-range {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.export-date-range .export-date-input {
+    flex: 1;
+}
+
+.export-date-sep {
+    color: #6B7280;
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+.export-period-note {
+    font-size: 0.75rem;
+    color: #9CA3AF;
+    margin: 0;
+}

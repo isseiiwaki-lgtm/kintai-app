@@ -721,69 +721,209 @@ function initFilters() {
  * エクスポート機能の初期化
  */
 function initExport() {
+    // 年月の初期値を当月にセット
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    document.getElementById('export-month').value = `${yyyy}-${mm}`;
+
     document.getElementById('export-excel').addEventListener('click', exportExcel);
     document.getElementById('export-csv').addEventListener('click', exportTKC);
     document.getElementById('export-log').addEventListener('click', exportLog);
 }
 
 /**
- * TKC用CSV出力
+ * 期間指定に基づいて打刻記録を取得する汎用関数
+ * 日付範囲が指定されている場合は優先。なければ年月で取得。
+ */
+async function getRecordsForExport() {
+    const startDateVal = document.getElementById('export-start-date').value; // "YYYY-MM-DD"
+    const endDateVal   = document.getElementById('export-end-date').value;   // "YYYY-MM-DD"
+    const monthVal     = document.getElementById('export-month').value;       // "YYYY-MM"
+
+    // 日付範囲指定モード
+    if (startDateVal && endDateVal) {
+        const startDate = startDateVal; // "YYYY-MM-DD"
+        const endDate   = endDateVal;
+
+        // 対象の月一覧を収集（例: 2026-02 〜 2026-03 なら ["2026-02","2026-03"]）
+        const months = [];
+        const cur = new Date(startDate + 'T00:00:00');
+        const end = new Date(endDate   + 'T00:00:00');
+        while (cur <= end) {
+            const m = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`;
+            if (!months.includes(m)) months.push(m);
+            cur.setMonth(cur.getMonth() + 1);
+        }
+
+        // 各月のデータを取得してマージ
+        let allRecords = [];
+        for (const month of months) {
+            const records = await fetchMonthlyRecords(month);
+            allRecords = allRecords.concat(records);
+        }
+
+        // 日付範囲でフィルタ
+        return allRecords.filter(r => {
+            const d = getRecordDateStr(r);
+            return d >= startDate && d <= endDate;
+        });
+    }
+
+    // 年月指定モード（デフォルト：当月）
+    const month = monthVal || (() => {
+        const n = new Date();
+        return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
+    })();
+    return await fetchMonthlyRecords(month);
+}
+
+/**
+ * GASから指定月のレコードを取得してローカル形式に変換
+ */
+async function fetchMonthlyRecords(month) {
+    if (GAS_URL) {
+        try {
+            const response = await fetch(`${GAS_URL}?action=getMonthlyRecords&month=${month}`);
+            const data = await response.json();
+            if (data.records && data.records.length > 0) {
+                return data.records
+                    .filter(r => !isDeleted({ timestamp: r.timestamp, user: { name: r.employeeName }, typeLabel: r.punchType }))
+                    .map(r => ({
+                        id: r.timestamp,
+                        timestamp: r.timestamp,
+                        date: getRecordDateStr({ timestamp: r.timestamp }),
+                        time: new Date(r.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }),
+                        type: convertPunchType(r.punchType),
+                        typeLabel: r.punchType,
+                        reason: r.reason || null,
+                        user: {
+                            id: r.employeeId,
+                            name: r.employeeName,
+                            email: r.email
+                        }
+                    }));
+            }
+        } catch (error) {
+            console.error('月次データ取得エラー:', error);
+        }
+    }
+    // フォールバック: LocalStorageから取得
+    const localData = localStorage.getItem(STORAGE_KEY);
+    if (!localData) return [];
+    const records = JSON.parse(localData);
+    return records.filter(r => {
+        const d = getRecordDateStr(r);
+        return d && d.startsWith(month);
+    });
+}
+
+/**
+ * レコードからJST日付文字列(YYYY-MM-DD)を取得
+ */
+function getRecordDateStr(record) {
+    if (record.date) return record.date;
+    if (!record.timestamp) return '';
+    const d = new Date(record.timestamp);
+    const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000);
+    return jst.toISOString().split('T')[0];
+}
+
+/**
+ * TKC用CSV出力（期間指定対応）
  */
 async function exportTKC() {
-    const todayRecords = await getTodayRecords();
-    const attendanceData = calculateAttendance(todayRecords);
-    const today = new Date().toISOString().split('T')[0];
+    const records = await getRecordsForExport();
+
+    if (records.length === 0) {
+        alert('指定期間のデータがありません');
+        return;
+    }
+
+    // 日付×社員番号でグルーピング
+    const grouped = {};
+    records.forEach(record => {
+        const dateStr = getRecordDateStr(record);
+        const empId   = String(record.user?.id || '');
+        if (!empId || !dateStr) return;
+        const key = `${dateStr}_${empId}`;
+        if (!grouped[key]) {
+            grouped[key] = {
+                date: dateStr,
+                employeeId: empId,
+                punchIn: null,
+                punchOut: null
+            };
+        }
+        const type = record.type || convertPunchType(record.typeLabel);
+        const timeStr = record.time || new Date(record.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+        if (type === 'punch-in')  { if (!grouped[key].punchIn)  grouped[key].punchIn  = timeStr; }
+        if (type === 'punch-out') { grouped[key].punchOut = timeStr; }
+    });
 
     // CSVヘッダー
     let csv = '社員番号,日付,出勤時刻,退勤時刻,勤務時間,残業時間\n';
 
-    Object.values(attendanceData).forEach(data => {
-        if (data.punchIn) {
-            let workMinutes = 0;
-            let overtimeMinutes = 0;
-
-            if (data.punchIn && data.punchOut) {
-                const inTime = parseTime(data.punchIn);
-                const outTime = parseTime(data.punchOut);
-                workMinutes = outTime - inTime;
-
-                // 8時間（480分）超えたら残業
-                if (workMinutes > 480) {
-                    overtimeMinutes = workMinutes - 480;
-                    workMinutes = 480;
-                }
-            }
-
-            const workHours = Math.floor(workMinutes / 60) + ':' + String(workMinutes % 60).padStart(2, '0');
-            const overtimeHours = Math.floor(overtimeMinutes / 60) + ':' + String(overtimeMinutes % 60).padStart(2, '0');
-
-            csv += `${data.employee.id},${today},${data.punchIn || ''},${data.punchOut || ''},${workHours},${overtimeHours}\n`;
-        }
+    // 日付→社員番号の順にソート
+    const sorted = Object.values(grouped).sort((a, b) => {
+        if (a.date !== b.date) return a.date.localeCompare(b.date);
+        return a.employeeId.localeCompare(b.employeeId);
     });
 
-    downloadCSV(csv, `kintai_${today}.csv`);
+    sorted.forEach(row => {
+        if (!row.punchIn) return; // 出勤打刻がない日はスキップ
+        let workMinutes = 0;
+        let overtimeMinutes = 0;
+        if (row.punchIn && row.punchOut) {
+            const inTime  = parseTime(row.punchIn);
+            const outTime = parseTime(row.punchOut);
+            workMinutes = outTime - inTime;
+            if (workMinutes > 480) {
+                overtimeMinutes = workMinutes - 480;
+                workMinutes = 480;
+            }
+            if (workMinutes < 0) workMinutes = 0;
+        }
+        const workHours     = Math.floor(workMinutes / 60) + ':' + String(workMinutes % 60).padStart(2, '0');
+        const overtimeHours = Math.floor(overtimeMinutes / 60) + ':' + String(overtimeMinutes % 60).padStart(2, '0');
+        csv += `${row.employeeId},${row.date},${row.punchIn || ''},${row.punchOut || ''},${workHours},${overtimeHours}\n`;
+    });
+
+    // ファイル名（期間情報を付与）
+    const startVal = document.getElementById('export-start-date').value;
+    const endVal   = document.getElementById('export-end-date').value;
+    const monthVal = document.getElementById('export-month').value;
+    const suffix   = (startVal && endVal) ? `${startVal}_${endVal}` : (monthVal || 'export');
+    downloadCSV(csv, `kintai_TKC_${suffix}.csv`);
+    console.log(`✅ TKC CSV出力完了: ${sorted.length}日分のデータ（${records.length}件）`);
 }
 
 /**
- * 打刻ログ出力
+ * 打刻ログ出力（期間指定対応）
  */
 async function exportLog() {
-    const todayRecords = await getTodayRecords();
-    const today = new Date().toISOString().split('T')[0];
+    const records = await getRecordsForExport();
+
+    if (records.length === 0) {
+        alert('指定期間のデータがありません');
+        return;
+    }
+
+    // 時間順にソート
+    records.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
     // CSVヘッダー
-    let csv = '日時,社員番号,氏名,種別,理由,備考,緯度,経度,位置取得\n';
-
-    todayRecords.forEach(record => {
-        const lat = record.location?.latitude || '';
-        const lng = record.location?.longitude || '';
-        const locStatus = record.locationStatus || '';
-        const note = record.note || '';
-
-        csv += `${record.timestamp},${record.user?.id || ''},${record.user?.name || ''},${record.typeLabel},${record.reason || ''},${note},${lat},${lng},${locStatus}\n`;
+    let csv = '日時,日付,社員番号,氏名,種別,理由\n';
+    records.forEach(record => {
+        const dateStr = getRecordDateStr(record);
+        csv += `${record.timestamp},${dateStr},${record.user?.id || ''},${record.user?.name || ''},${record.typeLabel || ''},${record.reason || ''}\n`;
     });
 
-    downloadCSV(csv, `kintai_log_${today}.csv`);
+    const startVal = document.getElementById('export-start-date').value;
+    const endVal   = document.getElementById('export-end-date').value;
+    const monthVal = document.getElementById('export-month').value;
+    const suffix   = (startVal && endVal) ? `${startVal}_${endVal}` : (monthVal || 'export');
+    downloadCSV(csv, `kintai_log_${suffix}.csv`);
 }
 
 /**
@@ -878,26 +1018,27 @@ function getScheduledWorkMinutes(employeeId) {
 }
 
 /**
- * 勤怠エクセル出力
+ * 勤怠エクセル出力（期間指定対応）
  */
 async function exportExcel() {
     try {
-        // 今日のレコードを取得
-        const todayRecords = await getTodayRecords();
-        const today = new Date();
-        const todayStr = today.toISOString().split('T')[0];
+        // 期間指定でレコードを取得
+        const records = await getRecordsForExport();
+
+        if (records.length === 0) {
+            alert('指定期間のデータがありません');
+            return;
+        }
 
         // 日付・社員番号でグループ化
         const grouped = {};
 
-        todayRecords.forEach(record => {
-            // タイムスタンプをJSTに変換して日付を取得
-            const jstDate = toJST(record.timestamp);
-            const dateKey = jstDate.toISOString().split('T')[0];
+        records.forEach(record => {
+            const dateKey = getRecordDateStr(record);
             const empId = String(record.user?.id || '');
             const empName = record.user?.name || '';
 
-            if (!empId) return;
+            if (!empId || !dateKey) return;
 
             const key = `${dateKey}_${empId}`;
             if (!grouped[key]) {
@@ -911,6 +1052,7 @@ async function exportExcel() {
             }
 
             // 時刻を取得（JST）
+            const jstDate = toJST(record.timestamp);
             const timeStr = jstDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false });
 
             if (record.type === 'punch-in' || record.typeLabel === '出勤') {
@@ -949,14 +1091,14 @@ async function exportExcel() {
             }
 
             // 計算用時刻（30分丸め）
-            const calcPunchIn = roundUpTo30(rawPunchIn);
+            const calcPunchIn  = roundUpTo30(rawPunchIn);
             const calcPunchOut = roundDownTo30(rawPunchOut);
 
             // 実働時間の計算
-            let workTime = '';
-            let overtime = '';
+            let workTime  = '';
+            let overtime  = '';
 
-            const calcInMinutes = timeToMinutes(calcPunchIn);
+            const calcInMinutes  = timeToMinutes(calcPunchIn);
             const calcOutMinutes = timeToMinutes(calcPunchOut);
 
             if (calcInMinutes !== null && calcOutMinutes !== null && calcOutMinutes > calcInMinutes) {
@@ -966,8 +1108,6 @@ async function exportExcel() {
                 if (workMinutes > 360) {
                     workMinutes -= 60;
                 }
-
-                // マイナス防止
                 if (workMinutes < 0) workMinutes = 0;
 
                 workTime = minutesToTime(workMinutes);
@@ -1007,7 +1147,7 @@ async function exportExcel() {
 
         // SheetJSでエクセルファイルを作成
         const worksheet = XLSX.utils.json_to_sheet(excelData);
-        const workbook = XLSX.utils.book_new();
+        const workbook  = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(workbook, worksheet, '勤怠データ');
 
         // カラム幅を設定
@@ -1023,11 +1163,15 @@ async function exportExcel() {
             { wch: 10 },  // 残業時間
         ];
 
-        // ダウンロード
-        const filename = `勤怠データ_${todayStr}.xlsx`;
+        // ファイル名（期間情報を付与）
+        const startVal = document.getElementById('export-start-date').value;
+        const endVal   = document.getElementById('export-end-date').value;
+        const monthVal = document.getElementById('export-month').value;
+        const suffix   = (startVal && endVal) ? `${startVal}_${endVal}` : (monthVal || 'export');
+        const filename = `勤怠データ_${suffix}.xlsx`;
         XLSX.writeFile(workbook, filename);
 
-        console.log('✅ エクセル出力完了:', filename);
+        console.log(`✅ エクセル出力完了: ${excelData.length}件 → ${filename}`);
 
     } catch (error) {
         console.error('❌ エクセル出力エラー:', error);
