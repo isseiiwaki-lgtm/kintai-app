@@ -1122,6 +1122,10 @@ async function exportExcel() {
             const calcPunchIn  = roundUpTo30(rawPunchIn);
             const calcPunchOut = roundDownTo30(rawPunchOut);
 
+            // 外出・戻りの時刻文字列を生成
+            const breakStartTimes = bStarts.map(r => r.time).join(', ');
+            const breakEndTimes   = bEnds.map(r => r.time).join(', ');
+
             // 実働時間の計算
             let workTime  = '';
             let breakTime = minutesToTime(breakMinutes);
@@ -1159,6 +1163,8 @@ async function exportExcel() {
                 '実勢退勤': rawPunchOut,
                 '計算出勤': calcPunchIn,
                 '計算退勤': calcPunchOut,
+                '外出':     breakStartTimes, // 追加
+                '戻り':     breakEndTimes,   // 追加
                 '中抜時間': breakMinutes > 0 ? breakTime : '',
                 '実働時間': workTime,
                 '残業時間': overtime
@@ -1190,6 +1196,8 @@ async function exportExcel() {
             { wch: 10 },  // 実勢退勤
             { wch: 10 },  // 計算出勤
             { wch: 10 },  // 計算退勤
+            { wch: 10 },  // 外出
+            { wch: 10 },  // 戻り
             { wch: 10 },  // 中抜時間
             { wch: 10 },  // 実働時間
             { wch: 10 },  // 残業時間
