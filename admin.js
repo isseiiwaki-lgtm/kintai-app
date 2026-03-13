@@ -1018,11 +1018,26 @@ function getScheduledWorkMinutes(employeeId) {
 }
 
 /**
+ * タイムスタンプからJST時刻文字列(HH:MM)を取得（正しい変換）
+ */
+function getJSTTimeStr(record) {
+    // fetchMonthlyRecordsで設定したtimeフィールドを優先使用（既にJST正しい値）
+    if (record.time) return record.time;
+    // フォールバック: timestampからJSTで変換（timeZone明示）
+    return new Date(record.timestamp).toLocaleTimeString('ja-JP', {
+        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo'
+    });
+}
+
+/**
  * 勤怠エクセル出力（期間指定対応）
+ * 修正済み：
+ *   - 時刻のJST二重変換バグを解消（record.timeを直接使用）
+ *   - 中抜け（外出/戻り）時間を実働時間から差し引く
+ *   - 実働時間・残業時間の計算を修正
  */
 async function exportExcel() {
     try {
-        // 期間指定でレコードを取得
         const records = await getRecordsForExport();
 
         if (records.length === 0) {
@@ -1035,9 +1050,8 @@ async function exportExcel() {
 
         records.forEach(record => {
             const dateKey = getRecordDateStr(record);
-            const empId = String(record.user?.id || '');
+            const empId   = String(record.user?.id || '');
             const empName = record.user?.name || '';
-
             if (!empId || !dateKey) return;
 
             const key = `${dateKey}_${empId}`;
@@ -1046,25 +1060,27 @@ async function exportExcel() {
                     date: dateKey,
                     employeeId: empId,
                     employeeName: empName,
-                    punchInRecords: [],
-                    punchOutRecords: []
+                    punchInRecords:   [],   // 出勤打刻
+                    punchOutRecords:  [],   // 退勤打刻
+                    breakStartRecords: [],  // 中抜け開始（外出）
+                    breakEndRecords:   []   // 中抜け終了（戻り）
                 };
             }
 
-            // 時刻を取得（JST）
-            const jstDate = toJST(record.timestamp);
-            const timeStr = jstDate.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false });
+            // 時刻取得（record.timeを直接使用 → JST正しい値）
+            const timeStr = getJSTTimeStr(record);
+            const mins    = timeToMinutes(timeStr);
+            if (mins === null) return;
 
-            if (record.type === 'punch-in' || record.typeLabel === '出勤') {
-                grouped[key].punchInRecords.push({
-                    time: timeStr,
-                    minutes: timeToMinutes(timeStr)
-                });
-            } else if (record.type === 'punch-out' || record.typeLabel === '退勤') {
-                grouped[key].punchOutRecords.push({
-                    time: timeStr,
-                    minutes: timeToMinutes(timeStr)
-                });
+            const type = record.type || record.typeLabel;
+            if (type === 'punch-in'   || record.typeLabel === '出勤') {
+                grouped[key].punchInRecords.push({ time: timeStr, minutes: mins });
+            } else if (type === 'punch-out' || record.typeLabel === '退勤') {
+                grouped[key].punchOutRecords.push({ time: timeStr, minutes: mins });
+            } else if (type === 'break-start' || record.typeLabel === '中抜け開始') {
+                grouped[key].breakStartRecords.push({ time: timeStr, minutes: mins });
+            } else if (type === 'break-end' || record.typeLabel === '中抜け終了') {
+                grouped[key].breakEndRecords.push({ time: timeStr, minutes: mins });
             }
         });
 
@@ -1075,19 +1091,31 @@ async function exportExcel() {
             // 出勤: 最も早い時刻
             let rawPunchIn = '';
             if (group.punchInRecords.length > 0) {
-                const earliest = group.punchInRecords.reduce((min, r) =>
+                rawPunchIn = group.punchInRecords.reduce((min, r) =>
                     r.minutes < min.minutes ? r : min
-                );
-                rawPunchIn = earliest.time;
+                ).time;
             }
 
             // 退勤: 最も遅い時刻
             let rawPunchOut = '';
             if (group.punchOutRecords.length > 0) {
-                const latest = group.punchOutRecords.reduce((max, r) =>
+                rawPunchOut = group.punchOutRecords.reduce((max, r) =>
                     r.minutes > max.minutes ? r : max
-                );
-                rawPunchOut = latest.time;
+                ).time;
+            }
+
+            // 中抜け合計時間（分）：開始↔終了のペアを順番に計算
+            let breakMinutes = 0;
+            const bStarts = [...group.breakStartRecords].sort((a, b) => a.minutes - b.minutes);
+            const bEnds   = [...group.breakEndRecords].sort((a, b) => a.minutes - b.minutes);
+            let ei = 0;
+            for (const bs of bStarts) {
+                // このbreakStartの後に来る最初のbreakEndを探す
+                while (ei < bEnds.length && bEnds[ei].minutes <= bs.minutes) ei++;
+                if (ei < bEnds.length) {
+                    breakMinutes += bEnds[ei].minutes - bs.minutes;
+                    ei++;
+                }
             }
 
             // 計算用時刻（30分丸め）
@@ -1096,44 +1124,47 @@ async function exportExcel() {
 
             // 実働時間の計算
             let workTime  = '';
+            let breakTime = minutesToTime(breakMinutes);
             let overtime  = '';
 
-            const calcInMinutes  = timeToMinutes(calcPunchIn);
-            const calcOutMinutes = timeToMinutes(calcPunchOut);
+            const calcInMins  = timeToMinutes(calcPunchIn);
+            const calcOutMins = timeToMinutes(calcPunchOut);
 
-            if (calcInMinutes !== null && calcOutMinutes !== null && calcOutMinutes > calcInMinutes) {
-                let workMinutes = calcOutMinutes - calcInMinutes;
+            if (calcInMins !== null && calcOutMins !== null && calcOutMins > calcInMins) {
+                let workMinutes = calcOutMins - calcInMins;
 
-                // 休憩時間の自動控除（6時間超で1時間）
-                if (workMinutes > 360) {
+                // 中抜け時間を差し引く（外出/戻りが記録されている場合はそちらを優先）
+                if (breakMinutes > 0) {
+                    workMinutes -= breakMinutes;
+                } else if (workMinutes > 360) {
+                    // 外出/戻り記録なし かつ 6時間超の場合は自動控除1時間
                     workMinutes -= 60;
                 }
-                if (workMinutes < 0) workMinutes = 0;
 
+                if (workMinutes < 0) workMinutes = 0;
                 workTime = minutesToTime(workMinutes);
 
                 // 残業計算（個人の所定労働時間を参照）
-                const scheduledMinutes = getScheduledWorkMinutes(group.employeeId);
-                let overtimeMinutes = workMinutes - scheduledMinutes;
-                if (overtimeMinutes < 0) overtimeMinutes = 0;
-
-                overtime = minutesToTime(overtimeMinutes);
+                const scheduledMins = getScheduledWorkMinutes(group.employeeId);
+                let overtimeMins = workMinutes - scheduledMins;
+                if (overtimeMins < 0) overtimeMins = 0;
+                overtime = minutesToTime(overtimeMins);
             }
 
             excelData.push({
-                '日付': group.date,
+                '日付':     group.date,
                 '社員番号': group.employeeId,
-                '氏名': group.employeeName,
+                '氏名':     group.employeeName,
                 '実勢出勤': rawPunchIn,
                 '実勢退勤': rawPunchOut,
                 '計算出勤': calcPunchIn,
                 '計算退勤': calcPunchOut,
+                '中抜時間': breakMinutes > 0 ? breakTime : '',
                 '実働時間': workTime,
                 '残業時間': overtime
             });
         });
 
-        // データがない場合
         if (excelData.length === 0) {
             alert('出力するデータがありません');
             return;
@@ -1159,6 +1190,7 @@ async function exportExcel() {
             { wch: 10 },  // 実勢退勤
             { wch: 10 },  // 計算出勤
             { wch: 10 },  // 計算退勤
+            { wch: 10 },  // 中抜時間
             { wch: 10 },  // 実働時間
             { wch: 10 },  // 残業時間
         ];
@@ -1178,3 +1210,4 @@ async function exportExcel() {
         alert('エクセル出力中にエラーが発生しました: ' + error.message);
     }
 }
+
