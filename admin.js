@@ -775,7 +775,30 @@ async function getRecordsForExport() {
         const n = new Date();
         return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`;
     })();
-    return await fetchMonthlyRecords(month);
+
+    // 指定月とその前月のデータを取得
+    const [yyyy, mm] = month.split('-');
+    const currentMonthDate = new Date(`${yyyy}-${mm}-01T00:00:00`);
+    
+    const prevMonthDate = new Date(currentMonthDate);
+    prevMonthDate.setMonth(prevMonthDate.getMonth() - 1);
+    
+    const prevMonthStr = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    
+    // カレンダーの期間：前月26日〜当月25日
+    const calcStartDate = `${prevMonthStr}-26`;
+    const calcEndDate   = `${month}-25`;
+
+    let allRecords = [];
+    allRecords = allRecords.concat(await fetchMonthlyRecords(prevMonthStr));
+    allRecords = allRecords.concat(await fetchMonthlyRecords(month));
+
+    // 重複を排除し、指定期間でフィルタ
+    const uniqueRecords = Array.from(new Map(allRecords.map(r => [r.id, r])).values());
+    return uniqueRecords.filter(r => {
+        const d = getRecordDateStr(r);
+        return d >= calcStartDate && d <= calcEndDate;
+    });
 }
 
 /**
@@ -975,24 +998,24 @@ function minutesToTime(minutes) {
 }
 
 /**
- * 30分単位で切り上げ (出勤用)
- * 例: 8:01 → 8:30, 8:31 → 9:00, 9:00 → 9:00
+ * 15分単位で切り上げ (出勤用)
+ * 例: 8:01 → 8:15, 8:16 → 8:30, 9:00 → 9:00
  */
-function roundUpTo30(timeStr) {
+function roundUpTo15(timeStr) {
     const minutes = timeToMinutes(timeStr);
     if (minutes === null) return '';
-    const rounded = Math.ceil(minutes / 30) * 30;
+    const rounded = Math.ceil(minutes / 15) * 15;
     return minutesToTime(rounded);
 }
 
 /**
- * 30分単位で切り捨て (退勤用)
- * 例: 17:29 → 17:00, 17:30 → 17:30, 17:59 → 17:30
+ * 15分単位で切り捨て (退勤用)
+ * 例: 17:14 → 17:00, 17:15 → 17:15, 17:29 → 17:15
  */
-function roundDownTo30(timeStr) {
+function roundDownTo15(timeStr) {
     const minutes = timeToMinutes(timeStr);
     if (minutes === null) return '';
-    const rounded = Math.floor(minutes / 30) * 30;
+    const rounded = Math.floor(minutes / 15) * 15;
     return minutesToTime(rounded);
 }
 
@@ -1118,13 +1141,18 @@ async function exportExcel() {
                 }
             }
 
-            // 計算用時刻（30分丸め）
-            const calcPunchIn  = roundUpTo30(rawPunchIn);
-            const calcPunchOut = roundDownTo30(rawPunchOut);
+            // 計算用時刻（15分丸め）
+            const calcPunchIn  = roundUpTo15(rawPunchIn);
+            const calcPunchOut = roundDownTo15(rawPunchOut);
 
             // 外出・戻りの時刻文字列を生成
             const breakStartTimes = bStarts.map(r => r.time).join(', ');
             const breakEndTimes   = bEnds.map(r => r.time).join(', ');
+
+            // 昼休み・休憩時間の処理
+            const lunchBreakStatus = '〇'; // デフォルト「〇」
+            const lunchBreakMinutes = lunchBreakStatus === '〇' ? 60 : 0;
+            const lunchBreakTimeStr = minutesToTime(lunchBreakMinutes) || ''; // 60 -> '1:00'
 
             // 実働時間の計算
             let workTime  = '';
@@ -1137,13 +1165,8 @@ async function exportExcel() {
             if (calcInMins !== null && calcOutMins !== null && calcOutMins > calcInMins) {
                 let workMinutes = calcOutMins - calcInMins;
 
-                // 中抜け時間を差し引く（外出/戻りが記録されている場合はそちらを優先）
-                if (breakMinutes > 0) {
-                    workMinutes -= breakMinutes;
-                } else if (workMinutes > 360) {
-                    // 外出/戻り記録なし かつ 6時間超の場合は自動控除1時間
-                    workMinutes -= 60;
-                }
+                // 休憩時間を差し引く（昼休み + 外出/戻りの中抜け分）
+                workMinutes -= (lunchBreakMinutes + breakMinutes);
 
                 if (workMinutes < 0) workMinutes = 0;
                 workTime = minutesToTime(workMinutes);
@@ -1163,8 +1186,10 @@ async function exportExcel() {
                 '実勢退勤': rawPunchOut,
                 '計算出勤': calcPunchIn,
                 '計算退勤': calcPunchOut,
-                '外出':     breakStartTimes, // 追加
-                '戻り':     breakEndTimes,   // 追加
+                '外出':     breakStartTimes,
+                '戻り':     breakEndTimes,
+                '昼休有無': lunchBreakStatus,
+                '休憩時間': lunchBreakStatus === '〇' ? '1:00' : '',
                 '中抜時間': breakMinutes > 0 ? breakTime : '',
                 '実働時間': workTime,
                 '残業時間': overtime
@@ -1176,32 +1201,47 @@ async function exportExcel() {
             return;
         }
 
-        // 日付順・社員番号順にソート
-        excelData.sort((a, b) => {
-            if (a['日付'] !== b['日付']) return a['日付'].localeCompare(b['日付']);
-            return a['社員番号'].localeCompare(b['社員番号']);
-        });
-
         // SheetJSでエクセルファイルを作成
-        const worksheet = XLSX.utils.json_to_sheet(excelData);
-        const workbook  = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, '勤怠データ');
+        const workbook = XLSX.utils.book_new();
 
-        // カラム幅を設定
-        worksheet['!cols'] = [
-            { wch: 12 },  // 日付
-            { wch: 10 },  // 社員番号
-            { wch: 15 },  // 氏名
-            { wch: 10 },  // 実勢出勤
-            { wch: 10 },  // 実勢退勤
-            { wch: 10 },  // 計算出勤
-            { wch: 10 },  // 計算退勤
-            { wch: 10 },  // 外出
-            { wch: 10 },  // 戻り
-            { wch: 10 },  // 中抜時間
-            { wch: 10 },  // 実働時間
-            { wch: 10 },  // 残業時間
-        ];
+        // 社員ごとにシートを分割
+        // ユニークな社員名（または社員番号）のリストを作成
+        const employees = [...new Set(excelData.map(r => r['氏名'] || r['社員番号']))];
+
+        employees.forEach(empName => {
+            // その社員のデータのみ抽出
+            const empData = excelData.filter(r => (r['氏名'] || r['社員番号']) === empName);
+
+            // 日付順にソート
+            empData.sort((a, b) => {
+                if (a['日付'] !== b['日付']) return a['日付'].localeCompare(b['日付']);
+                return 0;
+            });
+
+            const worksheet = XLSX.utils.json_to_sheet(empData);
+
+            // カラム幅を設定
+            worksheet['!cols'] = [
+                { wch: 12 },  // 日付
+                { wch: 10 },  // 社員番号
+                { wch: 15 },  // 氏名
+                { wch: 10 },  // 実勢出勤
+                { wch: 10 },  // 実勢退勤
+                { wch: 10 },  // 計算出勤
+                { wch: 10 },  // 計算退勤
+                { wch: 10 },  // 外出
+                { wch: 10 },  // 戻り
+                { wch: 10 },  // 昼休有無
+                { wch: 10 },  // 休憩時間
+                { wch: 10 },  // 中抜時間
+                { wch: 10 },  // 実働時間
+                { wch: 10 },  // 残業時間
+            ];
+
+            // シート名（長すぎる場合や禁止文字を含む場合はエスケープ）
+            let sheetName = String(empName).substring(0, 31).replace(/[\\/?*[\]:]/g, '_') || '不明';
+            XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+        });
 
         // ファイル名（期間情報を付与）
         const startVal = document.getElementById('export-start-date').value;
