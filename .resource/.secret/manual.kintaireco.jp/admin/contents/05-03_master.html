@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html>
+
+<!-- Mirrored from manual.kintaireco.jp/admin/contents/05-03_master.html by HTTrack Website Copier/3.x [XR&CO'2014], Mon, 06 Apr 2026 05:33:17 GMT -->
+<head>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+<title>勤怠RECO［管理用］操作マニュアル</title>
+<link rel="stylesheet" type="text/css" href="../css/style.css" />
+<link rel="icon" href="../favicon.ico" />
+</head>
+<body>
+<header>
+<div>	
+	<a href="#sidemenu" class="hamburger-menu">
+	<div></div>
+	<div></div>
+	<div></div>
+</a>	
+	<header id="sidemenu" class="sidenavs">
+		<a href="#" class="close-btn">&times;</a>
+	<h2 class="toc_h2_nav"><a href="../index.html" target="_top">はじめに</a></h2>
+	<h2 class="toc_h2_nav"><a href="05-01_master.html" target="_top">初期設定</a></h2>
+		<a href="05-05_master.html" target="_top">勤怠RECO運用ルールの設定</a>
+		<a href="05-04_master.html" target="_top">休日/法定休日の設定</a>
+		<a href="05-08_master.html" target="_top">部署の登録</a>
+		<a href="05-09_master.html" target="_top">役職名の登録</a>
+		<a href="05-03_master.html" target="_top">勤務形態の登録</a>
+		<a href="05-02_master.html" target="_top">従業員の登録</a>
+		<a href="05-14_timestamper.html" target="_top">ICカード打刻アプリの設定</a>
+		<a href="06-01_alert.html" target="_top">アラート機能の設定</a>
+		<a href="05-10_master.html" target="_top">申請承認機能の承認者の登録</a>
+		<a href="05-07_master.html" target="_top">プロジェクトの登録</a>
+		<a href="04-01_holiday.html" target="_top">休暇の付与</a>
+		<a href="05-11_master.html" target="_top">シフトテンプレートの登録</a>
+		<a href="05-13_master.html" target="_top">給与連携フォーマットの登録</a>
+		<a href="05-06_master.html" target="_top">勤怠RECOのメニュー表示の設定</a>
+		<a href="05-12_master.html" target="_top">データを取り込んで初期設定する</a>
+	<h2 class="toc_h2_nav"><a href="01-00_dailywork.html" target="_top">日常管理業務</a></h2>
+		<a href="01-06_readme.html" target="_top">はじめにお読みください</a>
+		<a href="01-01_approval.html" target="_top">申請や勤怠を承認する</a>
+		<a href="02-01_shift.html" target="_top">シフトを管理する</a>
+		<a href="04-04_holiday.html" target="_top">残業・有休取得の状況を確認する</a>
+		<a href="06-02_alert.html" target="_top">アラートチェックする</a>
+		<a href="03-01_data.html" target="_top">管理台帳（従業員の勤務データ）を出力する</a>
+	</header>
+</div>	
+<p><span class="logo"><img src="images/logo.png" alt="logo" /></span>勤怠RECO［管理用］操作マニュアル</p>
+</header>
+<div id="container">
+
+<div class="main_nav">
+<p>勤怠RECO［管理用］<br />操作マニュアル</p>
+<nav class="main">
+<ul>
+	<li><h2 class="toc_h2"><a href="../index.html" target="_top">はじめに</a></h2></li>
+	<li><h2 class="toc_h2"><a href="05-01_master.html" target="_top">初期設定</a></h2>
+	<ul>
+		<li><p><a href="05-05_master.html" target="_top">勤怠RECO運用ルールの設定</a></p></li>
+		<li><p><a href="05-04_master.html" target="_top">休日/法定休日の設定</a></p></li>
+		<li><p><a href="05-08_master.html" target="_top">部署の登録</a></p></li>
+		<li><p><a href="05-09_master.html" target="_top">役職名の登録</a></p></li>
+		<li><p class="selected"><a href="05-03_master.html" target="_top">勤務形態の登録</a></p></li>
+		<li><p><a href="05-02_master.html" target="_top">従業員の登録</a></p></li>
+		<li><p><a href="05-14_timestamper.html" target="_top">ICカード打刻アプリの設定</a></p></li>
+		<li><p><a href="06-01_alert.html" target="_top">アラート機能の設定</a></p></li>
+		<li><p><a href="05-10_master.html" target="_top">申請承認機能の承認者の登録</a></p></li>
+		<li><p><a href="05-07_master.html" target="_top">プロジェクトの登録</a></p></li>
+		<li><p><a href="04-01_holiday.html" target="_top">休暇の付与</a></p></li>
+		<li><p><a href="05-11_master.html" target="_top">シフトテンプレートの登録</a></p></li>
+		<li><p><a href="05-13_master.html" target="_top">給与連携フォーマットの登録</a></p></li>
+		<li><p><a href="05-06_master.html" target="_top">勤怠RECOのメニュー表示の設定</a></p></li>
+		<li><p><a href="05-12_master.html" target="_top">データを取り込んで初期設定する</a></p></li>
+	</ul>
+	</li>
+	<li><h2 class="toc_h2"><a href="01-00_dailywork.html" target="_top">日常管理業務</a></h2>
+	<ul>
+		<li><p><a href="01-06_readme.html" target="_top">はじめにお読みください</a></p>
+		<li><p><a href="01-01_approval.html" target="_top">申請や勤怠を承認する</a></p></li>
+		<li><p><a href="02-01_shift.html" target="_top">シフトを管理する</a></p></li>
+		<li><p><a href="04-04_holiday.html" target="_top">残業・有休取得の状況を確認する</a></p></li>
+		<li><p><a href="06-02_alert.html" target="_top">アラートチェックする</a></p></li>
+		<li><p><a href="03-01_data.html" target="_top">管理台帳（従業員の勤務データ）を出力する</a></p></li>
+	</ul>
+	</li>
+</ul>
+</nav>
+</div>
+
+<div class="contents">
+
+<div class="sub_nav">
+<nav>
+<p>＜目次＞</p>
+<ul>
+	<li><p><a href="#05-03-01">勤務形態マスタを登録する
+</a></p></li>
+	<li><p><a href="#05-03-02">勤務形態マスタを確認・編集する
+</a></p></li>
+	<li><p><a href="#05-03-03">勤務形態マスタを削除する
+</a></p></li>
+</ul>
+</nav>
+</div>
+
+<article>
+<h1 id="05-03">勤務形態の登録</h1>
+<p>就業規則に沿った勤務形態を登録します。</p>
+<p>勤務時間管理のため、勤務形態ごとに勤務時間・勤務時間外などの詳細を設定してください。</p>
+<p>登録は［勤務形態マスタ］画面で実施します。</p>
+<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td><p>勤務形態マスタを操作できるのは、システム管理者アカウントのみです。</p></td>
+			</tr>
+			</tbody>
+</table>
+</article>
+<article>
+<a name="05-03-01"></a>
+<h2>勤務形態マスタを登録する</h2>
+<ol class="step">
+	<li>
+		<p><strong>［マスタ］をクリックし、［勤務形態マスタ］をクリックする</strong></p>
+		<p><img src="images/05-2-001.png" alt="" /></p>
+		<p>［勤務形態マスタ］画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>［新規作成］ボタンをクリックする</strong></p>
+		<p><img src="images/05-2-002.png" alt="" /></p>
+		<p>「勤務形態マスタ-新規作成」画面が表示されます。</p>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+				<ul class="ui_list">
+					<li><p>「通常勤務、日勤、準夜、深夜、時間フリー、時間フリー（シフト）」の勤務形態マスタがあらかじめ登録されています。</p>
+						<p>追加で新規に勤務形態マスタを登録する場合は、登録済みの勤務形態情報をコピーして修正することもできます。</p>
+						<p>「勤務形態マスタ」画面で、コピーしたい勤務形態の行の右側にある［複写］ボタンをクリックし、必要情報を修正して登録してください。</p>
+						<p><img src="images/05-2-010.png" alt="" /></p>
+					</li>
+					<li>
+						<p>「時間フリー」「時間フリー（シフト）」の勤務形態マスタは、短時間の休日出勤をした際に使用する特殊な勤務形態です。</p>
+						<p>１日分の出勤ではなく、数時間だけ出勤する場合にご利用ください。</p>
+						<p>なお、短時間勤務を想定しているため、この勤務形態マスタには休憩時間が登録されていません。休憩する場合は、勤務実績に「休憩（フリー）」を登録します。</p>
+						<p>※「時間フリー」「時間フリー（シフト）」は、設定変更や削除を行わないようご注意ください。</p>
+					</li>
+				</ul>
+				</td>
+			</tr>
+		</table>
+  </li>
+  <li>
+		<p><strong>各項目を入力する</strong></p>
+		<p><img src="images/05-2-003.png" alt="" /></p>
+		<ol class="circle_num">
+			<li>
+				<p><strong>コード</strong></p>
+				<p>勤務形態のコードを入力します。設定後の変更はできません。（一意／最大255文字）</p>
+				<p>マスタ一覧ではコード順でマスタが表示されます。</p>
+			</li>
+<!--この部分はブラウザに反映されません
+			<li>
+				<p><strong>フレックスタイム制フラグ</strong></p>
+				<p>フレックス制を適用するかどうかを選択します。設定後の変更はできません。</p>
+				<p>「利用する」に設定すると、コアタイム、フレキシブルタイムの設定項目が表示されます。また、シフト制フラグ、時間給フラグの設定項目は非表示になります。</p>
+				<p>なお、フレックス制であっても出勤時刻、退勤時刻の設定は必要です。（直行直帰申請時の時刻として使用されます）</p>
+			</li>
+			<p><img src="images/05-2-003-1.png" alt="" /></p>
+この部分はブラウザに反映されません-->
+			<li>
+				<p><strong>名称</strong></p>
+				<p>勤務形態名称を入力します（最大255文字）</p>
+			</li>
+			<li>
+				<p><strong>略称</strong></p>
+				<p>勤務形態名称の略称を入力します。シフト勤務入力で選択する際に使用します（最大255文字）。</p>
+			</li>
+			<li>
+				<p><strong>時間給フラグ</strong></p>
+				<p>時間給制を適用するかどうかを選択します。</p>
+			</li>
+			<li>
+				<p><strong>シフト制フラグ</strong></p>
+				<p>シフト制を適用するかどうかを選択します。</p>
+			</li>
+			<table class="tip">
+				<tr>
+					<th><p>ヒント</p></th>
+					<td>
+						<p>勤務形態マスタの「時間給フラグ」「シフト制フラグ」は、次のように登録します。</p><p>【例】</p>
+						<ul>
+							<li>
+								<p><b>通常勤務</b></p>
+								<p>時間給フラグは固定給、シフト制フラグは固定制に設定。</p>
+								<p>出勤退勤時刻は9:00~18:00を設定。</p>
+							</li>
+							<li>
+								<p><b>時短勤務</b></p>
+								<p>以下のいずれかの方法で設定 <font color="red">※１を推奨</font></p>
+								<ol>
+									<li><p>時間給フラグは固定給、シフト制フラグは固定制に設定。</p>
+										<p>出勤退勤時刻は9:00~16:00を設定。</p>
+										<p>勤務時間外の1行目は、通常勤務で16:00~18:00に設定。</p>
+										<p>※これで16:00~18:00を残業ではなく、通常勤務扱いにできます。</p>
+									</li>
+									<li><p>時間給フラグは時間給、シフト制フラグは固定制に設定。</p>
+										<p>出勤退勤時刻は9:00~18:00を設定。</p>
+									</li>
+								</ol>
+							</li>
+							<li>
+								<p><b>シフト制</b></p>
+								<p>時間給フラグは固定給、シフト制フラグはシフト制に設定。</p>
+							</li>
+						</ul>
+					</td>
+				</tr>
+				</table>
+			<li>
+				<p><strong>出勤時刻</strong></p>
+				<p>出勤時刻を選択します。</p>
+			</li>
+			<li>
+				<p><strong>退勤時刻</strong></p>
+				<p>退勤時刻を選択します。日をまたぐ場合は「翌日」を選択します。</p>
+			</li>
+			<li>
+				<p><strong>勤務時間</strong></p>
+				<p>所定労働時間（定時出社、退社した場合の勤務時間）を「0.00」単位（10進法）で入力します。</p>
+				<p>※休憩時間は含めません。</p>
+				<p>※小数点第3位は切り上げて入力します。<br>
+				　【例】7時間50分を設定したい場合：7.83333･･･ ⇒「7.84」を入力。</p>
+			</li>
+			<li>
+				<p><strong>午前/午後の境界時刻</strong></p>
+				<p>半日有休（午前休・午後休）を取得する際の境界時刻を設定します。昼休憩のない短時間の勤務形態で、半日有休を取得したい場合にご利用いただけます。</p>
+				<p>境界時刻を設定しない場合は、昼休憩の開始時刻までが午前休、終了時刻からが午後休となります。</p>
+				<table class="note">
+					<tr>
+					<th><p>ご注意</p></th>
+					<td>
+						<p>・昼休憩と境界時刻がどちらも設定されている場合は、境界時刻の設定が優先されます。</p>
+						<p>・昼休憩と境界時刻がどちらも設定されていない場合は、半日有休を取得できません。</p>
+						<p>・半日有休（午前休・午後休）は、1日有休に対して0.5日消化されます。8時間勤務と6時間勤務が混在する従業員が半日有休を取得した場合、どちらの勤務形態で取得しても0.5日扱いとなるため、ご注意ください。</p>
+						<p></p>
+					</td>
+					</tr>
+				</table>
+			</li>
+<!--この部分はブラウザに反映されません
+			<li>
+				<p><strong>コアタイム設定</strong></p>
+				<p>コアタイム設定を利用するかどうかを設定します。</p>
+				<p>「利用する」にチェックをつけると、コアタイムの開始、終了時刻を設定できます。</p>
+				<p>「コアタイム」を設定した場合、コアタイム時間内の不就労は遅刻や早退として扱われます。「コアタイム」を設定しない場合、遅刻や早退は発生しません。</p>
+				<p><img src="images/05-2-012.png" alt="" /></p>
+			</li>
+			<li>
+				<p><strong>コアタイム開始時刻</strong></p>
+				<p>コアタイム開始時刻を選択します。</p>
+				<p>コアタイム開始時刻は出勤時刻より遅い時刻に設定してください。</p>
+			</li>
+			<li>
+				<p><strong>コアタイム終了時刻</strong></p>
+				<p>コアタイム終了時刻を選択します。</p>
+				<p>コアタイム終了時刻は退勤時刻より早い時刻にしてください。</p>
+			</li>
+			<li>
+				<p><strong>フレキシブルタイム設定</strong></p>
+				<p>フレキシブルタイム設定を利用するかどうかを設定します。</p>
+				<p>「利用する」にチェックをつけると、フレキシブルタイムの開始時刻、終了時刻を設定できます。</p>
+			</li>
+			<li>
+				<p><strong>フレキシブルタイム開始時刻</strong></p>
+				<p>フレキシブルタイム開始時刻を選択します。</p>
+				<p>フレキシブルタイム開始時刻はコアタイム開始時刻より早い時刻にしてください。</p>
+			</li>
+			<li>
+				<p><strong>フレキシブルタイム終了時刻</strong></p>
+				<p>フレキシブルタイム終了時刻を選択します。</p>
+				<p>フレキシブルタイム終了時刻はコアタイム終了時刻より遅い時刻にしてください。</p>
+			</li>
+			<table class="tip">
+					<tr>
+					<th><p>ヒント</p></th>
+					<td>
+					<p>トップページのシフトテーブルの勤務予定時間には、コアタイム開始終了時刻、フレキシブルタイム開始終了時間が表示されます。</p>
+					<p>勤務予定（グレーのバー表示）には、コアタイムがある場合はコアタイム時間、コアタイムがない場合はフレキシブルタイム時間が表示されます</p>
+					<p><img src="images/05-2-013.png" alt="" /></p></td>
+					</tr>
+				</table>
+この部分はブラウザに反映されません-->
+			<li>
+				<p><strong>不使用フラグ</strong></p>
+				<p>不要になった勤務形態マスタを「不使用」にする場合に選択します。</p>
+				<p>不使用に設定された勤務形態は打刻画面、勤怠実績モーダル、シフト編集の選択肢に表示されなくなります。また、シフト取込で不使用の勤務形態を使用して取込を行った場合はエラーとなります。</p>
+				<p><img src="images/05-2-011.png" alt="" /></p>
+				<table class="tip">
+					<tr>
+					<th><p>ヒント</p></th>
+					<td>
+					<p>一度登録された勤務実績、シフトについては不使用フラグ設定後でも勤務形態が選択可能です。</p>
+					</td>
+					</tr>
+				</table>
+				<table class="note">
+					<tbody><tr>
+					<th><p>ご注意</p></th>
+					<td><p>訂正等で勤怠修正を行う場合がありますので、不使用フラグは勤怠確定処理後に設定してください。</p></td>
+					</tr>
+					</tbody>
+				</table>
+			</li>
+			<li>
+				<p><strong>勤務時間内</strong></p>
+				<p>出勤時刻から退勤時刻までの勤務形態を入力します。</p>
+				<p>「勤務時間内」の1行目の開始時刻は、「出勤時刻」の時間が自動で反映されます。2行目以降の開始時刻は、1つ前の行の終了時刻が自動で反映されます。</p>
+				<p>【例】</p>
+				<p>&emsp;午前勤務　9:00~12:00</p>
+				<p>&emsp;昼休憩　　12:00~13:00</p>
+				<p>&emsp;午後勤務　13:00~18:00</p>
+			</li>
+			<li>
+				<p><strong>勤務時間外</strong></p>
+				<p>退勤時刻以降、および出勤時刻以前の勤務形態を入力します。</p>
+				<p>「勤務時間外」の1行目の開始時刻は、「退勤時刻」の時間が自動で反映されます。2行目以降の開始時刻は、1つ前の行の終了時刻が自動で反映されます。</p>
+				<p>【例】</p>
+				<p>&emsp;残業　　　　　18:00~22:00</p>
+				<p>&emsp;深夜残業　　　22:00~翌日5:00</p>
+				<p>&emsp;残業　　　　　翌日5:00~翌日7:00</p>
+				<p>&emsp;休憩（残業）　翌日7:00~翌日9:00</p>
+				<p>※始業時刻より前の打刻を労働時間から除外したい場合、該当時間帯に「休憩（残業）」を設定すると除外出来ます。</p>
+			</li>
+		</ol>
+		<table class="tip">
+		<tr>
+			<th><p>ヒント</p></th>
+			<td><p>当日の勤務開始時刻から翌日の勤務開始時刻まで、24時間分の勤務形態を作成してください。</p>
+			</td>
+		</tr>
+		</table>
+	</li><br>
+	<li>
+		<p><strong>入力内容を確認し、［登録する］ボタンをクリックする</strong></p>
+		<p>画面上部に「登録が完了しました。」とメッセージが表示され、画面が「勤務形態マスタ-詳細」画面に切り替わり勤務形態マスタが登録されます。</p>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+					<p>［一覧へ戻る］ボタンをクリックすると、入力した内容を保存せずに「勤務形態マスタ」画面へ戻ります。途中まで入力した内容を保存したい場合は、［登録する］ボタンをクリックしてから、後で編集してすべての登録を完了させてください。編集方法について詳しくは、「<a href="05-03_master.html#05-03-02">勤務形態マスタを確認・編集する</a>」を参照してください。</p>
+				</td>
+			</tr>
+		</table>
+	</li>
+	
+</ol>
+</article>
+<article>
+<a name="05-03-02"></a>
+<h2>勤務形態マスタを確認・編集する</h2>
+<p>登録済みの勤務形態マスタ情報を確認したり、修正して上書きしたりします。</p>
+<ol class="step">
+	<li>
+	<p><strong>［マスタ］をクリックし、［勤務形態マスタ］をクリックする</strong></p>
+	<p><img src="images/05-2-001.png" alt="" /></p>
+	<p>「勤務形態マスタ」画面（登録済みの勤務形態マスタ一覧）が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>情報を確認したい勤務形態の行の［詳細］をクリックする</strong></p>
+		<p><img src="images/05-2-004.png" alt="" /></p>
+		<p>「勤務形態マスタ-詳細」画面が表示されます。</p>
+		<p>削除した勤務形態を検索する場合は「削除済みを含む」にチェックを付けます。</p>
+	</li>
+	<li>
+		<p><strong>情報を確認し、［一覧へ戻る］ボタンをクリックする</strong></p>
+		<p><img src="images/05-2-005.png" alt="" /></p>
+		<p>登録済みの勤務形態マスタ一覧が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>修正が必要な場合は、勤務形態の行の［編集］をクリックする</strong></p>
+		<p><img src="images/05-2-006.png" alt="" /></p>
+		<p>「勤務形態マスタ-編集」画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>修正したい項目を編集する</strong></p>
+	</li>
+	<li>
+		<p><strong>修正内容を確認し、画面下の［更新する］ボタンをクリックする</strong></p>
+		<p><img src="images/05-2-008.png" alt="" /></p>
+		<p>画面上部に「更新が完了しました。」とメッセージが表示されたら、勤務形態マスタの修正情報の登録は完了です。</p>
+	</li>
+</ol>
+
+</article>
+<article>
+<a name="05-03-03"></a>
+<h2>勤務形態マスタを削除する</h2>
+<table class="note">
+<tr>
+	<th><p>ご注意</p></th>
+	<td><p>利用実績のある「勤務形態」は削除できません。</p>
+	<p>過去に利用していたり現在利用中の勤務形態を削除すると、打刻画面や勤怠実績画面で勤務形態が無くなるため、削除できない仕様です。</p>
+	<p>不要になった勤務形態マスタは「不使用」に変更してください。</p></td>
+</tr>
+</table>
+<ol class="step">
+	<li>
+    <p><strong>［マスタ］をクリックし、［勤務形態マスタ］をクリックする</strong></p>
+    <p><img src="images/05-2-001.png" alt="" /></p>
+    <p>「勤務形態マスタ」画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>削除したい勤務形態の行の［削除］をクリックする</strong></p>
+		<p><img src="images/05-2-009.png" alt="" /></p>
+		<p>画面上部に「削除が完了しました。」とメッセージが表示され、削除した勤務形態の行が一覧から消えます。</p>
+		<p>削除を元に戻したい場合は、「削除済みを含む」にチェックを付けて検索し、「勤務形態マスタ-編集」画面で削除済みチェックを外して登録してください。</p>
+	</li>
+</ol>
+<br />
+<h4>つづけて「<a href="05-02_master.html">従業員の登録</a>」に進んでください。</h4>
+
+</article>
+</div>
+
+<a href="#" id="goto_top">▲</a>
+</div>
+<footer>
+<p>Copyright 2020 SBI Business Solutions Co.,</p>
+</footer>
+</body>
+
+<!-- Mirrored from manual.kintaireco.jp/admin/contents/05-03_master.html by HTTrack Website Copier/3.x [XR&CO'2014], Mon, 06 Apr 2026 05:33:19 GMT -->
+</html>

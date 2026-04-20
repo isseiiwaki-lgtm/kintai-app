@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html>
+
+<!-- Mirrored from manual.kintaireco.jp/admin/contents/03-01_data.html by HTTrack Website Copier/3.x [XR&CO'2014], Mon, 06 Apr 2026 05:34:06 GMT -->
+<head>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+<title>勤怠RECO［管理用］操作マニュアル</title>
+<link rel="stylesheet" type="text/css" href="../css/style.css" />
+<link rel="icon" href="../favicon.ico" />
+</head>
+<body>
+<header>
+<div>	
+	<a href="#sidemenu" class="hamburger-menu">
+	<div></div>
+	<div></div>
+	<div></div>
+</a>	
+	<header id="sidemenu" class="sidenavs">
+		<a href="#" class="close-btn">&times;</a>
+	<h2 class="toc_h2_nav"><a href="../index.html" target="_top">はじめに</a></h2>
+	<h2 class="toc_h2_nav"><a href="05-01_master.html" target="_top">初期設定</a></h2>
+		<a href="05-05_master.html" target="_top">勤怠RECO運用ルールの設定</a>
+		<a href="05-04_master.html" target="_top">休日/法定休日の設定</a>
+		<a href="05-08_master.html" target="_top">部署の登録</a>
+		<a href="05-09_master.html" target="_top">役職名の登録</a>
+		<a href="05-03_master.html" target="_top">勤務形態の登録</a>
+		<a href="05-02_master.html" target="_top">従業員の登録</a>
+		<a href="05-14_timestamper.html" target="_top">ICカード打刻アプリの設定</a>
+		<a href="06-01_alert.html" target="_top">アラート機能の設定</a>
+		<a href="05-10_master.html" target="_top">申請承認機能の承認者の登録</a>
+		<a href="05-07_master.html" target="_top">プロジェクトの登録</a>
+		<a href="04-01_holiday.html" target="_top">休暇の付与</a>
+		<a href="05-11_master.html" target="_top">シフトテンプレートの登録</a>
+		<a href="05-13_master.html" target="_top">給与連携フォーマットの登録</a>
+		<a href="05-06_master.html" target="_top">勤怠RECOのメニュー表示の設定</a>
+		<a href="05-12_master.html" target="_top">データを取り込んで初期設定する</a>
+	<h2 class="toc_h2_nav"><a href="01-00_dailywork.html" target="_top">日常管理業務</a></h2>
+		<a href="01-06_readme.html" target="_top">はじめにお読みください</a>
+		<a href="01-01_approval.html" target="_top">申請や勤怠を承認する</a>
+		<a href="02-01_shift.html" target="_top">シフトを管理する</a>
+		<a href="04-04_holiday.html" target="_top">残業・有休取得の状況を確認する</a>
+		<a href="06-02_alert.html" target="_top">アラートチェックする</a>
+		<a href="03-01_data.html" target="_top">管理台帳（従業員の勤務データ）を出力する</a>
+	</header>
+</div>	
+<p><span class="logo"><img src="images/logo.png" alt="logo" /></span>勤怠RECO［管理用］操作マニュアル</p>
+</header>
+<div id="container">
+
+<div class="main_nav">
+<p>勤怠RECO［管理用］<br />操作マニュアル</p>
+<nav class="main">
+<ul>
+	<li><h2 class="toc_h2"><a href="../index.html" target="_top">はじめに</a></h2></li>
+	<li><h2 class="toc_h2"><a href="05-01_master.html" target="_top">初期設定</a></h2>
+	<ul>
+		<li><p><a href="05-05_master.html" target="_top">勤怠RECO運用ルールの設定</a></p></li>
+		<li><p><a href="05-04_master.html" target="_top">休日/法定休日の設定</a></p></li>
+		<li><p><a href="05-08_master.html" target="_top">部署の登録</a></p></li>
+		<li><p><a href="05-09_master.html" target="_top">役職名の登録</a></p></li>
+		<li><p><a href="05-03_master.html" target="_top">勤務形態の登録</a></p></li>
+		<li><p><a href="05-02_master.html" target="_top">従業員の登録</a></p></li>
+		<li><p><a href="05-14_timestamper.html" target="_top">ICカード打刻アプリの設定</a></p></li>
+		<li><p><a href="06-01_alert.html" target="_top">アラート機能の設定</a></p></li>
+		<li><p><a href="05-10_master.html" target="_top">申請承認機能の承認者の登録</a></p></li>
+		<li><p><a href="05-07_master.html" target="_top">プロジェクトの登録</a></p></li>
+		<li><p><a href="04-01_holiday.html" target="_top">休暇の付与</a></p></li>
+		<li><p><a href="05-11_master.html" target="_top">シフトテンプレートの登録</a></p></li>
+		<li><p><a href="05-13_master.html" target="_top">給与連携フォーマットの登録</a></p></li>
+		<li><p><a href="05-06_master.html" target="_top">勤怠RECOのメニュー表示の設定</a></p></li>
+		<li><p><a href="05-12_master.html" target="_top">データを取り込んで初期設定する</a></p></li>
+	</ul>
+	</li>
+	<li><h2 class="toc_h2"><a href="01-00_dailywork.html" target="_top">日常管理業務</a></h2>
+	<ul>
+		<li><p><a href="01-06_readme.html" target="_top">はじめにお読みください</a></p>
+		<li><p><a href="01-01_approval.html" target="_top">申請や勤怠を承認する</a></p></li>
+		<li><p><a href="02-01_shift.html" target="_top">シフトを管理する</a></p></li>
+		<li><p><a href="04-04_holiday.html" target="_top">残業・有休取得の状況を確認する</a></p></li>
+		<li><p><a href="06-02_alert.html" target="_top">アラートチェックする</a></p></li>
+		<li><p class="selected"><a href="03-01_data.html" target="_top">管理台帳（従業員の勤務データ）を出力する</a></p></li>
+	</ul>
+	</li>
+</ul>
+</nav>
+</div>
+
+<div class="contents">
+
+<div class="sub_nav">
+<nav>
+<p>＜目次＞</p>
+<ul>
+	<li><p><a href="#03-01">勤怠の入力状況を一覧表示する</a></p></li>
+	<li><p><a href="#03-02">個人別日別勤務報告書を作成する</a></p></li>
+	<li><p><a href="#03-03">勤務実績をCSV出力する</a></p></li>
+	<li><p><a href="#03-04">勤務実績を訂正する</a></p></li>
+	<li><p><a href="#03-05">勤務データ一覧表を作成する</a></p></li>
+	<li><p><a href="#03-06">工数実績一覧表を作成する</a></p></li>
+	<li><p><a href="#03-07">日報データをCSV出力する</a></p></li>
+	<li><p><a href="#03-08">給与ソフト連携データを出力する</a></p></li>
+</ul>
+</nav>
+</div>
+
+<article>
+<h1 id="03-00">管理台帳（従業員の勤務データ）を出力する</h1>
+
+<table class="tip">
+	<tr>
+		<th><p>ヒント</p></th>
+		<td>
+			<p>従業員コードや氏名に Shift_JIS に変換できない文字やファイル名に使用できない文字が使用されている場合、一部データ出力時に該当文字が「_」や「？」に変換されます。</p>
+			<p>詳細は「<a href="05-02_master.html">従業員の登録</a>」の「②従業員コード」「③氏名」をご参照ください。</p>
+		</td>
+	</tr>
+</table>
+
+<br />
+
+<p>各種勤務データの出力は、［データ管理］メニューから行います。</p>
+<p>［データ管理］をクリックすると以下のサブメニューが表示されます。</p>
+<p><img src="images/web_043.png" alt="" /></p>
+<ul class="ui_list">
+	<li><p><strong>［各課勤怠入力状況一覧］</strong></p>
+	<p>勤怠RECOに登録されている従業員の勤怠入力状況を1カ月単位で一覧表示します。部署別、従業員別に絞って表示することもできます。</p>
+	<p>詳しくは、「<a href="#03-01">勤怠の入力状況を一覧表示する</a>」を参照してください。</p>
+	</li>
+
+	<li><p><strong>［個人別日別勤務報告書］</strong></p>
+	<p>従業員別の日別勤務実績をエクセルファイルに書き出します。指定した期間の出退勤打刻時刻、休暇取得、残業、休日出勤などの状況が一覧で見ることができます。</p>
+	<p>詳しくは、「<a href="#03-02">個人別日別勤務報告書を作成する</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［CSV出力］</strong></p>
+	<p>期間と、その月の稼働出勤日数（出勤日数）、規定時間（1日の勤務時間）を入力すると、該当月に出勤している従業員の勤怠情報が出力されます。</p>
+	<p>詳しくは、「<a href="#03-03">勤務実績をCSV出力する</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［勤務入力訂正］</strong></p>
+	<p>入力済みの勤務実績を修正します。</p>
+	<p>詳しくは、「<a href="#03-04">勤務実績を訂正する</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［勤務データ一覧表］</strong></p>
+	<p>指定した期間の勤務データの詳細を出力します。</p>
+	<p>詳しくは、「<a href="#03-05">勤務データ一覧表を作成する</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［工数実績一覧表］</strong></p>
+	<p>指定した期間のプロジェクト別・従業員別・プロジェクト+従業員別の工数実績を一覧にまとめてダウンロードします。</p>
+	<p>詳しくは、「<a href="#03-06">工数実績一覧表を作成する</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［日報データCSV出力］</strong></p>
+	<p>指定した期間の特定従業員の日報データを出力できます。日報内のコメントや残業時間も出力されます。 </p>
+	<p>詳しくは、「<a href="#03-07">日報データをCSV出力する</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［給与連携ソフトCSV出力］</strong></p>
+	<p>給与連携フォーマットマスタで作成した出力形式で、給与ソフトに連携するためのデータを作成します。</p>
+	<p>詳しくは、「<a href="#03-08">給与ソフト連携データを出力する</a>」を参照してください。</p>
+	</li>
+</ul>
+
+<table class="note">
+<tr>
+	<th><p>ご注意</p></th>
+	<td><p>［データ管理］のサブメニュー［個人別日別勤務報告書］・［CSV出力］・［勤務入力訂正］・［勤務データ一覧表］・［給与連携ソフトCSV出力］は人事担当者アカウント、システム管理者アカウントが操作可能です。</p></td>
+</tr>
+</table>
+　<!--この部分はブラウザに反映されません
+<br>
+<p>フレックスタイム制を使用している場合、データ管理メニューの表示が一部変更されます。</p>
+<table class="blue_table">
+	<tr>
+		<td><p>各課入力状況一覧</p></td>
+		<td><p>未確定の月の残業は表示なし</p></td>
+	</tr>
+	<tr>
+		<td><p>個人別日別勤務報告書</p></td>
+		<td><p>未確定の月の残業は表示なし,日別の残業表示なし</p></td>
+	</tr>
+	<tr>
+		<td><p>ＣＳＶ出力</p></td>
+		<td><p>未確定の月の残業は表示なし</p></td>
+	</tr>
+	<tr>
+		<td><p>勤務入力訂正</p></td>
+		<td><p>未確定の月の残業は表示なし,日別の残業表示なし</p></td>
+	</tr>
+	<tr>
+		<td><p>勤務データ一覧表</p></td>
+		<td><p>未承認チェック後でなければ出力不可,日別の残業表示なし<br>期間指定の方法が範囲指定ではなく月指定</p></td>
+	</tr>
+	<tr>
+		<td><p>工数実績一覧</p></td>
+		<td><p>影響なし</p></td>
+	</tr>
+	<tr>
+		<td><p>日報データCSV出力</p></td>
+		<td><p>日別の残業表示なし</p></td>
+	</tr>
+	</table>
+	　この部分はブラウザに反映されません-->
+</article>
+<article>
+<a name="03-01"></a>
+<h2>勤怠の入力状況を一覧表示する</h2>
+<p>勤怠RECOに登録されている従業員の勤怠入力状況を1カ月単位で一覧表示します。部署別、従業員別に絞って表示することもできます。</p>
+<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td><p>勤怠の入力状況を一覧表示できるのは、課長級アカウント、人事担当者アカウント、システム管理者アカウントです。</p></td>
+			</tr>
+			</tbody>
+</table>
+<br />
+<ol class="step">
+	<li>
+		<p><strong>［データ管理］をクリックし、［各課勤怠入力状況一覧］をクリックする</strong></p>
+		<p><img src="images/03-1-001.png" alt="" /></p>
+		<p>［各課入力状況一覧］画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>「期間」に、一覧表示する勤怠入力期間を入力する</strong></p>
+		<p><img src="images/03-1-002.png" alt="" /></p>
+		<p>「＜」または「＞」をクリックして、表示したい期間を選択します。</p>
+	</li>
+	<li>
+		<p><strong>必要に応じて「部課」または「従業員」を設定する</strong></p>
+		<p><img src="images/03-1-003.png" alt="" /></p>
+		<ol class="circle_num">
+			<li>
+				<p><strong>部課</strong></p>
+				<p>対象者を部課で絞り込む場合に、ドロップダウンリストから部課を選択します。</p>
+			</li>
+			<li>
+				<p><strong>従業員</strong></p>
+				<p>対象者を従業員コードで絞り込む場合に、従業員コードを入力します。<img src="images/icon_search.png" alt="" />のボタンをクリックすると、従業員コードのリストが表示されます。○をクリックして選択してください。</p>
+			</li>
+	<table class="tip">
+	<tr>
+		<th><p>ヒント</p></th>
+		<td><p>検索を実行すると、設定した検索条件が記憶されます。［リセット］ボタンをクリックすると、設定した検索条件をすべてリセットできます。</p></td>
+	</tr>
+	</table>
+		</ol>
+		
+  </li>
+  <li>
+		<p><strong>［検索］ボタンをクリックする</strong></p>
+		<p><img src="images/03-1-004.png" alt="" /></p>
+		<p>検索条件に該当する従業員が画面に一覧表示されます。</p>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+					<p>一覧の従業員名をクリックすると、日別勤務入力データが表示されます。</p>
+				</td>
+			</tr>
+			</table>
+	</li>
+</ol>
+
+</article>
+<article>
+<a name="03-02"></a>
+<h2>個人別日別勤務報告書を作成する</h2>
+<p>従業員別の日別勤務実績をエクセルファイルに書き出します。指定した期間の出退勤打刻時刻、休暇取得、残業、休日出勤などの状況が一覧で見ることができます。</p>
+<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td><p>個人別日別勤務報告書を作成できるのは、人事担当者アカウントとシステム管理者アカウントです。</p></td>
+			</tr>
+			</tbody>
+</table>
+<br />
+<ol class="step">
+	<li>
+		<p><strong>［データ管理］をクリックし、［個人別日別勤務報告書］をクリックする</strong></p>
+		<p><img src="images/03-2-001.png" alt="" /></p>
+		<p>［個人別日別勤務報告書］画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>「期間」に、報告書を作成する勤務期間を入力する</strong></p>
+		<p><img src="images/03-2-002.png" alt="" /></p>
+		<p>カレンダーから年月日を選択します。</p>
+	</li>
+	<li>
+		<p><strong>必要に応じて「部課」または「従業員」を設定する</strong></p>
+		<p><img src="images/03-2-003.png" alt="" /></p>
+		<ol class="circle_num">
+			<li>
+				<p><strong>部課</strong></p>
+				<p>対象者を部課で絞り込む場合に、ドロップダウンリストから部課を選択します。</p>
+			</li>
+			<li>
+				<p><strong>従業員</strong></p>
+				<p>対象者を従業員コードで絞り込む場合に、従業員コードを入力します。<img src="images/icon_search.png" alt="" />のボタンをクリックすると、従業員コードのリストが表示されます。○をクリックして選択してください。</p>
+			</li>
+		</ol>
+	<table class="tip">
+	<tr>
+		<th><p>ヒント</p></th>
+		<td><p>検索を実行すると、設定した検索条件が記憶されます。［リセット］ボタンをクリックすると、設定した検索条件をすべてリセットできます。</p></td>
+	</tr>
+	</table>
+	</li>
+	<li>
+		<p><strong>［個人別日別勤務報告書作成］ボタンをクリックする</strong></p>
+		<p><img src="images/03-2-004.png" alt="" /></p>
+		<p>個人別日別勤務報告書のエクセルファイルがzip形式でダウンロードされます。</p>
+		<p><img src="images/03-2-005.png" alt="" /></p>
+	</li>
+</ol>
+
+</article>
+<article>
+<a name="03-03"></a>
+<h2>勤務実績をCSV出力する</h2>
+<p>指定した月の稼働出勤日数（出勤日数）、規定時間（1日の勤務時間）を入力し、該当月に出勤している従業員の勤怠情報をcsvデータで出力します。給与システムと連携が簡単にできます。</p>
+<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td><p>日報勤怠をCSV出力できるのは、人事担当者アカウントとシステム管理者アカウントです。</p></td>
+			</tr>
+			</tbody>
+</table>
+<br />
+<ol class="step">
+	<li>
+    <p><strong>［データ管理］をクリックし、［CSV出力］をクリックする</strong></p>
+    <p><img src="images/03-3-001.png" alt="" /></p>
+    <p>［CSV出力］画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>「期間」「勤務日」「規定時間」をすべて入力する</strong></p>
+		<p><img src="images/03-3-002.png" alt="" /></p>
+		<ol class="circle_num">
+			<li>
+			<p><strong>期間</strong></p><p>カレンダーから年月を選択します。</p>
+			</li>
+			<li>
+				<p><strong>勤務日</strong></p><p>その月の稼働出勤日数を入力します。</p>
+			</li>
+			<li>
+				<p><strong>規定時間</strong></p><p>1日の勤務時間を入力します。</p>
+			</li>
+			<li>
+				<p><strong>稼働出勤時間</strong></p><p>勤務日と規定時間を入力すると、稼働出勤時間が表示されます。</p>
+			</li>
+			<table class="tip">
+				<tr>
+					<th><p>ヒント</p></th>
+					<td><p>「勤務時間表記」は、共通マスタの設定が初期値として反映されています。</p></td>
+				</tr>
+			</table>
+		</ol>
+  </li>
+  <li>
+		<p><strong>［CSV出力］ボタンをクリックする</strong></p>
+		<p><img src="images/03-3-003.png" alt="" /></p>
+		<p>勤怠実績のCSVデータがダウンロードされます。</p>
+		<p><img src="images/03-3-004.png" alt="" /></p>
+	</li>
+</ol>
+
+</article>
+<article>
+<a name="03-04"></a>
+<h2>勤務実績を訂正する</h2>
+<p>勤務実績を修正します。</p>
+<br />
+<table class="note">
+  <tbody><tr>
+    <th><p>ご注意</p></th>
+    <td><ul>
+    	<li><p>入力済みの勤務実績を訂正できるのは、人事担当者アカウントとシステム管理者アカウントです。</p></li>
+    	<li><p>［勤務入力訂正］で勤務入力を修正登録すると承認済みになり、承認ロック済みになります。</p></li>
+    </ul></td>
+  </tr>
+	</tbody>
+</table>
+<ol class="step">
+	<li>
+    <p><strong>［データ管理］をクリックし、［勤務入力訂正］をクリックする</strong></p>
+    <p><img src="images/03-4-001.png" alt="" /></p>
+    <p>［勤務入力訂正］画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>「期間」に、訂正する勤務入力の年月を入力する</strong></p>
+		<p><img src="images/03-4-002.png" alt="" /></p>
+		<p>カレンダーから年月日を選択します。</p>
+	</li>
+	<li>
+		<p><strong>勤務入力を訂正する従業員コードを入力する</strong></p>
+		<p><img src="images/03-4-003.png" alt="" /></p>
+		<p><img src="images/icon_search.png" alt="" />をクリックすると、従業員コードのリストが表示されます。○をクリックして選択してください。</p>
+	<table class="tip">
+	<tr>
+		<th><p>ヒント</p></th>
+		<td><p>検索を実行すると、設定した検索条件が記憶されます。［リセット］ボタンをクリックすると、設定した検索条件をすべてリセットできます。</p></td>
+	</tr>
+	</table>
+	</li>
+	<li>
+		<p><strong>［検索］ボタンをクリックする</strong></p>
+		<p><img src="images/03-4-004.png" alt="" /></p>
+		<p>検索した従業員の勤務入力データが表示されます。</p>
+  </li>
+  <li>
+		<p><strong>修正したい日を選択する</strong></p>
+		<p><img src="images/03-4-005.png" alt="" /></p>
+		<p>選択した日の勤務入力詳細が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>データを修正する</strong></p>
+		<p><img src="images/03-4-006.png" alt="" /></p>
+		<ol class="circle_num">
+			<li>
+				<p><strong>勤務形態</strong></p>
+				<p>会社の定める勤務形態を選択します。</p>
+			</li>
+			<li>
+				<p><strong>打刻時間</strong></p>
+				<p>1分単位で打刻時間を修正できます。</p>
+			</li>
+			<li>
+				<p><strong>勤務時間</strong></p>
+				<p>勤務時間を〇分単位にまるめた時間を入力します（単位はシステムの設定によります）。</p>
+				<p>【例】 勤務時間が15分単位の場合</p>
+				<p>打刻 8:47〜18:25 → 勤務時間 9:00〜18:15</p>
+				<p>【例】 9:00から18:00の時間内勤務が15分単位、時間外勤務（残業など）が1分単位の場合</p>
+				<p>打刻 8:47〜18:25 → 勤務時間 9:00〜18:25</p>
+			</li>
+			<li>
+				<p><strong>休暇区分</strong></p>
+				<p>有休、振替休日、代休、欠勤など、勤務実績がなかった日の休暇等の区分を選択します。</p>
+				<p>ここを選択した場合、打刻時間は記入できません。</p>
+			</li>
+			<li>
+				<p><strong>半日・時間休暇</strong></p>
+				<p>半日有休、時間有休、時間単位での欠勤などを取得した場合に選択する区分です。</p>
+				<p>取得した時間も記載します。</p>
+			</li>
+			<li>
+				<p><strong>プロジェクト明細</strong></p>
+				<p>どのようなプロジェクトで何時間作業したかを入力します。</p>
+				<p><img src="images/icon_search.png" alt="" />をクリックするとをクリックすると、プロジェクトのリストが表示されるので、対象の○をクリックして選択してください。プロジェクト名が「勤務入力訂正-編集」画面に反映されます。</p>
+			</li>
+			<li>
+				<p><strong>コメント</strong></p>
+				<p>プロジェクト明細に関するコメントを記入します。</p>
+			</li>
+					</ol>
+	</li>
+
+	<li>
+		<p><strong>［確認画面へ］をクリックする</strong></p>
+		<p><img src="images/03-4-007.png" alt="" /></p>
+	</li>
+	<li>
+		<p><strong>修正内容を確認する</strong></p>
+		<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td><p>「勤務入力訂正」で登録された勤務入力は、すべて承認済みとなり、承認もロックされます。登録前に修正内容をよく確認してください。</p></td>
+			</tr>
+			</tbody></table>
+		
+	</li>
+	<li>
+		<p><strong>［登録する］をクリックする</strong></p>
+		<p><img src="images/03-4-008.png" alt="" /></p>
+		   <p>画面上部に「登録が完了しました。」とメッセージが表示され、修正した勤務実績が登録されます。</p>
+
+	</li>
+	
+</ol>
+
+</article>
+<article>
+<a name="03-05"></a>
+<h2>勤務データ一覧表を作成する</h2>
+<p>指定した期間の勤務データの詳細を出力します。</p>
+<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td><p>勤務データ一覧表を作成できるのは、人事担当者アカウントとシステム管理者アカウントです。</p></td>
+			</tr>
+			</tbody>
+</table>
+<br />
+<ol class="step">
+	<li>
+    <p><strong>［データ管理］をクリックし、［勤務データ一覧表］をクリックする</strong></p>
+		<p><img src="images/03-5-001.png" alt="" /></p>
+    <p>［データ出力］画面が表示されます。</p>
+	</li>
+
+	<li>
+		<p><strong>「期間」に、一覧表を作成する期間を入力する</strong></p>
+		<p>カレンダーから選択します。</p>
+		<p><img src="images/03-5-002.png" alt="" /></p>
+	</li>
+	<li>
+		<p><strong>必要に応じて「部課」または「従業員」を設定する</strong></p>
+		<p><img src="images/03-5-003.png" alt="" /></p>
+		<ol class="circle_num">
+			<li>
+				<p><strong>部課</strong></p>
+				<p>対象者を部課で絞り込む場合に、ドロップダウンリストから部課を選択します。</p>
+			</li>
+			<li>
+				<p><strong>従業員コード</strong></p>
+				<p>対象者を従業員コードで絞り込む場合に、従業員コードを入力します。<img src="images/icon_search.png" alt="" />をクリックすると、従業員コードのリストが表示されます。○をクリックして選択してください。</p>
+			</li>
+		</ol>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+					<p>検索を実行すると、設定した検索条件が記憶されます。［リセット］ボタンをクリックすると、設定した検索条件をすべてリセットできます。</p>
+				</td>
+			</tr>
+			</table>
+	</li>
+	<li>
+		<p><strong>［勤務データ一覧表作成］ボタンをクリックする</strong></p>
+		<p><img src="images/03-5-004.png" alt="" /></p>
+		<p>勤務実績データ一覧のエクセルファイルがダウンロードされます。</p>
+		<p><img src="images/03-5-005.png" alt="" /></p>
+  </li>
+</ol>
+
+</article>
+<article>
+<a name="03-06"></a>
+<h2>工数実績一覧表を作成する</h2>
+<p>指定した期間のプロジェクト別・従業員別・プロジェクト+従業員別の工数実績を一覧にまとめてダウンロードします。</p>
+<p>工数実績一覧表は誰でも作成できます。</p>
+<p>プロジェクトごとの総労働時間やそのプロジェクトの情報を出力できます。</p>
+<ol class="step">
+	<li>
+    <p><strong>［データ管理］をクリックし、［工数実績一覧表］をクリックする</strong></p>
+    <p><img src="images/03-6-001.png" alt="" /></p>
+    <p>［工数実績一覧］画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>検索条件を入力する</strong></p>
+		<p><img src="images/03-6-002.png" alt="" /></p>
+		<ol class="circle_num">
+			<li>
+				<p><strong>期間</strong></p>
+				<p>出力したい工数実績の期間を入力します。カレンダーから選択します。期間だけを指定した場合は、その期間に工数入力があったプロジェクトすべての工数一覧を出力します。</p>
+			</li>
+			<li>
+				<p><strong>集計条件</strong></p>
+				<p>ドロップダウンリストから「プロジェクト別」「従業員別」「プロジェクト別従業員別」を選択します。</p>
+			</li>
+			<li>
+				<p><strong>プロジェクト名</strong></p>
+				<p>プロジェクト名の一部を入力すると、その文字列を含むプロジェクト名を検索します。</p>
+				<p>特定のプロジェクトの工数を確認したい場合は、プロジェクト名またはプロジェクト番号を指定してください。</p>
+			</li>
+			<li>
+				<p><strong>従業員</strong></p>
+				<p>従業員コードを入力します。<img src="images/icon_search.png" alt="" />をクリックすると、従業員コードのリストが表示されます。○をクリックして選択してください。</p>
+				<p>開始と終了の従業員コードを入力すると、範囲指定検索を行います。開始の従業員コードだけが入力されている場合は、完全一致検索を行います。</p>
+				<p>特定の従業員の工数を確認したい場合は、従業員コードを指定してください。</p>
+			</li>
+			<li>
+				<p><strong>プロジェクト番号</strong></p>
+				<p>プロジェクト番号を入力します。<img src="images/icon_search.png" alt="" />をクリックすると、プロジェクトのリストが表示されるので、対象の○をクリックして選択してください。</p>
+				<p>開始と終了のプロジェクト番号を入力すると、範囲指定検索を行います。開始のプロジェクト番号だけが入力されている場合は、完全一致検索を行います。</p>
+				<p>特定のプロジェクトの工数を確認したい場合は、プロジェクト名またはプロジェクト番号を指定してください。</p>
+			</li>
+	<table class="tip">
+	<tr>
+		<th><p>ヒント</p></th>
+		<td><p>検索を実行すると、設定した検索条件が記憶されます。［リセット］ボタンをクリックすると、設定した検索条件をすべてリセットできます。</p></td>
+	</tr>
+	</table>
+		</ol>
+		
+	</li>
+	<li>
+		<p><strong>［検索］ボタンをクリックする</strong></p>
+		<p><img src="images/03-6-004.png" alt="" /></p>
+		<p>該当するプロジェクト／従業員が一覧表示されます。</p>
+	</li>
+	<li>
+		<p><strong>［工数実績一覧表作成］ボタンをクリックする</strong></p>
+		<p><img src="images/03-6-005.png" alt="" /></p>
+		<p>工数実績一覧表のエクセルファイルがダウンロードされます。</p>
+		<p><img src="images/03-6-003.png" alt="" /></p>
+	</li>
+</ol>
+<table class="tip">
+		<tr>
+		<th><p>ヒント</p></th>
+		<td>
+			<ul class="ui_list">
+				<li>
+					<p>あるプロジェクト内で、誰がどれだけ工数がかかっているかを出力したい場合は、検索条件を以下のように設定してください。</p>
+					<ul class="ui_list">
+						<li>
+							<p>集計条件：「プロジェクト別従業員別」を選択</p>
+						</li>
+						<li>
+							<p>プロジェクト番号<img src="images/icon_search.png" alt="" />をクリックしてプロジェクトを検索し、リストから選択</p>
+						</li>
+						<li>
+							<p>従業員：空欄</p>
+						</li>
+					</ul>
+				</li>
+				<li>
+					<p>一般権限の従業員は、自分の工数実績一覧表を出力できます。</p>
+				</li>
+			</ul>
+		</td>
+	</tr>
+</table>
+</article>
+<article>
+<a name="03-07"></a>
+<h2>日報データをCSV出力する</h2>
+<p>従業員の特定期間の日報データを出力できます。</p>
+
+<table class="tip">
+<tr>
+	<th><p>ヒント</p></th>
+	<td><p>日報内のコメントや残業時間も出力されます。<br>日報データは権限による制限はなく、「個人用」画面からもCSV出力できますが、一般権限の従業員が出力できるのは、自分の日報データのみです。<br>個人用画面からの出力方法について詳しくは、「<a href=../../user/index.html>勤怠RECO［個人用］操作マニュアル</a>」をご覧ください。</p></td>
+</tr>
+</table>
+
+<ol class="step">
+	<li>
+    <p><strong>［データ管理］をクリックし、［日報データCSV出力］をクリックする</strong></p>
+    <p><img src="images/03-7-001.png" alt="" /></p>
+    <p>［日報データCSV出力］画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>「期間」に、日報を出力する期間を入力する</strong></p>
+    <p><img src="images/03-7-002.png" alt="" /></p>
+  </li>
+  <li>
+		<p><strong>必要に応じて「従業員」を設定する</strong></p>
+    <p><img src="images/03-7-003.png" alt="" /></p>
+		<p>従業員コードを入力します。<img src="images/icon_search.png" alt="" />のボタンをクリックすると、従業員コードのリストが表示されます。○をクリックして選択してください。</p>
+	</li>
+	<li>
+		<p><strong>必要に応じて、日報内の特定の語句を「語句検索」に入力する</strong></p>
+    <p><img src="images/03-7-004.png" alt="" /></p>
+  </li>
+  <li>
+		<p><strong>［CSV出力］ボタンをクリックする</strong></p>
+    <p><img src="images/03-7-005.png" alt="" /></p>
+		<p>日報データのCSVファイルがダウンロードされます。</p>
+		<p><img src="images/03-7-006.png" alt="" /></p>
+		
+	</li>
+</ol>
+
+</article>
+<article>
+	<a name="03-08"></a>
+	<h2>給与ソフト連携データを出力する</h2>
+	<p>［給与連携フォーマットマスタ］に登録した形式で、勤怠データを出力できます。</p>
+	
+	<ol class="step">
+		<li>
+			<p><strong>［データ管理］をクリックし、［給与連携ソフトCSV出力］をクリックする</strong></p>
+			<p><img src="images/03-8-001.png" alt="" /></p>
+			<p>［給与連携ソフトCSV出力］画面が表示されます。</p>
+		</li>
+		<li>
+			<p><strong>「期間」を入力し、「給与連携フォーマット」を選択する</strong></p>
+			<p><img src="images/03-8-002.png" alt="" /></p>
+			<table class="tip">
+				<tr>
+					<th><p>ヒント</p></th>
+					<td><p>「勤務時間表記」は、共通マスタの設定が初期値として反映されています。</p></td>
+				</tr>
+			</table>
+		</li>
+		<li>
+			<p><strong>［CSV出力］ボタンをクリックする</strong></p>
+			<p><img src="images/03-8-003.png" alt="" /></p>
+			<p>給与ソフト連携用のCSVデータがダウンロードされます。</p>
+			<p><img src="images/03-8-004.png" alt="" /></p>
+		</li>
+	</ol>
+</article>
+</div>
+
+<a href="#" id="goto_top">▲</a>
+</div>
+<footer>
+<p>Copyright 2020 SBI Business Solutions Co.,</p>
+</footer>
+</body>
+
+<!-- Mirrored from manual.kintaireco.jp/admin/contents/03-01_data.html by HTTrack Website Copier/3.x [XR&CO'2014], Mon, 06 Apr 2026 05:34:15 GMT -->
+</html>

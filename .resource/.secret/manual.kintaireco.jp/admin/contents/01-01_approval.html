@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html>
+
+<!-- Mirrored from manual.kintaireco.jp/admin/contents/01-01_approval.html by HTTrack Website Copier/3.x [XR&CO'2014], Mon, 06 Apr 2026 05:33:50 GMT -->
+<head>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+<title>勤怠RECO［管理用］操作マニュアル</title>
+<link rel="stylesheet" type="text/css" href="../css/style.css" />
+<link rel="icon" href="../favicon.ico" />
+</head>
+<body>
+<header>
+<div>	
+	<a href="#sidemenu" class="hamburger-menu">
+	<div></div>
+	<div></div>
+	<div></div>
+</a>	
+	<header id="sidemenu" class="sidenavs">
+		<a href="#" class="close-btn">&times;</a>
+	<h2 class="toc_h2_nav"><a href="../index.html" target="_top">はじめに</a></h2>
+	<h2 class="toc_h2_nav"><a href="05-01_master.html" target="_top">初期設定</a></h2>
+		<a href="05-05_master.html" target="_top">勤怠RECO運用ルールの設定</a>
+		<a href="05-04_master.html" target="_top">休日/法定休日の設定</a>
+		<a href="05-08_master.html" target="_top">部署の登録</a>
+		<a href="05-09_master.html" target="_top">役職名の登録</a>
+		<a href="05-03_master.html" target="_top">勤務形態の登録</a>
+		<a href="05-02_master.html" target="_top">従業員の登録</a>
+		<a href="05-14_timestamper.html" target="_top">ICカード打刻アプリの設定</a>
+		<a href="06-01_alert.html" target="_top">アラート機能の設定</a>
+		<a href="05-10_master.html" target="_top">申請承認機能の承認者の登録</a>
+		<a href="05-07_master.html" target="_top">プロジェクトの登録</a>
+		<a href="04-01_holiday.html" target="_top">休暇の付与</a>
+		<a href="05-11_master.html" target="_top">シフトテンプレートの登録</a>
+		<a href="05-13_master.html" target="_top">給与連携フォーマットの登録</a>
+		<a href="05-06_master.html" target="_top">勤怠RECOのメニュー表示の設定</a>
+		<a href="05-12_master.html" target="_top">データを取り込んで初期設定する</a>
+	<h2 class="toc_h2_nav"><a href="01-00_dailywork.html" target="_top">日常管理業務</a></h2>
+		<a href="01-06_readme.html" target="_top">はじめにお読みください</a>
+		<a href="01-01_approval.html" target="_top">申請や勤怠を承認する</a>
+		<a href="02-01_shift.html" target="_top">シフトを管理する</a>
+		<a href="04-04_holiday.html" target="_top">残業・有休取得の状況を確認する</a>
+		<a href="06-02_alert.html" target="_top">アラートチェックする</a>
+		<a href="03-01_data.html" target="_top">管理台帳（従業員の勤務データ）を出力する</a>
+	</header>
+</div>	
+<p><span class="logo"><img src="images/logo.png" alt="logo" /></span>勤怠RECO［管理用］操作マニュアル</p>
+</header>
+<div id="container">
+
+<div class="main_nav">
+<p>勤怠RECO［管理用］<br />操作マニュアル</p>
+<nav class="main">
+<ul>
+	<li><h2 class="toc_h2"><a href="../index.html" target="_top">はじめに</a></h2></li>
+	<li><h2 class="toc_h2"><a href="05-01_master.html" target="_top">初期設定</a></h2>
+	<ul>
+		<li><p><a href="05-05_master.html" target="_top">勤怠RECO運用ルールの設定</a></p></li>
+		<li><p><a href="05-04_master.html" target="_top">休日/法定休日の設定</a></p></li>
+		<li><p><a href="05-08_master.html" target="_top">部署の登録</a></p></li>
+		<li><p><a href="05-09_master.html" target="_top">役職名の登録</a></p></li>
+		<li><p><a href="05-03_master.html" target="_top">勤務形態の登録</a></p></li>
+		<li><p><a href="05-02_master.html" target="_top">従業員の登録</a></p></li>
+		<li><p><a href="05-14_timestamper.html" target="_top">ICカード打刻アプリの設定</a></p></li>
+		<li><p><a href="06-01_alert.html" target="_top">アラート機能の設定</a></p></li>
+		<li><p><a href="05-10_master.html" target="_top">申請承認機能の承認者の登録</a></p></li>
+		<li><p><a href="05-07_master.html" target="_top">プロジェクトの登録</a></p></li>
+		<li><p><a href="04-01_holiday.html" target="_top">休暇の付与</a></p></li>
+		<li><p><a href="05-11_master.html" target="_top">シフトテンプレートの登録</a></p></li>
+		<li><p><a href="05-13_master.html" target="_top">給与連携フォーマットの登録</a></p></li>
+		<li><p><a href="05-06_master.html" target="_top">勤怠RECOのメニュー表示の設定</a></p></li>
+		<li><p><a href="05-12_master.html" target="_top">データを取り込んで初期設定する</a></p></li>
+	</ul>
+	</li>
+	<li><h2 class="toc_h2"><a href="01-00_dailywork.html" target="_top">日常管理業務</a></h2>
+	<ul>
+		<li><p><a href="01-06_readme.html" target="_top">はじめにお読みください</a></p>
+		<li><p class="selected"><a href="01-01_approval.html" target="_top">申請や勤怠を承認する</a></p></li>
+		<li><p><a href="02-01_shift.html" target="_top">シフトを管理する</a></p></li>
+		<li><p><a href="04-04_holiday.html" target="_top">残業・有休取得の状況を確認する</a></p></li>
+		<li><p><a href="06-02_alert.html" target="_top">アラートチェックする</a></p></li>	
+		<li><p><a href="03-01_data.html" target="_top">管理台帳（従業員の勤務データ）を出力する</a></p></li>
+	</ul>
+	</li>
+</ul>
+</nav>
+</div>
+
+<div class="contents">
+
+<div class="sub_nav">
+<nav>
+<p>＜目次＞</p>
+<ul>
+	<li><p><a href="#01-02">各種申請を承認する</a></p>
+	<ul>
+		<li><p><a href="#01-02-00">［承認］タブ画面について</a></p></li>
+		<li><p><a href="#01-02-001">申請を承認する</a></p></li>
+		<li><p><a href="#01-02-01">飛び越し承認する</a></p></li>
+	</ul>
+	</li>
+	<li><p><a href="#01-04">月次の勤怠を承認する</a></p>
+	<ul>
+		<li><p><a href="#01-03">勤怠を承認する</a></p></li>
+		<li><p><a href="#01-04-01">未入力の勤務実績をチェックする</a></p></li>
+		<li><p><a href="#01-05">未承認の勤務実績をチェックする</a></p></li>
+		<li><p><a href="#01-05-01">締日に勤怠確定処理をする</a></p></li>
+	</ul>
+	</li>
+</ul>
+</nav>
+</div>
+
+<article>
+<h1 id="01-01">申請や勤怠を承認する</h1>
+<p>勤怠承認申請や各種申請があった場合の承認は［承認］メニューから行います。</p>
+<p>［承認］をクリックすると以下のサブメニューが表示されます。権限によっては、表示されないサブメニューがあります。</p>
+<p>（詳しくは、「<a href="../index.html#01-01-00">権限ごとに操作できるメニュー一覧</a>」をご確認ください。）</p>
+<p><img src="images/web_041.png" alt="" /></p>
+<ul class="ui_list">
+	<li><p><strong>［申請承認］</strong></p>
+	<p>従業員からの休暇申請や残業申請等の各種申請を承認します。「共通マスタ」で「承認申請機能」を「使用する」にしていないと使用できません（メニュー表示されません）。</p>
+	<p>詳しくは、「<a href="#01-02">各種申請を承認する</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［勤怠承認］</strong></p>
+	<p>従業員の勤怠を確認し、承認します。［従業員マスタ］で固定承認者に設定されている、または、［プロジェクトファイル］で承認者に設定されている場合、承認待ちの通知が表示されます。</p>
+	<p>詳しくは、「<a href="#01-03">勤怠を承認する</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［勤務未入力チェック］</strong></p>
+	<p>打刻漏れしている従業員がいないかを確認し、該当者にはメール送信します。</p>
+	<p>詳しくは、「<a href="#01-04-01">未入力の勤務実績をチェックする</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［勤務未承認チェック］</strong></p>
+	<p>勤怠実績の未承認がないか確認します。</p>
+	<p>詳しくは、「<a href="#01-05">未承認の勤務実績をチェックする</a>」を参照してください。</p>
+	</li>
+</ul>
+
+<table class="note">
+<tr>
+	<th><p>ご注意</p></th>
+	<td><p>［勤務未承認チェック］はシステム管理者アカウントと人事担当者アカウントでのみ操作可能です。</p></td>
+</tr>
+</table>
+
+</article>
+
+<article>
+<a name="01-02"></a>
+<h2>各種申請を承認する</h2>
+<p>各種申請の承認は、申請承認画面の［承認］タブ画面で実施します。</p>
+<table class="tip">
+  <tr>
+    <th><p>ヒント</p></th>
+    <td>
+      <p>各種申請があった場合、「承認経路マスタ」で承認者/決裁者として設定されているユーザーのトップ画面には承認待ちの通知が表示されます。</p>
+			<p><img src="images/01-2-007.png" alt="" /></p>
+			<p>ピンク帯内の文字をクリックすると、申請承認画面に遷移します。</p>
+    </td>
+  </tr>
+  </table>
+<table class="note">
+<tr>
+	<th><p>ご注意</p></th>
+	<td><p>各種申請を承認できるのは、承認者アカウント、課長級アカウント、人事担当者アカウント、システム管理者アカウントです。</p></td>
+</tr>
+</table>
+<a name="01-02-00"></a>
+<h3>［承認］タブ画面について</h3>
+<p>管理用トップ画面のメニュー［承認］＞［申請承認］をクリックすると、［承認］タブ画面が表示されます。</p>
+<p><img src="images/01-1-000.png" alt="" /></p>
+
+<ol class="circle_num">
+		<li><p><strong>キーワードボックス</strong></p>
+	<p>検索用キーワードを入力します。</p>
+	</li>
+	<li><p><strong>［検索］ボタン</strong></p>
+	<p>キーワードを入力し、該当する項目で絞り込みを行います。</p>
+	<p>検索の対象になる項目は申請種別、申請理由、申請内容、決裁者のコメントです。</p>
+	</li>
+	<li>
+		<p><strong>［リセット］ボタン</strong></p>
+		<p>クリックすると検索キーワードや、詳細検索項目などの検索条件をリセットします。</p>
+	</li>
+	<li>
+		<p><strong>詳細検索</strong></p>
+		<p>クリックすると詳細検索項目を表示します。</p>
+	</li>
+	<li>
+		<p><strong>日付検索</strong></p>
+		<p>ドロップダウンリストから「申請日」、「対象日」を切り替え、右のカレンダーに期間を入力し絞り込みます。</p>
+	</li>
+	<li>
+		<p><strong>詳細検索項目</strong></p>
+		<p>「詳細検索」をクリックすると表示され、「申請種別」、「申請者」、「申請状況」、「承認状況」で検索できます。</p>
+	</li>
+	<li>
+		<p><strong>承認者検索</strong>　<font size="-1.5">※システム管理者の画面のみ</font></p>
+		<p>承認者で絞り込んで検索すると、該当者が実施した各申請の承認状況が表示されます。<br>
+			承認者で絞り込まずに「全て」を選択して検索すると、各申請の申請状況が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>一括承認／一括却下</strong></p>
+		<p>⑩のチェックボックスで選択されている申請すべてをまとめて承認、却下します。</p>
+	</li>
+	<li>
+		<p><strong>［出力する］ボタン</strong></p>
+		<p>表示されている一覧を印刷します。チェックボックスにチェックがある場合は、チェックがある項目のみ印刷します。</p>
+	</li>
+			<li>
+		<p><strong>チェックボックス</strong></p>
+		<p>クリックすると対象の行を選択／選択解除します。項目行のチェックボックスを操作すると、一括選択／一括選択解除できます。</p>
+	</li>
+	<li>
+		<p><strong>申請日時</strong></p>
+		<p>申請者が申請した日時です。</p>
+	</li>
+	<li>
+		<p><strong>申請種別</strong></p>
+		<p>申請内容の種別です。</p>
+	</li>
+	<li>
+		<p><strong>申請内容</strong></p>
+		<p>申請理由、対象日、申請内容が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>申請者（代理申請者）</strong></p>
+		<p>申請した人を表示します。（）内は代理申請者が表示されます。</p>
+		<p>システム管理者アカウントでログインしている場合、全従業員の勤怠を検索できます。</p>
+		<p>（承認経路外の申請の承認・却下はできません。）</p>
+	</li>
+	<li>
+		<p><strong>承認状況</strong></p>
+		<p>承認状況をクリックすることで、すべての承認者、決裁者の承認日付とコメントが確認できます。</p>
+	</li>
+	<li>
+		<p><strong>コメント</strong></p>
+		<p>承認者からの最新のコメントが表示されます。</p>
+	</li>
+	<li>
+		<p><strong>書類</strong></p>
+		<p><img src="images/icon_note.png" alt="" />をクリックすると、申請の詳細を閲覧できます。</p>
+	</li>
+	<li>
+		<p><strong>承認判断</strong></p>
+		<p>クリックして申請の［承認］または［却下］を選択します。</p>
+	</li>
+</ol>
+<a name="01-02-001"></a>
+<h3>申請を承認する</h3>
+<ol class="step">
+	<li><p><strong>［承認］をクリックし、［申請承認］をクリックする</strong></p>
+	<p><img src="images/01-1-001.png" alt="" /></p>
+	<p>「申請承認」の「承認」タブ画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>申請内容を確認し（①）、必要があればコメントを入力する（②）</strong></p>
+		<p>「申請承認」の「承認」タブ画面が表示されます。</p>
+		<p><img src="images/01-1-002.png" alt="" /></p>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+					<p><img src="images/icon_note.png" alt="" />をクリックすると（③）、申請詳細画面が表示され、詳細情報を確認できます。</p>
+					<p><img src="images/01-1-002-1.png" alt="" /></p>
+				</td>
+			</tr>
+		</table>
+	</li>
+	<li>
+		<p><strong>［承認］または［却下］をクリックする</strong></p>
+		<p><img src="images/01-1-003.png" alt="" /></p>
+		<p>画面上部に「更新が完了しました。」とメッセージが表示されましたら、選択した申請の承認（却下）の登録は完了です。</p>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+					<p>未承認の申請が複数ある場合は、まとめて承認判断することもできます。</p>
+					<p>項目行のチェックボックスにチェックを入れ、［一括承認］または［一括却下］をクリックしてください。</p>
+				</td>
+			</tr>
+			</table>
+	</li>
+</ol>
+
+<a name="01-02-01"></a>
+<h3>飛び越し承認する</h3>
+<p>飛び越し承認では自分より前に承認すべき人が不在の場合などに、その人を飛び越して承認します。</p>
+<p>管理用トップ画面のメニュー［承認］＞［申請承認］＞［飛び越し承認］タブをクリックすると［飛び越し承認］タブ画面が表示されます。</p>
+<p><img src="images/01-1-006.png" alt="" /></p>
+<p>［飛び越し承認］タブ画面の内容については、「<a href="#01-02-00">［承認］タブ画面について</a>」を参照してください。</p>
+<p>※［飛び越し承認］タブには［承認］タブの「⑦一括承認/一括却下」はありません（飛び越し承認では一括承認/一括却下ができません）。</p>
+
+</article>
+<article>
+
+
+<a name="01-04"></a>
+<h2>月次の勤怠を承認する</h2>
+
+<a name="01-03"></a>
+<h3>勤怠を承認する</h3>
+<p>従業員の勤怠を確認し、承認／否認します。</p>
+<table class="tip">
+	<tr>
+		<th><p>ヒント</p></th>
+		<td>
+		<p>従業員が勤務実績を登録すると、固定承認者またはプロジェクト承認者のトップ画面に、承認待ちの通知が表示されます。</p>
+		<p><img src="images/01-1-005.png" alt="" /></p>
+		<p>ピンク帯内の文字をクリックすると、勤怠承認画面に遷移します。</p>
+			<ul class="ui_list">
+				<li><p>固定承認者：［従業員マスタ］で固定承認者に設定されている人</p></li>
+				<li><p>プロジェクト承認者：［プロジェクトファイル］で承認者に設定されている人</p></li>
+			</ul>
+    </td>
+  </tr>
+  </table>
+
+
+<table class="note">
+<tr>
+	<th><p>ご注意</p></th>
+	<td>
+	<ul class="ui_list">
+		<li>
+		<p>勤怠を承認できるのは、承認者アカウント、課長級アカウント、人事担当者アカウント、システム管理者アカウントです。</p>
+		</li>
+		<li>
+		<p>承認者アカウント、課長級アカウントは、自分宛に申請された勤怠のみを承認できますが、人事担当者アカウント、システム管理者アカウントは、全従業員の勤怠を承認できます。</p></td>
+		</li>
+	</ul>
+</tr>
+</table>
+<br />
+<ol class="step">
+	<li><p><strong>［承認］をクリックし、［勤怠承認］をクリックする</strong></p>
+	<p><img src="images/01-2-001.png" alt="" /></p>
+	<p>「勤怠承認」画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>承認する勤怠の期間を指定し（①）、［検索］ボタンをクリックする（②）</strong></p>
+		<p><img src="images/01-2-002.png" alt="" /></p>
+		<p>勤怠承認する従業員名が表示されます。</p>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+					<p>「承認済みを含む」にチェックをつけて検索すると、勤怠を全て承認した従業員も表示できます。承認済みの場合、従業員名の横に<img src="images/icon_check.png" alt="" />が表示されます。</p>
+				</td>
+			</tr>
+			</table>
+	</li>
+	<li>
+		<p><strong>承認したい従業員名をクリックする</strong></p>
+		<p><img src="images/01-2-003.png" alt="" /></p>
+		<p>選択した従業員の勤務実績画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>承認欄の▲をクリックし承認する（①）</strong></p>
+		<p><img src="images/01-2-004.png" alt="" /></p>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+					<ul class="ui_list">
+						<li>
+							<p>▲はクリックするたびに〇（承認）→×（否認）→▲（承認待ち）に切り替わります。</p>
+						</li>
+						<li>
+							<p>勤怠が一時保存の場合は、「‐」が表示されており、承認や否認ができません。</p>
+						</li>
+						<li>
+							<p>表示されているすべての勤怠を一括して承認したい場合は［全承認］ボタンをクリックしてください（②）。</p>
+						</li>
+						<li><p><img src="images/icon_baloon.png" alt="" />をクリックするとコメントを入力できます（③）。もう一度<img src="images/icon_baloon.png" alt="" />をクリックするとコメント欄が閉じます。</p>
+						</li>
+					</ul>
+				</td>
+			</tr>
+			</table>
+	</li>
+	<li>
+		<p><strong>［更新する］ボタンをクリックする</strong></p>
+		<p><img src="images/01-2-005.png" alt="" /></p>
+		<p>画面上部に「更新が完了しました。」とメッセージが表示され、承認結果やコメントが登録されます。</p>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+					<ul class="ui_list">
+						<li>
+							<p>承認者のコメントがある日は<img src="images/icon_baloon.png" alt="" />の背景が黄色になります（①）。</p>
+						</li>
+						<li>
+							<p>日報に複数プロジェクトが登録されている場合は、プロジェクト毎に承認ができます。（②）</p>
+						</li>
+						<li>
+							<p>申請した従業員からコメントがある場合は、備考欄に「･･･」が表示されます（③）。マウスオーバーするとコメントを確認できます。</p>
+						</li>
+					</ul>
+					<p><img src="images/01-2-006.png" alt="" /></p>
+				</td>
+			</tr>
+			</table>
+	</li>
+</ol>
+
+<a name="01-04-01"></a>
+<h3>未入力の勤務実績をチェックする</h3>
+<p>承認対象者で打刻漏れしている人がいないかを確認します。該当者には勤怠入力依頼のメールを送信します。</p>
+<table class="note">
+	<tbody><tr>
+		<th><p>ご注意</p></th>
+		<td>
+			<ul class="ui_list">
+			<li>
+				<p>未入力の勤務実績をチェックできるのは、課長級アカウント、人事担当者アカウント、システム管理者アカウントです。</p>
+			</li>
+			<li>
+				<p>課長級アカウントは、所属部課の従業員のみをチェックできますが、人事担当者アカウント、システム管理者アカウントは、全従業員の勤務実績をチェックできます。</p>
+			</li>
+			</ul>
+		</td>
+	</tr>
+	</tbody></table>
+<br />
+<ol class="step">
+	<li>
+		<p><strong>［承認］をクリックし、［勤務未入力チェック］をクリックする</strong></p>
+		<p><img src="images/01-3-001.png" alt="" /></p>
+		<p>「勤務未入力チェック」画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>未入力のチェックをする期間を指定し（①）、［検索］ボタンをクリックする（②）</strong></p>
+		<p><img src="images/01-3-002.png" alt="" /></p>
+		<p>該当期間の勤務未入力者、および未入力日付がリストアップされます。</p>
+		<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td>
+					<ul class="ui_list">
+						<li>
+							<p>「従業員マスタ」で「未入力チェック」にチェックが入っていない場合は、未入力でもリストアップされません。</p>
+						</li>
+						<li>
+							<p>「従業員マスタ」でメールアドレスを登録していないと、リストアップはされますが通知メールは送信されません。</p>
+						</li>
+					</ul>
+				</td>
+			</tr>
+			</tbody></table>
+	</li>
+	<li>
+		<p><strong>チェックボックスにチェックを入れ（①）、［メール送信］ボタンをクリックする（②）</strong></p>
+		<p><img src="images/01-3-003.png" alt="" /></p>
+		<p>画面上部に「通知メールを送信しました。」というメッセージが表示され、対象者に勤務入力を依頼するメールが送信されます。</p>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+					<ul class="ui_list">
+						<li>
+							<p>［全選択］ボタンをクリックしてから（③）［メール送信］ボタンをクリックすると、すべての未入力者に一括してメール送信できます。もう一度［全選択］をクリックすると、全選択が解除されます。</p>
+						</li>
+						<li>
+							<p>チェックボックスがグレーアウトになっている対象者（④）にはメール送信できません。<br>送信できない理由は以下のいずれかが原因です。</p>
+							<ul>
+								<li><p>「共通マスタ」で「メール通知をしない」設定にしている。　</p></li>
+								<li><p>「従業員マスタ」で メールアドレスが未登録になっている。</p></li>
+							</ul>
+							<p>※原因解消の際のマスタ変更はシステム管理者権限のあるアカウントで行ってください。</p>
+						</li>
+					</ul>
+				</td>
+			</tr>
+			</table>
+	</li>
+</ol>
+
+
+
+
+<a name="01-05"></a>
+<h3>未承認の勤務実績をチェックする</h3>
+<p>勤務実績の未承認がないかを確認します。人事担当者が勤怠承認者に対して行うチェックです。未承認があった場合は、承認者に通知メールを送信します。</p>
+<table class="note">
+<tr>
+	<th><p>ご注意</p></th>
+	<td><p>未承認の勤務実績をチェックできるのは、人事担当者アカウント、システム管理者アカウントです。</p></td>
+</tr>
+</table>
+<br />
+<ol class="step">
+	<li>
+    <p><strong>［承認］をクリックし、［勤務未承認チェック］をクリックする</strong></p>
+    <p><img src="images/01-4-001.png" alt="" /></p>
+    <p>「勤務未承認チェック」画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>チェックする期間を指定し（①）、［検索］ボタンをクリックする（②）</strong></p>
+		<p><img src="images/01-4-002.png" alt="" /></p>
+		<p>該当期間の未承認者がリストアップされます。</p>
+		<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td>
+					<ul class="ui_list">
+						<li>
+							<p>「従業員マスタ」で「未承認チェック」にチェックが入っていない場合は、未承認でもリストアップされません。</p>
+						</li>
+						<li>
+							<p>「従業員マスタ」でメールアドレスを登録していないと、リストアップはされますが通知メールは送信されません。</p>
+						</li>
+					</ul>
+				
+				</td>
+			</tr>
+			</tbody></table>
+  </li>
+  <li>
+		<p><strong>チェックボックスにチェックを入れ（①）、［メール送信］ボタンをクリックする（②）</strong></p>
+		
+		<p><img src="images/01-4-003.png" alt="" /></p>
+		<p>画面上部に「通知メールを送信しました。」というメッセージが表示され、対象の承認者に勤務承認を依頼するメールが送信されます。</p>
+		<table class="tip">
+			<tr>
+				<th><p>ヒント</p></th>
+				<td>
+					<ul class="ui_list">
+						<li>
+							<p>［全選択］ボタンをクリックしてから（③）［メール送信］ボタンをクリックすると、すべての未承認者に一括してメール送信できます。もう一度［全選択］をクリックすると、全選択が解除されます。</p>
+						</li>
+						<li>
+							<p>チェックボックスがグレーアウトになっている対象者（④）にはメール送信できません。<br />送信できない理由は以下のいずれかが原因です。</p>
+							<ul>
+								<li><p>「共通マスタ」で「メール通知をしない」設定にしている。　</p></li>
+								<li><p>「従業員マスタ」で メールアドレスが未登録になっている。</p></li>
+							</ul>
+							<p>※原因解消の際のマスタ変更はシステム管理者権限のあるアカウントで行ってください。</p>
+						</li>
+					</ul>
+				</td>
+			</tr>
+			</table>
+	</li>
+</ol>
+
+<a name="01-05-01"></a>
+<h3>締日に勤怠確定処理をする</h3>
+<p>全従業員の勤怠承認後、確定処理を行います。確定処理後は勤怠実績が編集できなくなります。</p>
+<ol class="step">
+	<li>
+    <p><strong>［承認］をクリックし、［勤務未承認チェック］をクリックする</strong></p>
+    <p><img src="images/01-4-001.png" alt="" /></p>
+    <p>「勤務未承認チェック」画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>日付を確定したい月を指定し（①）、［検索］ボタンをクリックする（②）</strong></p>
+		<p><img src="images/01-5-001.png" alt="" /></p>
+		<p>勤怠未承認がなければ確定作業案内画面が表示されます。</p>
+  </li>
+  <li>
+		<p><strong>［確定処理］をクリックする</strong></p>
+		<p><img src="images/01-5-002.png" alt="" /></p>
+		<p>確定処理を実行します。</p>
+		<p>画面上部に「確定処理が成功しました。」とメッセージが表示されると処理は終了です。</p>
+		<p>［マスタ］＞［共通マスタ］の「確定処理日」が更新されます。</p>
+		<p><img src="images/01-5-003.png" alt="" /></p>
+	</li>
+</ol>
+</article>
+</div>
+
+<a href="#" id="goto_top">▲</a>
+</div>
+<footer>
+<p>Copyright 2020 SBI Business Solutions Co.,</p>
+</footer>
+</body>
+
+<!-- Mirrored from manual.kintaireco.jp/admin/contents/01-01_approval.html by HTTrack Website Copier/3.x [XR&CO'2014], Mon, 06 Apr 2026 05:33:56 GMT -->
+</html>

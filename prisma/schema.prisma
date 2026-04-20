@@ -1,0 +1,160 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  EMPLOYEE
+  APPROVER
+  ADMIN
+}
+
+enum AttendanceStatus {
+  OPEN       // 編集可
+  SUBMITTED  // 本人確認済
+  APPROVED   // 承認済
+  LOCKED     // 締め済
+}
+
+enum RequestType {
+  OVERTIME   // 残業申請
+  LEAVE      // 休暇申請
+  ABSENCE    // 欠勤
+  COMMENT    // 打刻コメント・修正依頼
+  OTHER
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ApprovalAction {
+  APPROVED
+  REJECTED
+}
+
+// 従業員マスタ（NextAuth Adapter 必須カラム含む）
+model User {
+  id               String    @id @default(cuid())
+  name             String?
+  email            String    @unique
+  emailVerified    DateTime?
+  image            String?
+  role             Role      @default(EMPLOYEE)
+  approverStep     Int?      // APPROVER のみ: 1 or 2
+  department       String?
+  employmentType   String    @default("full") // full / part
+  workStartTime    String?   // "08:30"
+  workEndTime      String?   // "17:30"
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+
+  attendanceRecords AttendanceRecord[]
+  requests          Request[]
+  approvals         Approval[]
+  accounts          Account[]
+  sessions          Session[]
+}
+
+// NextAuth 必須テーブル
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// 打刻記録
+model AttendanceRecord {
+  id             String           @id @default(cuid())
+  userId         String
+  date           DateTime         // 日付のみ (00:00:00 JST)
+  clockIn        DateTime?
+  clockOut       DateTime?
+  breakStart     DateTime?
+  breakEnd       DateTime?
+  workingMinutes Int?
+  note           String?
+  status         AttendanceStatus @default(OPEN)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, date])
+}
+
+// 各種申請
+model Request {
+  id         String        @id @default(cuid())
+  userId     String
+  type       RequestType
+  targetDate DateTime
+  detail     Json?         // 申請種別ごとの追加情報
+  reason     String?
+  status     RequestStatus @default(PENDING)
+  createdAt  DateTime      @default(now())
+
+  user      User       @relation(fields: [userId], references: [id])
+  approvals Approval[]
+}
+
+// 承認ログ（多段階）
+model Approval {
+  id         String         @id @default(cuid())
+  requestId  String
+  approverId String
+  step       Int
+  action     ApprovalAction
+  comment    String?
+  actedAt    DateTime       @default(now())
+
+  request  Request @relation(fields: [requestId], references: [id])
+  approver User    @relation(fields: [approverId], references: [id])
+}
+
+// 有給残（手動管理）
+model LeaveBalance {
+  id         String @id @default(cuid())
+  userId     String
+  fiscalYear Int
+  totalDays  Float
+  usedDays   Float  @default(0)
+
+  @@unique([userId, fiscalYear])
+}

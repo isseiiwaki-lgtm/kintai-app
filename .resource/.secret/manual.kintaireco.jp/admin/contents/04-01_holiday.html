@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html>
+
+<!-- Mirrored from manual.kintaireco.jp/admin/contents/04-01_holiday.html by HTTrack Website Copier/3.x [XR&CO'2014], Mon, 06 Apr 2026 05:33:30 GMT -->
+<head>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+<title>勤怠RECO［管理用］操作マニュアル</title>
+<link rel="stylesheet" type="text/css" href="../css/style.css" />
+<link rel="icon" href="../favicon.ico" />
+</head>
+<body>
+<header>
+<div>	
+	<a href="#sidemenu" class="hamburger-menu">
+	<div></div>
+	<div></div>
+	<div></div>
+</a>	
+	<header id="sidemenu" class="sidenavs">
+		<a href="#" class="close-btn">&times;</a>
+	<h2 class="toc_h2_nav"><a href="../index.html" target="_top">はじめに</a></h2>
+	<h2 class="toc_h2_nav"><a href="05-01_master.html" target="_top">初期設定</a></h2>
+		<a href="05-05_master.html" target="_top">勤怠RECO運用ルールの設定</a>
+		<a href="05-04_master.html" target="_top">休日/法定休日の設定</a>
+		<a href="05-08_master.html" target="_top">部署の登録</a>
+		<a href="05-09_master.html" target="_top">役職名の登録</a>
+		<a href="05-03_master.html" target="_top">勤務形態の登録</a>
+		<a href="05-02_master.html" target="_top">従業員の登録</a>
+		<a href="05-14_timestamper.html" target="_top">ICカード打刻アプリの設定</a>
+		<a href="06-01_alert.html" target="_top">アラート機能の設定</a>
+		<a href="05-10_master.html" target="_top">申請承認機能の承認者の登録</a>
+		<a href="05-07_master.html" target="_top">プロジェクトの登録</a>
+		<a href="04-01_holiday.html" target="_top">休暇の付与</a>
+		<a href="05-11_master.html" target="_top">シフトテンプレートの登録</a>
+		<a href="05-13_master.html" target="_top">給与連携フォーマットの登録</a>
+		<a href="05-06_master.html" target="_top">勤怠RECOのメニュー表示の設定</a>
+		<a href="05-12_master.html" target="_top">データを取り込んで初期設定する</a>
+	<h2 class="toc_h2_nav"><a href="01-00_dailywork.html" target="_top">日常管理業務</a></h2>
+		<a href="01-06_readme.html" target="_top">はじめにお読みください</a>
+		<a href="01-01_approval.html" target="_top">申請や勤怠を承認する</a>
+		<a href="02-01_shift.html" target="_top">シフトを管理する</a>
+		<a href="04-04_holiday.html" target="_top">残業・有休取得の状況を確認する</a>
+		<a href="06-02_alert.html" target="_top">アラートチェックする</a>
+		<a href="03-01_data.html" target="_top">管理台帳（従業員の勤務データ）を出力する</a>
+	</header>
+</div>	
+<p><span class="logo"><img src="images/logo.png" alt="logo" /></span>勤怠RECO［管理用］操作マニュアル</p>
+</header>
+<div id="container">
+
+<div class="main_nav">
+<p>勤怠RECO［管理用］<br />操作マニュアル</p>
+<nav class="main">
+<ul>
+	<li><h2 class="toc_h2"><a href="../index.html" target="_top">はじめに</a></h2></li>
+	<li><h2 class="toc_h2"><a href="05-01_master.html" target="_top">初期設定</a></h2>
+	<ul>
+		<li><p><a href="05-05_master.html" target="_top">勤怠RECO運用ルールの設定</a></p></li>
+		<li><p><a href="05-04_master.html" target="_top">休日/法定休日の設定</a></p></li>
+		<li><p><a href="05-08_master.html" target="_top">部署の登録</a></p></li>
+		<li><p><a href="05-09_master.html" target="_top">役職名の登録</a></p></li>
+		<li><p><a href="05-03_master.html" target="_top">勤務形態の登録</a></p></li>
+		<li><p><a href="05-02_master.html" target="_top">従業員の登録</a></p></li>
+		<li><p><a href="05-14_timestamper.html" target="_top">ICカード打刻アプリの設定</a></p></li>
+		<li><p><a href="06-01_alert.html" target="_top">アラート機能の設定</a></p></li>
+		<li><p><a href="05-10_master.html" target="_top">申請承認機能の承認者の登録</a></p></li>
+		<li><p><a href="05-07_master.html" target="_top">プロジェクトの登録</a></p></li>
+		<li><p class="selected"><a href="04-01_holiday.html" target="_top">休暇の付与</a></p></li>
+		<li><p><a href="05-11_master.html" target="_top">シフトテンプレートの登録</a></p></li>
+		<li><p><a href="05-13_master.html" target="_top">給与連携フォーマットの登録</a></p></li>
+		<li><p><a href="05-06_master.html" target="_top">勤怠RECOのメニュー表示の設定</a></p></li>
+		<li><p><a href="05-12_master.html" target="_top">データを取り込んで初期設定する</a></p></li>
+	</ul>
+	</li>
+	<li><h2 class="toc_h2"><a href="01-00_dailywork.html" target="_top">日常管理業務</a></h2>
+	<ul>
+		<li><p><a href="01-06_readme.html" target="_top">はじめにお読みください</a></p>
+		<li><p><a href="01-01_approval.html" target="_top">申請や勤怠を承認する</a></p></li>
+		<li><p><a href="02-01_shift.html" target="_top">シフトを管理する</a></p></li>
+		<li><p><a href="04-04_holiday.html" target="_top">残業・有休取得の状況を確認する</a></p></li>
+		<li><p><a href="06-02_alert.html" target="_top">アラートチェックする</a></p></li>
+		<li><p><a href="03-01_data.html" target="_top">管理台帳（従業員の勤務データ）を出力する</a></p></li>
+	</ul>
+	</li>
+</ul>
+</nav>
+</div>
+
+<div class="contents">
+
+<div class="sub_nav">
+<nav>
+<p>＜目次＞</p>
+<ul>
+	<li><p><a href="#04-01">有休自動付与マスタを設定する</a></p>
+	<li><p><a href="#04-02">有給休暇を付与する</a></p>
+	<ul>
+		<li><p><a href="#04-02-02-02">有休付与情報を登録する
+	</a></p></li>
+		<li><p><a href="#04-02-02-01">有休付与情報を一括取込する
+	</a></p></li>
+		<li><p><a href="#04-02-05">有休自動付与を行う
+	</a></p></li>
+	<li><p><a href="#04-02-03">有休付与情報を上書きする
+	</a></p></li>
+		<li><p><a href="#04-02-04">有休付与情報を削除する</a></p></li>
+		<li><p><a href="#04-02-01">［有休付与］タブ画面について</a></p></li>
+	</ul>
+	</li>
+	<li><p><a href="#04-03">特別休暇を付与する</a></p>
+	<ul>
+		<li><p><a href="#04-03-03">特別休暇付与情報を上書きする
+	</a></p></li>
+		<li><p><a href="#04-03-04">特別休暇付与情報を削除する
+	</a></p></li>
+		<li><p><a href="#04-03-01">［特別休暇付与］タブ画面について
+	</a></p></li>
+	</ul>
+	</li>
+</ul>
+</nav>
+</div>
+
+<article>
+<h1 id="04-00">休暇の付与</h1>
+<p>休暇の付与は［有休管理］メニューから行います。</p>
+<p>［有休管理］はサブメニューによって操作できるアカウント権限が異なります。詳しくは、「<a href="../index.html#01-01-00">権限ごとに操作できるメニュー一覧</a>」をご確認ください。</p>
+<p>年度が変わって従業員に新しく有休を付与する場合や、有休取得状況、残業状況を確認する場合等、有休／残業の管理はこのメニューを使用します。</p>
+<p>［有休管理］をクリックすると以下のサブメニューが表示されます。</p>
+<p><img src="images/web_001.png" alt="#04-04-04" /></p>
+<ul class="ui_list">
+	<li><p><strong>［有休・特別休暇付与］</strong></p>
+	<p>有休または特別休暇を付与します。</p>
+	<p>詳しくは、「<a href="#04-02">有給休暇を付与する</a>」または「<a href="#04-03">特別休暇を付与する</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［各課有休・残業一覧表］</strong></p>
+	<p>有休一覧表、残業一覧表を確認します。</p>
+	<p>詳しくは、「<a href="04-04_holiday.html">残業・有休取得の状況を確認する</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［有休取得一覧表］</strong></p>
+	<p>有休取得一覧表を作成します。</p>
+	<p>詳しくは、「<a href="04-04_holiday.html#04-04-03">指定した期間の有休取得一覧表をダウンロードする</a>」を参照してください。</p>
+	</li>
+	<li><p><strong>［年次有給休暇管理簿］</strong></p>
+		<p>各従業員の有休取得状況を出力（ダウンロード）することができます。</p>
+		<p>詳しくは、「<a href="04-04_holiday.html#04-04-04">年次有給休暇管理簿をダウンロードする</a>」を参照してください。</p>
+	</li>
+</ul><br >
+<table class="tip">
+	<tr>
+		<th><p>ヒント</p></th>
+		<td>
+			<p>勤怠RECO利用以前の残有休は、「<a href="#04-02-02-02">有休付与</a>」または「<a href="#04-02-02-01">有休取込</a>」で登録します。</p>
+			<p>年度が変わって、従業員に新しく有休を付与する場合は、「<a href="#04-02-05">有休自動付与</a>」をご利用いただくと、勤続年数や週所定労働日数に応じた日数を簡単に設定できます。</p>
+			<p>有休自動付与機能を利用するため、まずは「<a href="#04-01">有休自動付与マスタ</a>」をご設定ください。</p>
+		</td>
+	</tr>
+</table>
+</article>
+
+<article>
+<a name="04-01"></a>
+<h2>有休自動付与マスタを設定する</h2>
+<p>登録した有休自動付与マスタは、有休・特別休暇付与画面の［有休自動付与］で使用します。</p>
+<p>登録は［有休自動付与マスタ］画面で実施します。</p>
+<table class="note">
+	<tr>
+	<th><p>ご注意</p></th>
+	<td><p>有休自動付与マスタを操作できるのは、システム管理者アカウントのみです。</p></td>
+</tr>
+</table>
+<ol class="step">
+	<li><p><strong>［マスタ］をクリックし、［有休自動付与マスタ］をクリックする</strong></p>
+		<p><img src="images/04-1-001.png" alt="" /></p>
+		<p>「有休自動付与マスタ」画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>［新規作成］ボタンをクリックする</strong></p>
+		<p><img src="images/04-1-002.png" alt="" /></p>
+		<p>「有休自動付与マスタ-新規作成」画面が表示されます。</p>
+  </li>
+   <li>
+		<p><strong>各項目を入力する</strong></p>
+		<p><img src="images/04-1-003.png" alt="" /></p>
+		<ol class="circle_num">
+			<li>
+				<p><strong>適用開始日</strong></p>
+				<p>有休自動付与マスタの適用を開始する日付を入力します。</p>
+				<p>既に作成しているマスタと重複した日付は登録できません。</p>
+			</li>
+			<li>
+				<p><strong>名称</strong></p>
+				<p>有休自動付与マスタ名を設定します（最大255文字）。</p>
+			</li>
+			<li>
+				<p><strong>有休付与日</strong></p>
+				<p>有休を付与する日を入力します。</p>
+				<p>「入社日」を設定すると、従業員の入社した日の半年後が有休付与日になります。</p>
+				<p>「指定日」を設定すると、従業員の入社日に関わらず、指定された日が有休付与日になります。</p>
+			</li>
+			<li>
+				<p><strong>付与日数表</strong></p>
+				<p>継続勤務年数ごとの付与日数を入力します。</p>
+				<p>新規作成時、法定年次有休付与日数を満たす日数があらかじめ表示されています。</p>
+				<p>必要に応じて、付与日数を変更します。</p>
+				<p>※通常勤務は週所定5日となります。</p>
+			</li>
+		</ol>
+	</li>
+	<br >
+	<details>
+		<summary><strong>　法定年次有休付与日数を確認する</strong></summary>
+		<table class="tip">
+			<tr>
+				<th><p>継続勤務年数</p></th><th><p>0.5年</p></th><th><p>1.5年</p></th></th><th><p>2.5年</p></th></th><th><p>3.5年</p></th></th><th><p>4.5年</p></th></th><th><p>5.5年</p></th></th><th><p>6.5年～</p></th>
+			</tr>
+			<tr>
+				<th><p>通常勤務(5日)</p></th><td><p>10</p></td><td><p>11</p></td><td><p>12</p></td><td><p>14</p></td><td><p>16</p></td><td><p>18</p></td><td><p>20</p></td>
+			</tr>
+			<tr>
+				<th><p>週所定4日</p></th><td><p>7</p></td><td><p>8</p></td><td><p>9</p></td><td><p>10</p></td><td><p>12</p></td><td><p>13</p></td><td><p>15</p></td>
+			</tr>
+			<tr>
+				<th><p>週所定3日</p></th><td><p>5</p></td><td><p>6</p></td><td><p>6</p></td><td><p>8</p></td><td><p>9</p></td><td><p>10</p></td><td><p>11</p></td>
+			</tr>
+			<tr>
+				<th><p>週所定2日</p></th><td><p>3</p></td><td><p>4</p></td><td><p>4</p></td><td><p>5</p></td><td><p>6</p></td><td><p>6</p></td><td><p>7</p></td>
+			</tr>
+			<tr>
+				<th><p>週所定1日</p></th><td><p>1</p></td><td><p>2</p></td><td><p>2</p></td><td><p>2</p></td><td><p>3</p></td><td><p>3</p></td><td><p>3</p></td>
+			</tr>
+		</table>
+		<p>※2022年3月時点 厚生労働省のHP参照</p>
+		<p>上記に満たない日数で登録すると、「法定年次有休付与日数（●日）を満たしていません。」と表示されて登録ができません。</p>
+		<p><img src="images/04-1-005.png" alt="" /></p>
+	</details><br >
+	<li><p><strong>入力内容を確認し、［登録する］ボタンをクリックする</strong></p>
+		<p>画面上部に「登録が完了しました。」とメッセージが表示され、画面が「有休自動付与マスタ-詳細」画面に切り替わり有休自動付与マスタが登録されます。</p>
+		<p><img src="images/04-1-004.png" alt="" /></p>
+	<li><p><strong>不要になった有休自動付与マスタは［削除］をクリックする</strong></p>
+		<p><img src="images/04-1-006.png" alt="" /></p>
+		<p>削除を元に戻したい場合は、「削除済みを含む」にチェックを付けて検索し、「有休自動付与マスタ-編集」画面で削除済みチェックを外して登録してください。</p>
+</ol>
+</article>
+
+
+
+<article>
+<a name="04-02"></a>
+<h2>有給休暇を付与する</h2>
+<p>有休の付与は、有休・特別休暇付与画面の［有休付与］タブ画面で実施します。有休付与のための情報を登録し、マスタに反映させます。</p>
+<table class="note">
+<tr>
+	<th><p>ご注意</p></th>
+	<td><p>有休を付与できるのは、人事担当者アカウントとシステム管理者アカウントです。</p></td>
+</tr>
+</table>
+<a name="04-02-02-02"></a>
+<h3>有休付与情報を登録する</h3>
+<p>画面上から手動で、有休付与情報（従業員名やその人の有休付与日、付与日数等）を登録します。</p>
+<ol class="step">
+	<li><p><strong>［有休管理］をクリックし、［有休・特別休暇付与］をクリックする</strong></p>
+	<p><img src="images/web_002.png" alt="" /></p>
+	<p>有休・特別休暇付与画面の［有休付与］タブ画面が表示されます。</p>
+	</li>
+	<li><p><strong>「年度」に有休を付与する年度を入力する</strong></p>
+		<p>「年度」の入力は必須です。年度の期間は共通マスタの設定に従います。</p>
+		<p><img src="images/web_007.png" alt="" /></p>
+	</li>
+	<li><p><strong>有休を付与する従業員を検索するための検索条件を設定する</strong></p>
+	<ul>
+		<li><p>必要に応じて「部課」・「従業員」・「前回付与日」を設定します。</p></li>
+		<li><p>設定項目について詳しくは、「<a href="#04-02-01">［有休付与］タブ画面について</a>」を参照してください。</p></li>
+	</ul>
+		
+		<table class="note">
+		<tr>
+			<th><p>ご注意</p></th>
+			<td><p>設定した年度と、従業員の「適用開始日」「入社日」「退社日」に不整合があると、対象従業員が在籍していないと判断されて有休を付与できません。</p>
+			</td>
+		</tr>
+		</table>
+		<p><img src="images/web_008.png" alt="" /></p><br>
+	</li>
+	<li><p><strong>［検索］ボタンをクリックする</strong></p>
+		<p><img src="images/web_009.png" alt="" /></p>
+		<p>検索条件に該当する従業員が画面下部に一覧表示されます。</p><br>
+	<li><p><strong>「付与日」に有給休暇を付与する年月日を入力する</strong></p>
+		<p>カレンダーから選択します。</p>
+		<table class="note">
+		<tr>
+			<th><p>ご注意</p></th>
+			<td><p>「当年度実績」に表示されている日付と同じ年月日を入力すると、有休付与情報が上書きされます。</p>
+			</td>
+		</tr>
+		</table>
+		<p><img src="images/web_010.png" alt="" /></p>
+		</li>
+	<li>
+		<p><strong>「付与日数」に付与する日数を入力する</strong></p>
+		<p>半日休暇を付与する場合は「0.5」と入力します。</p>
+		<table class="note">
+		<tr>
+			<th><p>ご注意</p></th>
+			<td><p>「付与日数」が空のまま更新するとデータが削除されます。データを残す場合は「０」を入力してください。</p>
+			</td>
+		</tr>
+		</table>
+		<p><img src="images/web_011.png" alt="" /></p>
+	</li>
+	<li>
+		<p><strong>「有効期限」に有給休暇の有効期限が終了する年月日を入力する</strong></p>
+		<p>カレンダーから選択します。</p>
+		<table class="note">
+		<tr>
+			<th><p>ご注意</p></th>
+			<td><p>「有効期限」は「付与日」より後の日付を入力してください。</p>
+			</td>
+		</tr>
+		</table>
+		<p><img src="images/web_012.png" alt="" /></p>
+		<table class="tip">
+		<tr>
+			<th><p>ヒント</p></th>
+			<td><p>初期状態では「付与日」の2年後の日付が表示されます。</p></td>
+		</tr>
+		</table><br>
+	<li>
+		<p><strong>［更新する］ボタンをクリックする</strong></p>
+		<p><img src="images/web_013.png" alt="" /></p>
+		<p>画面上部に「登録が完了しました。」とメッセージが表示され、入力したすべての有休付与情報がマスタデータに登録されます。</p>
+	</li>
+</ol>
+
+<table class="tip">
+	<tr>
+		<th><p>ヒント</p></th>
+		<td><p>エクセルファイルのテンプレートを使って有休付与情報を一括取込できます（有休取込）。<br>操作方法について詳しくは、「<a href="#04-02-02-01">有休付与情報を一括取込する</a>」を参照してください。</p></td>
+	</tr>
+</table>
+
+<a name="04-02-02-01"></a>
+<h3>有休付与情報を一括取込する</h3>
+<p>エクセルファイルのテンプレートを使って有休付与情報（従業員名やその人の有休付与日、付与日数等）を一括取込します。</p>
+<ol class="step">
+	<li><p><strong>［有休管理］をクリックし、［有休・特別休暇付与］をクリックする</strong></p>
+	<p><img src="images/web_002.png" alt="" /></p>
+	<p>有休・特別休暇付与画面の［有休付与］タブ画面が表示されます。</p>
+	</li>
+	<li><p><strong>［有休取込］タブをクリックする</strong></p>
+	<p><img src="images/web_020.png" alt="" /></p>
+	<p>［有休取込］タブ画面が表示されます。</p>
+	</li>
+	<li><p><strong>［テンプレートダウンロード］ボタンをクリックし、エクセルファイルをダウンロードする</strong></p>
+	<p><img src="images/web_021.png" alt="" /></p>
+	<p>「有休取込テンプレート.xlsx」がダウンロードされます。</p>
+	<table class="note">
+	<tr>
+		<th><p>ご注意</p></th>
+		<td>
+		<ul>
+			<li><p>ここでダウンロードしたエクセルファイルのテンプレートのみ取り込み可能です。その他のエクセルファイルは取り込みできません。</p></li>
+			<li><p>ファイルの拡張子が「.xls」の場合は取り込みできません。拡張子は「.xlsx」にしてください。</p></li>
+			<li><p>取込行のセルの一部がかけていると、取込エラーとなる場合があります。取込まない従業員データは、行ごと削除してください。</p></li>
+		</ul>
+		</td>
+	</tr>
+	</table>
+	</li>
+	<li><p><strong>ダウンロードした「有休取込テンプレート.xlsx」を開く</strong></p>
+	<table class="note">
+	<tr>
+		<th><p>ご注意</p></th>
+		<td><p>エクセルファイルの1シート目のみ取り込みます。1シート目に有休付与情報を入力してください。</p></td>
+	</tr>
+	</table>
+	</li>
+	<li><p><strong>「付与年度」の色のついたセルに有休を付与する年度を入力する</strong></p>
+	<p><img src="images/web_022.png" alt="" /></p>
+	</li>
+	<li><p><strong>登録が必要な従業員について色のついたに有休付与情報を入力する</strong></p>
+	<ul>
+		<li><p>「付与日」：有給休暇を付与する年月日を入力します。</p></li>
+		<li><p>「付与日数」：付与する有給休暇の日数を入力します。半日休暇を付与する場合は「0.5」と入力します。</p></li>
+		<li><p>「有効期限」：有給休暇の有効期限が終了する年月日を入力します。</p></li>
+	</ul>
+	<p><img src="images/web_023.png" alt="" /></p>
+	<table class="note">
+	<tr>
+		<th><p>ご注意</p></th>
+		<td><p>有休を付与しない従業員のセルは空の状態にしてください。</p></td>
+	</tr>
+	</table>
+	</li>
+	<li><p><strong>すべての有休付与情報の入力が完了したら、名前を付けて保存または上書保存する</strong></p>
+	</li><br>
+	<li><p><strong>［有休取込］タブ画面の［参照］をクリックし、保存したエクセルファイルを選択して開く</strong></p>
+	<p><img src="images/web_024.png" alt="" /></p>
+	</li>
+	<li><p><strong>選択したファイルのファイル名が表示されていることを確認し、［エクセル取込］ボタンをクリックする</strong></p>
+	<p><img src="images/web_025.png" alt="" /></p>
+	<p>画面上部に「〇件の有休付与が完了しました。」とメッセージが表示され、エクセルファイルのテンプレートに入力された有休付与情報が一括で登録されます。</p>
+	</li>
+</ol>
+
+
+<a name="04-02-05"></a>
+<h3>有休自動付与を行う</h3>
+<p>有休自動付与マスタを使って有休付与情報（従業員名やその人の有休付与日、付与日数等）を一括登録します。</p>
+<table class="tip">
+	<tr>
+		<th><p>ヒント</p></th>
+		<td><p>・［<a href="#04-02-02-02">有休・特別休暇付与</a>］との違いは？</p>
+		<p>本メニューでは有休自動付与マスタに従って、付与日、付与日数、有効期限の3つが自動入力されます。年度更新のたびに、自動で有休が付与される機能はございませんのでご注意ください。</p>
+		</td>
+	</tr>
+	</table>
+<ol class="step">
+	<li><p><strong>［有休管理］をクリックし、［有休・特別休暇付与］をクリックする</strong></p>
+	<p><img src="images/web_002.png" alt="" /></p>
+	<p>有休・特別休暇付与画面の［有休付与］タブ画面が表示されます。</p>
+	</li>
+	<li><p><strong>［有休自動付与］タブをクリックする</strong></p>
+		<p><img src="images/04-2-001.png" alt="" /></p>
+		<p>［有休自動付与］タブ画面が表示されます。</p>
+		<table class="note">
+			<tr>
+				<th><p>ご注意</p></th>
+				<td>
+					<p>使用可能な有休自動付与マスタが存在しない場合、上部にメッセージが表示されます。［有休自動付与マスタ］をクリックして、マスタの登録を行ってください。</p>
+					<p><img src="images/04-2-001-1.png" alt="" /></p>
+				</td>
+			</tr>
+		</table>
+	</li>
+	<li><p><strong>「年度」に有休を付与する年度を入力する</strong></p>
+	<ul>
+		<li><p>「年度」の入力は必須です。</p></li>
+	</ul>
+	<p><img src="images/04-2-002.png" alt="" /></p>
+	</li>
+	<li><p><strong>有休を付与する従業員を検索するための検索条件を設定する</strong></p>
+	<ul>
+		<li><p>必要に応じて「部課」・「従業員」を設定します。</p></li>
+	</ul>
+	<p><img src="images/04-2-003.png" alt="" /></p>
+	</li>
+	<li><p><strong>［検索］ボタンをクリックする</strong></p>
+	<p><img src="images/04-2-004.png" alt="" /></p>
+	<p>検索条件に該当する従業員が画面下部に一覧表示され、有休自動付与マスタに従って「付与日」「付与日数」が表示されます。</p>
+	<table class="note">
+		<tr>
+			<th><p>ご注意</p></th>
+			<td>
+				<p>従業員マスタに「週所定労働日数」と「入社年月日」が登録されていない場合は、勤続年数が計算できないため、「付与日数」は表示されません。</p>
+			</td>
+		</tr>
+	</table>
+	<li>
+		<p><strong>「付与日」「付与日数」「有効期限」を必要に応じて変更します。</strong></p>
+		<p><img src="images/04-2-005.png" alt="" /></p>
+		<table class="note">
+		<tr>
+			<th><p>ご注意</p></th>
+			<td>
+				<p>「有効期限」は「付与日」より後の日付を入力してください。</p>
+			</td>
+		</tr>
+		</table>
+		<table class="tip">
+		<tr>
+			<th><p>ヒント</p></th>
+			<td><p>初期状態では「付与日」の2年後の日付が「有効期限」に表示されます。</p></td>
+		</tr>
+		</table>
+	</li>
+	<li>
+		<p><strong>付与対象者にチェックをつけ、［一括付与］ボタンをクリックする</strong></p>
+	<p><img src="images/04-2-006.png" alt="" /></p>
+	<p>画面上部に「●件の有休付与が完了しました。」とメッセージが表示され、入力したすべての有休付与情報がマスタデータに登録されます。</p>
+	<table class="note">
+		<tr>
+			<th><p>ご注意</p></th>
+			<td><p>既に有休を付与した年月日には、有休を付与できません。付与日や付与日数を修正する場合は、「<a href="#04-02-03">有休付与情報を上書きする</a>」より修正を行います。</p>
+				<p><img src="images/04-2-007.png" alt="" /></p>
+			</td>
+		</tr>
+	</table>
+	<table class="tip">
+		<tr>
+			<th><p>ヒント</p></th>
+			<td><p>対象者にチェックをつけ、［エクセルダウンロード］ボタンをクリックすると、画面に表示された内容をダウンロードできます。</p>
+			<p>ダウンロードしたエクセルは、［有休取込］のテンプレートと同じレイアウトのため、そのまま取り込むこともできます</p>
+			<p><img src="images/04-2-008.png" alt="" /></p>
+			</td>
+		</tr>
+	</table>
+	</li>
+	
+</ol>
+
+<a name="04-02-03"></a>
+<h3>有休付与情報を上書きする</h3>
+<p>登録済みの有休付与情報を修正して上書きします。</p>
+<p>修正できる情報は、「付与日数」と「有効期限」です。</p>
+<ol class="step">
+	<li><p><strong>［有休管理］をクリックし、［有休・特別休暇付与］をクリックする</strong></p>
+	<p><img src="images/Web_002-2.png" alt="" /></p>	
+    <p>有休・特別休暇付与画面の［有休付与］タブ画面が表示されます。</p>
+	</li>
+	<li><p><strong>有休付与情報を上書き修正する従業員を検索し、表示する</strong></p>
+	<p><img src="images/web_014.png" alt="" /></p>
+	</li>
+	<li><p><strong>「当年度実績」をクリックする</strong></p>
+	<p><img src="images/web_015.png" alt="" /></p>
+	<p>「付与日」「付与日数」「有効期限」に登録されている情報が表示されます。</p>
+	</li>
+	<li><p><strong>「付与日数」、「有効期限」の情報を修正する</strong></p>
+	<p><img src="images/web_016.png" alt="" /></p>
+	</li>
+	<li><p><strong>［更新する］ボタンをクリックする</strong></p>
+	<p><img src="images/web_017.png" alt="" /></p>
+	<p>画面上部に「登録が完了しました。」とメッセージが表示され、修正した有休付与情報がマスタデータに上書き登録されます。</p>
+	</li>
+</ol>
+
+<a name="04-02-04"></a>
+<h3>有休付与情報を削除する</h3>
+<ol class="step">
+	<li><p><strong>［有休管理］をクリックし、［有休・特別休暇付与］をクリックする</strong></p>
+	<p><img src="images/Web_002-2.png" alt="" /></p>	
+    <p>有休・特別休暇付与画面の［有休付与］タブ画面が表示されます。</p>
+	</li>
+	<li><p><strong>有休付与情報を削除する従業員を検索し、表示する</strong></p>
+	<p><img src="images/web_014.png" alt="" /></p>
+	</li>
+	<li><p><strong>「当年度実績」をクリックする</strong></p>
+	<p><img src="images/web_015.png" alt="" /></p>
+	<p>「付与日」「付与日数」「有効期限」に登録されている情報が表示されます。</p>
+	</li>
+	<li><p><strong>「付与日数」の欄を空の状態にする</strong></p>
+	<p><img src="images/web_018.png" alt="" /></p>
+	</li>
+	<li><p><strong>［更新する］ボタンをクリックする</strong></p>
+	<p><img src="images/web_017.png" alt="" /></p>
+	<p>画面上部に「登録が完了しました。」とメッセージが表示され、有休付与情報が削除されます。</p>
+	</li>
+</ol>
+
+<a name="04-02-01"></a>
+<h3>［有休付与］タブ画面について</h3>
+<p>管理用トップ画面のメニュー［有休管理］＞［有休・特別休暇付与］をクリックすると、［有休付与］タブ画面が表示されます。</p>
+<p><img src="images/web_006.png" alt="" /></p>
+<ol class="circle_num">
+	<li><p><strong>年度：</strong></p>
+	<p>※必須入力項目</p>
+	<p>有給休暇を付与する年度を入力します。</p>
+	</li>
+	<li><p><strong>部課：</strong></p>
+	<p>対象者を部課で絞り込む場合に、ドロップダウンリストから部課を選択します。</p>
+	</li>
+	<li><p><strong>従業員：</strong></p>
+	<p>対象者を従業員コードで絞り込む場合に、従業員コードを入力します。</p>
+	<p><img src="images/icon_search.png" alt="" />のボタンをクリックすると、従業員コードのリストが表示されます。</p>
+	</li>
+	<li><p><strong>前回付与日：</strong></p>
+	<p>対象者を前回付与した日付で絞り込む場合に、年月日をカレンダーから選択します。</p>
+	</li>
+	<li><p><strong>［検索］ボタン：</strong></p>
+	<p>「年度」（必要に応じて「部課」・「従業員」・「前回付与日」）を設定して［検索］ボタンをクリックすると、下部に該当する従業員が一覧表示されます。</p>
+	</li>
+	<li><p><strong>［リセット］ボタン：</strong></p>
+	<p>設定した検索条件をすべてリセットします。</p>
+	</li>
+	<li><p><strong>従業員：</strong></p>
+	<p>従業員名が表示されます。</p>
+	<p>左側の枠内に従業員コードを入力すると該当する従業員が表示されます。</p>
+	</li>
+	<li><p><strong>入社年月日：</strong></p>
+	<p>従業員の入社年月日が表示されます。</p>
+	</li>
+	<li><p><strong>付与日：</strong></p>
+	<p>有給休暇を付与する年月日をカレンダーから選択します。</p>
+	</li>
+	<li><p><strong>付与日数：</strong></p>
+	<p>付与する有給休暇の日数を入力します。</p>
+	</li>
+	<li><p><strong>有効期限：</strong></p>
+	<p>有給休暇の有効期限が終了する年月日をカレンダーから選択します。</p>
+	</li>
+	<li><p><strong>前年度実績：</strong></p>
+	<p>従業員の前年度分の付与実績が「付与日（付与した付与日数）」の形式で表示されます。</p>
+	</li>
+	<li><p><strong>当年度実績：</strong></p>
+	<p>従業員の今年度分の付与実績が「付与日（付与した付与日数）」の形式で表示されます。</p>
+	<p>表示されている付与日をクリックすると、有休付与情報が自動的に入力されます。</p>
+	</li>
+	<li><p><strong>［更新する］ボタン：</strong></p>
+	<p>入力した有休付与情報をマスタデータに登録します。</p>
+	</li>
+</ol>
+</article>
+
+<article>
+<a name="04-03"></a>
+<h2>特別休暇を付与する</h2>
+<p>特別休暇の付与は、有休・特別休暇付与画面の［特別休暇付与］タブ画面で実施します。</p>
+<p>特別休暇付与は、慶弔休暇などで有給/無給休暇を付与する際に使用します。特別休暇はトップ画面の「有休（残日数/付与日数）」表示には反映されず、<a href=../../user/contents/08-01_vacation.html>詳細</a>リンクから休暇区分を指定することで残日数/付与日数を確認できます。</p>
+<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td><p>特別休暇を付与できるのは、人事担当者アカウントとシステム管理者アカウントです。</p></td>
+			</tr>
+			</tbody>
+</table>
+<ol class="step">
+	<li>
+    <p><strong>［有休管理］をクリックし、［有休・特別休暇付与］をクリックする</strong></p>
+		<p><img src="images/Web_002-2.png" alt="" /></p>	
+    <p>有休・特別休暇付与画面の［有休付与］タブ画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>［特別休暇付与］タブをクリックする</strong></p>
+		<p><img src="images/04-3-008.png" alt="" /></p>
+		<p>［特別休暇付与］タブ画面が表示されます。</p>
+	</li>
+	<li>
+		<p><strong>「年度」に特別休暇を付与する年度を入力する</strong></p>
+		<ul class="ui_list">
+			<li>
+				<p>「年度」の入力は必須です。</p>
+			</li>
+		</ul>
+		<p><img src="images/04-3-009.png" alt="" /></p>
+  </li>
+  <li>
+		<p><strong>特別休暇を付与する従業員を検索するための検索条件を設定する</strong></p>
+		<ul class="ui_list">
+			<li>
+				<p>必要に応じて「部課」・「従業員」を設定します。</p>
+			</li>
+			<li>
+				<p>設定項目について詳しくは、「<a href="#04-03-01">［特別休暇付与］タブ画面について</a>」を参照してください。</p>
+			</li>
+		</ul>
+		<p><img src="images/04-3-010.png" alt="" /></p>
+	</li>
+	<li>
+    <p><strong>［検索］ボタンをクリックする</strong></p>
+    <p><img src="images/04-3-011.png" alt="" /></p>
+    <p>検索条件に該当する従業員が画面下部に一覧表示されます。</p>
+	</li>
+	<li>
+		<p><strong>「特別休暇付与日」に特別休暇を付与する年月日を入力する</strong></p>
+		<ul class="ui_list">
+			<li>
+				<p>カレンダーから選択します。</p>
+			</li>
+		</ul>
+		<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td><p>「当年度実績」に表示されている日付と同じ年月日を入力すると、特別休暇付与情報が上書きされます。</p></td>
+			</tr>
+		</tbody></table>
+		<p><img src="images/04-3-012.png" alt="" /></p>
+  </li>
+  <li>
+		<p><strong>付与する特別休暇が有給か無給かを選択する</strong></p>
+		<p><img src="images/04-3-013.png" alt="" /></p>
+	</li>
+	<li>
+		<p><strong>「付与日数」に付与する日数を入力する</strong></p>
+		<table class="note">
+			<tbody><tr>
+				<th><p>ご注意</p></th>
+				<td><p>「付与日数」が空のまま更新するとデータが削除されます。データを残す場合は「０」を入力してください。</p></td>
+			</tr>
+			</tbody>
+		</table>
+    <p><img src="images/04-3-014.png" alt="" /></p>
+    <p></p>
+	</li>
+	<li>
+		<p><strong>［更新する］ボタンをクリックする</strong></p>
+		<p><img src="images/04-3-015.png" alt="" /></p>
+		<p>画面上部に「登録が完了しました。」とメッセージが表示され、入力したすべての特別休暇付与情報がマスタデータに登録されます</p>
+  </li>
+</ol>
+
+<a name="04-03-03"></a>
+<h3>特別休暇付与情報を上書きする</h3>
+<p>登録済みの特別休暇付与情報を修正して上書きします。修正できる情報は、「付与日数」です。</p>
+<ol class="step">
+	<li>
+    <p><strong>特別休暇付与情報を上書き修正する従業員を検索し、表示する</strong></p>
+    <p><img src="images/04-3-001.png" alt="" /></p>
+    <p></p>
+	</li>
+	<li>
+		<p><strong>「当年付与実績(有給/無給)」欄の修正したい日付をクリックする</strong></p>
+		<p><img src="images/04-3-002.png" alt="" /></p>
+		<p>「特別休暇付与日」「付与日数」に登録されている情報が表示されます。</p>
+  </li>
+  <li>
+		<p><strong>「有給/無給」、「付与日数」の情報を修正する</strong></p>
+		<p><img src="images/04-3-003.png" alt="" /></p>
+	</li>
+	<li>
+		<p><strong>［更新する］ボタンをクリックする</strong></p>
+		<p><img src="images/04-3-004.png" alt="" /></p>
+		<p>画面上部に「登録が完了しました。」とメッセージが表示され、修正した特別休暇付与情報がマスタデータに上書き登録されます。</p>
+	</li>
+</ol>
+
+<a name="04-03-04"></a>
+<h3>特別休暇付与情報を削除する</h3>
+<ol class="step">
+	<li>
+    <p><strong>特別休暇付与情報を削除する従業員を検索し、表示する</strong></p>
+    <p><img src="images/04-3-001.png" alt="" /></p>
+	</li>
+	<li>
+		<p><strong>「当年付与実績(有給/無給)」欄の削除したい日付をクリックする</strong></p>
+		
+		<p><img src="images/04-3-005.png" alt="" /></p>
+		<p>「特別休暇付与日」「付与日数」に登録されている情報が表示されます。</p>
+  </li>
+  <li>
+		<p><strong>「付与日数」の欄を空の状態にする</strong></p>
+		<p></p>
+		<p><img src="images/04-3-006.png" alt="" /></p>
+	</li>
+	<li>
+		<p><strong>［更新する］ボタンをクリックする</strong></p>
+		<p><img src="images/04-3-007.png" alt="" /></p>
+		<p>画面上部に「登録が完了しました。」とメッセージが表示され、選択した特別休暇付与情報が削除されます。</p>
+	</li>
+</ol>
+
+<a name="04-03-01"></a>
+<h3>［特別休暇付与］タブ画面について</h3>
+<p>管理用トップ画面のメニュー［有休管理］＞［有休・特別休暇付与］をクリックすると、［有休付与］タブ画面が表示されます。</p>
+<p>［特別休暇付与］タブをクリックすると、［特別休暇付与］タブ画面が表示されます。</p>
+<p><img src="images/web_026.png" alt="" /></p>
+<ol class="circle_num">
+	<li><p><strong>年度：</strong></p>
+	<p>※必須入力項目</p>
+	<p>特別休暇を付与する年度を入力します。</p>
+	</li>
+	<li><p><strong>部課：</strong></p>
+	<p>対象者を部課で絞り込む場合に、ドロップダウンリストから部課を選択します。</p>
+	</li>
+	<li><p><strong>従業員：</strong></p>
+	<p>対象者を従業員コードで絞り込む場合に、従業員コードを入力します。</p>
+	<p><img src="images/icon_search.png" alt="" />をクリックすると、従業員コードのリストが表示されます。</p>
+	</li>
+	<li><p><strong>［検索］ボタン：</strong></p>
+	<p>「年度」（必要に応じて「部課」・「従業員」）を設定して［検索］ボタンをクリックすると、下部に該当する従業員が一覧表示されます。</p>
+	</li>
+	<li><p><strong>［リセット］ボタン：</strong></p>
+	<p>設定した検索条件をすべてリセットします。</p>
+	</li>
+	<li><p><strong>従業員：</strong></p>
+	<p>従業員名が表示されます。</p>
+	<p>左側の枠内に従業員コードを入力すると該当する従業員が表示されます。</p>
+	</li>
+	<li><p><strong>入社年月日：</strong></p>
+	<p>従業員の入社年月日が表示されます。</p>
+	</li>
+	<li><p><strong>特別休暇付与日：</strong></p>
+	<p>特別休暇を付与する年月日をカレンダーから選択します。</p>
+	</li>
+	<li><p><strong>有給/無給：</strong></p>
+	<p>付与する特別休暇が有給か無給かを選択します。</p>
+	</li>
+	<li><p><strong>付与日数：</strong></p>
+	<p>付与する特別休暇の日数を入力します。</p>
+	</li>
+	<li><p><strong>当年付与実績（有給/無給）：</strong></p>
+	<p>従業員の今年度分の付与実績が「付与日（付与した特別休暇日数）」の形式で表示されます。</p>
+	<p>有給の特別休暇の付与実績が上段に、無給の特別休暇の付与実績が下段に表示されます。</p>
+	</li>
+	<li><p><strong>［更新する］ボタン：</strong></p>
+	<p>入力した特別休暇付与情報をマスタデータに登録します。</p>
+	</li>
+</ol>
+<br />
+<h4>つづけて「<a href="05-11_master.html">シフトテンプレートの登録</a>」に進んでください。</h4>
+
+</article>
+</div>
+
+<a href="#" id="goto_top">▲</a>
+</div>
+<footer>
+<p>Copyright 2020 SBI Business Solutions Co.,</p>
+</footer>
+</body>
+
+<!-- Mirrored from manual.kintaireco.jp/admin/contents/04-01_holiday.html by HTTrack Website Copier/3.x [XR&CO'2014], Mon, 06 Apr 2026 05:33:42 GMT -->
+</html>

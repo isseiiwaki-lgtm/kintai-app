@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p _archive/gas)",
+      "Bash(mkdir -p _disposal)",
+      "Bash(mv index.html script.js style.css admin.html admin.css admin.js employees.csv dev.code-workspace _archive/)",
+      "Bash(mv gas/* _archive/gas/)",
+      "Bash(rmdir gas *)",
+      "Bash(mv nenngaapuri *)"
+    ]
+  }
+}
