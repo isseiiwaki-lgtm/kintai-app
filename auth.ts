@@ -18,10 +18,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     // セッションに JWT のロールを反映
     session({ session, token }) {
       session.user.role = token.role as Role
+      if (token.sub) session.user.id = token.sub
       return session
     },
-    signIn({ profile }) {
-      return profile?.email?.endsWith("@iwaki-i.com") ?? false
+    signIn({ user }) {
+      const allowed = (process.env.ALLOWED_EMAILS ?? "").split(",").map(e => e.trim())
+      return allowed.includes(user.email ?? "")
     },
   },
 })

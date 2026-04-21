@@ -106,8 +106,10 @@ model AttendanceRecord {
   date           DateTime         // 日付のみ (00:00:00 JST)
   clockIn        DateTime?
   clockOut       DateTime?
-  breakStart     DateTime?
-  breakEnd       DateTime?
+  breakStart     DateTime?  // パート: 休憩開始
+  breakEnd       DateTime?  // パート: 休憩終了
+  goOutAt        DateTime?  // 外出
+  returnAt       DateTime?  // 戻り
   workingMinutes Int?
   note           String?
   status         AttendanceStatus @default(OPEN)

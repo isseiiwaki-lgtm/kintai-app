@@ -12,8 +12,9 @@ export const authConfig: NextAuthConfig = {
     authorized({ auth }) {
       return !!auth?.user
     },
-    signIn({ profile }) {
-      return profile?.email?.endsWith("@iwaki-i.com") ?? false
+    signIn({ user }) {
+      const allowed = (process.env.ALLOWED_EMAILS ?? "").split(",").map(e => e.trim())
+      return allowed.includes(user.email ?? "")
     },
   },
 }
