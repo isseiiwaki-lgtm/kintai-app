@@ -56,17 +56,18 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     submittedDays: number
     approvedDays: number
   }
-  const rows: Row[] = users.map((u) => {
+  type Rec = { clockIn: Date | null; workingMinutes: number | null; status: string }
+  const rows: Row[] = users.map((u: typeof users[number]) => {
     const recs = u.attendanceRecords
-    const workDays     = recs.filter((r) => r.clockIn).length
-    const totalMin     = recs.reduce((s, r) => s + (r.workingMinutes ?? 0), 0)
-    const overtimeMin  = recs.reduce((s, r) => {
+    const workDays     = recs.filter((r: Rec) => r.clockIn).length
+    const totalMin     = recs.reduce((s: number, r: Rec) => s + (r.workingMinutes ?? 0), 0)
+    const overtimeMin  = recs.reduce((s: number, r: Rec) => {
       const scheduled = u.employmentType === "full" ? 480 : 0  // パート・雇用者は所定時間なし
       return s + Math.max(0, (r.workingMinutes ?? 0) - scheduled)
     }, 0)
-    const openDays      = recs.filter((r) => r.status === "OPEN").length
-    const submittedDays = recs.filter((r) => r.status === "SUBMITTED").length
-    const approvedDays  = recs.filter((r) => r.status === "APPROVED" || r.status === "LOCKED").length
+    const openDays      = recs.filter((r: Rec) => r.status === "OPEN").length
+    const submittedDays = recs.filter((r: Rec) => r.status === "SUBMITTED").length
+    const approvedDays  = recs.filter((r: Rec) => r.status === "APPROVED" || r.status === "LOCKED").length
     return {
       id: u.id,
       name: u.name ?? u.email ?? "?",
