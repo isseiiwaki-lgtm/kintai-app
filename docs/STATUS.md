@@ -1,6 +1,6 @@
 # 実装状況 & タスク管理
 
-最終更新: 2026-04-22
+最終更新: 2026-04-22（テスト運用開始）
 
 ---
 
@@ -36,8 +36,7 @@
 - [ ] **月次レポート/PDF出力** — 未実装
 
 ### インフラ
-- [ ] **VPSデプロイ** — KAGOYA VPS 環境構築済みだが本アプリ未デプロイ
-- [ ] **本番環境変数** — DATABASE_URL, NEXTAUTH_SECRET, Google OAuth credentials 設定要
+- [x] **VPSデプロイ** — 2026-04-22 完了。`https://kintai.iwaki-i.online` で公開・動作確認済み
 
 ### その他
 - [ ] **設定ページ** `/settings` — サイドバーから削除済み。ユーザー個人設定（通知等）が必要になれば追加
@@ -73,9 +72,19 @@
 
 ---
 
-## 直近の変更履歴（このセッション以前）
+## 変更履歴
 
-- Google OAuth /link フロー バグ修正完了（複数の UNIQUE制約・Hydration・cookie 問題を解消）
+### 2026-04-22
+- **打刻UI改修** — ボタンを2×2グリッド（出勤/退勤・外出/休憩）に変更。カラー・シャドウ刷新。PC幅拡大
+- **雇用形態に「雇用者」追加** — DB値 `employer`。打刻制限なし、所定時間0扱い
+- **従業員コード形式確認** — 数字のみ（例: `706`）で登録可。ゼロパディング処理なし（運用側で対応）
+- **CSVインポート UNIQUE制約エラー修正** — employeeCode 競合を事前クリアしてから upsert
+- **gitignore 修正** — `_*/` を `/_archive/` `/_disposal/` に限定し `_components/` を追跡対象に
+- **TypeScript 型エラー一括修正** — 本番ビルド時の暗黙的 `any` を全ファイルで解消
+- **VPSデプロイ完了** — `https://kintai.iwaki-i.online` 公開。PM2+Nginx+PostgreSQL構成
+
+### 2026-04-22 以前
+- Google OAuth /link フロー バグ修正（UNIQUE制約・Hydration・cookie 問題）
 - ユーザー削除 UI 追加（編集ページ下部）
 - サイドバーから「設定」非表示化
 - CSV インポート/エクスポート実装
