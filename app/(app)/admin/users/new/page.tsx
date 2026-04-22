@@ -30,7 +30,7 @@ export default function NewUserPage() {
           会社のメールアドレスで事前登録しておくと、本人がそのアドレスの Google アカウントでログインした際に自動で紐づけされます。
         </p>
 
-        <form action={actionCreateUser} className="space-y-4">
+        <form action={actionCreateUser as (fd: FormData) => Promise<void>} className="space-y-4">
           {/* メールアドレス */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">

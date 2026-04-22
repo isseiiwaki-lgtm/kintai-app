@@ -52,10 +52,10 @@ export default async function ApprovalPage({ searchParams }: { searchParams: Sea
     .map((u: typeof users[number]) => {
       const recs     = u.attendanceRecords
       const total    = recs.length
-      const open     = recs.filter((r) => r.status === "OPEN").length
-      const submitted= recs.filter((r) => r.status === "SUBMITTED").length
-      const approved = recs.filter((r) => r.status === "APPROVED").length
-      const locked   = recs.filter((r) => r.status === "LOCKED").length
+      const open     = recs.filter((r: { status: string }) => r.status === "OPEN").length
+      const submitted= recs.filter((r: { status: string }) => r.status === "SUBMITTED").length
+      const approved = recs.filter((r: { status: string }) => r.status === "APPROVED").length
+      const locked   = recs.filter((r: { status: string }) => r.status === "LOCKED").length
       return { id: u.id, name: u.name ?? u.email ?? "?", dept: u.department ?? "—", total, open, submitted, approved, locked }
     })
     .filter((r) => r.total > 0)

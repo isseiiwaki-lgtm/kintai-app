@@ -8,7 +8,7 @@ import type { Role } from "@prisma/client"
 const PENDING_PREFIX = "__pending__"
 
 // email / companyEmail 両方で User を検索するカスタムアダプタ
-const baseAdapter = PrismaAdapter(prisma)
+const baseAdapter = PrismaAdapter(prisma) as Required<ReturnType<typeof PrismaAdapter>>
 const adapter = {
   ...baseAdapter,
   getUserByEmail: async (email: string) => {

@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { ClockButtons } from "@/components/clock-buttons"
 
-type Record = {
+type ClockRecord = {
   clockIn:    Date | null
   clockOut:   Date | null
   goOutAt:    Date | null
@@ -15,7 +15,7 @@ type Record = {
 type WorkState = "initial" | "working" | "out" | "on_break" | "done"
 type EmpType   = "full" | "part"
 
-const MOCK_BASE: Record = {
+const MOCK_BASE: ClockRecord = {
   clockIn:    new Date("2026-04-21T08:30:00+09:00"),
   clockOut:   null,
   goOutAt:    null,
@@ -24,7 +24,7 @@ const MOCK_BASE: Record = {
   breakEnd:   null,
 }
 
-const MOCK_RECORDS: Record<WorkState, Record | null> = {
+const MOCK_RECORDS: Record<WorkState, ClockRecord | null> = {
   initial:  null,
   working:  { ...MOCK_BASE },
   out:      { ...MOCK_BASE, goOutAt: new Date("2026-04-21T12:00:00+09:00") },
@@ -41,7 +41,7 @@ const STATE_LABELS: { value: WorkState; label: string }[] = [
 ]
 
 type Props = {
-  realRecord:      Record | null
+  realRecord:      ClockRecord | null
   realEmpType:     string
 }
 

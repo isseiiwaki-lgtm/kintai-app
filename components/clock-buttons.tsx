@@ -11,7 +11,7 @@ import {
   actionBreakEnd,
 } from "@/app/(app)/clock/actions"
 
-type Record = {
+type ClockRecord = {
   clockIn:    Date | null
   clockOut:   Date | null
   goOutAt:    Date | null
@@ -21,7 +21,7 @@ type Record = {
 }
 
 type Props = {
-  record: Record | null
+  record: ClockRecord | null
   employmentType: string // "full" | "part"
 }
 
@@ -33,7 +33,7 @@ function formatTime(dt: Date | null | undefined): string {
 
 type WorkState = "initial" | "working" | "out" | "on_break" | "done"
 
-function getWorkState(r: Record | null): WorkState {
+function getWorkState(r: ClockRecord | null): WorkState {
   if (!r?.clockIn)                       return "initial"
   if (r.clockOut)                        return "done"
   if (r.goOutAt && !r.returnAt)          return "out"
