@@ -37,8 +37,9 @@ export default async function AdminRequestsPage() {
     include: { user: { select: { name: true, email: true } } },
   })
 
-  const pending  = requests.filter((r) => r.status === "PENDING")
-  const resolved = requests.filter((r) => r.status !== "PENDING")
+  type Req = typeof requests[number]
+  const pending  = requests.filter((r: Req) => r.status === "PENDING")
+  const resolved = requests.filter((r: Req) => r.status !== "PENDING")
 
   const Row = ({ r, showActions }: { r: typeof requests[0]; showActions: boolean }) => {
     const status  = STATUS_LABEL[r.status] ?? STATUS_LABEL.PENDING

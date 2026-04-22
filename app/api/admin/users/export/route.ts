@@ -29,7 +29,7 @@ export async function GET() {
     "部署", "役職名", "出勤時刻", "退勤時刻", "入社日", "給与個人コード", "在籍",
   ]
 
-  const rows = users.map((u) => {
+  const rows = users.map((u: typeof users[number]) => {
     const hireStr = u.hireDate
       ? (() => { const d = new Date(u.hireDate!.getTime() + 9 * 60 * 60 * 1000); return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}` })()
       : ""

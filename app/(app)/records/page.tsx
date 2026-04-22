@@ -47,8 +47,9 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
   })
 
   // 月次サマリー
-  const workDays     = records.filter((r) => r.clockIn).length
-  const totalMinutes = records.reduce((s, r) => s + (r.workingMinutes ?? 0), 0)
+  type Rec = typeof records[number]
+  const workDays     = records.filter((r: Rec) => r.clockIn).length
+  const totalMinutes = records.reduce((s: number, r: Rec) => s + (r.workingMinutes ?? 0), 0)
 
   // 前月・翌月のリンク用
   const prevDate = new Date(Date.UTC(year, month - 2, 1))
@@ -65,10 +66,10 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
   const days = Array.from({ length: lastDay.getUTCDate() }, (_, i) => i + 1)
 
   // 提出状態の判定
-  const workRecords  = records.filter((r) => r.clockIn)
+  const workRecords  = records.filter((r: Rec) => r.clockIn)
   const hasRecords   = workRecords.length > 0
-  const allSubmitted = hasRecords && workRecords.every((r) => r.status !== "OPEN")
-  const anyLocked    = workRecords.some((r) => r.status === "LOCKED" || r.status === "APPROVED")
+  const allSubmitted = hasRecords && workRecords.every((r: Rec) => r.status !== "OPEN")
+  const anyLocked    = workRecords.some((r: Rec) => r.status === "LOCKED" || r.status === "APPROVED")
 
   return (
     <div className="p-4 lg:p-6">

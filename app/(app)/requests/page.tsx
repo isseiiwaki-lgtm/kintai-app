@@ -71,7 +71,7 @@ export default async function RequestsPage() {
               </tr>
             </thead>
             <tbody>
-              {requests.map((r) => {
+              {requests.map((r: typeof requests[number]) => {
                 const status = STATUS_LABEL[r.status] ?? STATUS_LABEL.PENDING
                 const tgt    = new Date(r.targetDate.getTime() + 9 * 60 * 60 * 1000)
                 const tgtStr = `${tgt.getUTCFullYear()}/${String(tgt.getUTCMonth() + 1).padStart(2, "0")}/${String(tgt.getUTCDate()).padStart(2, "0")}`

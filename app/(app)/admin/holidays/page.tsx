@@ -98,7 +98,7 @@ export default async function HolidaysPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((h) => {
+                  {items.map((h: typeof items[number]) => {
                     const jst  = toJST(h.date)
                     const dow  = ["日", "月", "火", "水", "木", "金", "土"][jst.getUTCDay()]
                     const dateStr = `${jst.getUTCMonth() + 1}/${jst.getUTCDate()}（${dow}）`

@@ -42,7 +42,7 @@ export default async function DashboardPage() {
   ])
 
   const workDays = monthRecords.length
-  const totalMinutes = monthRecords.reduce((s, r) => s + (r.workingMinutes ?? 0), 0)
+  const totalMinutes = monthRecords.reduce((s: number, r: { workingMinutes: number | null }) => s + (r.workingMinutes ?? 0), 0)
 
   const dateLabel = today.toLocaleDateString("ja-JP", {
     timeZone: "UTC",

@@ -55,7 +55,7 @@ export default async function AdminUsersPage() {
             </tr>
           </thead>
           <tbody>
-            {users.map((u) => {
+            {users.map((u: typeof users[number]) => {
               const roleInfo = ROLE_LABEL[u.role] ?? ROLE_LABEL.EMPLOYEE
               return (
                 <tr key={u.id} className={`border-b border-gray-50 last:border-0 hover:bg-gray-50 ${!u.isActive ? "opacity-50" : ""}`}>

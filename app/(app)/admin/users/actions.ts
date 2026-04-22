@@ -153,7 +153,7 @@ export async function actionImportUsers(formData: FormData): Promise<ImportResul
     where:  { email: { in: data.map((d) => d.email) } },
     select: { email: true },
   })
-  const existingEmails = new Set(existing.map((u) => u.email))
+  const existingEmails = new Set(existing.map((u: { email: string }) => u.email))
 
   // employeeCode の UNIQUE 競合を事前解消（インポート対象外のユーザーに同コードがある場合クリア）
   const codes = data.map((d) => d.employeeCode).filter(Boolean) as string[]
