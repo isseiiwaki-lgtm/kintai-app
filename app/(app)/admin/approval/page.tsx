@@ -58,7 +58,7 @@ export default async function ApprovalPage({ searchParams }: { searchParams: Sea
       const locked   = recs.filter((r: { status: string }) => r.status === "LOCKED").length
       return { id: u.id, name: u.name ?? u.email ?? "?", dept: u.department ?? "—", total, open, submitted, approved, locked }
     })
-    .filter((r) => r.total > 0)
+    .filter((r: UserRow) => r.total > 0)
 
   return (
     <div className="p-4 lg:p-6">
