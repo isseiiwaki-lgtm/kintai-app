@@ -46,4 +46,5 @@ next-env.d.ts
 *.code-workspace
 .history/
 .resource/
-_*/
+/_archive/
+/_disposal/
