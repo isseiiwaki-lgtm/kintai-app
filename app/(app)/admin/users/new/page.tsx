@@ -65,8 +65,9 @@ export default function NewUserPage() {
             <label className="block text-xs font-medium text-gray-600 mb-1">雇用形態</label>
             <select name="employmentType" defaultValue="full"
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="full">社員（フルタイム）</option>
-              <option value="part">パートタイム</option>
+              <option value="full">社員</option>
+              <option value="part">パート</option>
+              <option value="employer">雇用者</option>
             </select>
           </div>
 

@@ -32,7 +32,7 @@ export default async function ClockPage() {
   const isDev   = process.env.NODE_ENV === "development"
 
   return (
-    <div className="p-4 lg:p-8 max-w-md mx-auto">
+    <div className="p-4 lg:p-8 max-w-2xl mx-auto">
       <h1 className="text-lg font-semibold text-gray-900 mb-4">打刻</h1>
       {isDev ? (
         <DebugClockPanel realRecord={record} realEmpType={empType} />

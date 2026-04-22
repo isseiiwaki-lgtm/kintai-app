@@ -59,10 +59,17 @@ const TableIcon = (
   </svg>
 )
 
+const CalendarHolidayIcon = (
+  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 9v7.5m-9-6h.008v.008H12V12zm0 3h.008v.008H12V15zm0 3h.008v.008H12V18zm-3-6h.008v.008H9V12zm0 3h.008v.008H9V15zm6-3h.008v.008H15V12z" />
+  </svg>
+)
+
 const adminItems: NavItem[] = [
   { href: "/admin/attendance", label: "勤務状況一覧", icon: TableIcon },
   { href: "/admin/approval",   label: "勤怠承認",     icon: CheckIcon },
   { href: "/admin/requests",   label: "申請承認",     icon: DocIcon   },
+  { href: "/admin/holidays",   label: "休日カレンダー", icon: CalendarHolidayIcon },
   { href: "/admin/users",      label: "ユーザー管理", icon: UsersIcon },
 ]
 
@@ -125,9 +132,8 @@ export function Sidebar({ userName, userImage, role, logoutAction }: Props) {
           )}
         </nav>
 
-        {/* 下部: 設定 + ユーザー */}
+        {/* 下部: ユーザー */}
         <div className="border-t border-gray-100 p-2">
-          {navLink({ href: "/settings", label: "設定", icon: SettingsIcon })}
           <div className="flex items-center gap-2 px-3 py-2 mt-1">
             <Avatar />
             <span className="text-xs text-gray-600 flex-1 truncate min-w-0">{userName}</span>
@@ -151,7 +157,7 @@ export function Sidebar({ userName, userImage, role, logoutAction }: Props) {
 
       {/* ── モバイル ボトムナビ ── */}
       <nav className="lg:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 z-30 flex">
-        {[...navItems, { href: "/settings", label: "設定", icon: SettingsIcon }].map((item) => {
+        {navItems.map((item) => {
           const active = pathname === item.href
           return (
             <Link

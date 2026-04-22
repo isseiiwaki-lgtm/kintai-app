@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { notFound } from "next/navigation"
 import { actionUpdateUser } from "../../actions"
+import { DeleteUserButton } from "./DeleteUserButton"
 
 type Params = Promise<{ id: string }>
 
@@ -25,6 +26,7 @@ export default async function UserEditPage({ params }: { params: Params }) {
     where: { id },
     select: {
       id: true, name: true, email: true,
+      employeeCode: true, jobTitle: true, hireDate: true, salaryCode: true,
       role: true, employmentType: true,
       department: true, workStartTime: true, workEndTime: true,
       isActive: true,
@@ -57,6 +59,38 @@ export default async function UserEditPage({ params }: { params: Params }) {
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
 
+          {/* 従業員コード・役職 */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">従業員コード</label>
+              <input type="text" name="employeeCode" defaultValue={user.employeeCode ?? ""}
+                placeholder="例: EMP001"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">役職名</label>
+              <input type="text" name="jobTitle" defaultValue={user.jobTitle ?? ""}
+                placeholder="例: 主任"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+
+          {/* 入社日・給与コード */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">入社日</label>
+              <input type="date" name="hireDate"
+                defaultValue={user.hireDate ? user.hireDate.toISOString().slice(0, 10) : ""}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">給与個人コード</label>
+              <input type="text" name="salaryCode" defaultValue={user.salaryCode ?? ""}
+                placeholder="給与ソフト連携用"
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+
           {/* 権限 */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">権限</label>
@@ -73,8 +107,9 @@ export default async function UserEditPage({ params }: { params: Params }) {
             <label className="block text-xs font-medium text-gray-600 mb-1">雇用形態</label>
             <select name="employmentType" defaultValue={user.employmentType}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-              <option value="full">社員（フルタイム）</option>
-              <option value="part">パートタイム</option>
+              <option value="full">社員</option>
+              <option value="part">パート</option>
+              <option value="employer">雇用者</option>
             </select>
           </div>
 
@@ -117,6 +152,10 @@ export default async function UserEditPage({ params }: { params: Params }) {
             保存
           </button>
         </form>
+
+        <div className="mt-6 pt-5 border-t border-gray-100">
+          <DeleteUserButton userId={user.id} />
+        </div>
       </div>
     </div>
   )

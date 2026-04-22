@@ -57,12 +57,12 @@ export async function GET(req: NextRequest) {
   for (const u of users) {
     for (const r of u.attendanceRecords) {
       if (!r.clockIn) continue // 打刻なし日はスキップ
-      const scheduled   = u.employmentType === "full" ? 480 : 0
+      const scheduled   = u.employmentType === "full" ? 480 : 0  // パート・雇用者は所定時間なし
       const overtime    = Math.max(0, (r.workingMinutes ?? 0) - scheduled)
       rows.push([
         u.name ?? u.email ?? "",
         u.department ?? "",
-        u.employmentType === "full" ? "社員" : "パート",
+        u.employmentType === "full" ? "社員" : u.employmentType === "part" ? "パート" : "雇用者",
         fmtDate(r.date),
         fmtTime(r.clockIn),
         fmtTime(r.clockOut),

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
+import { UserImportButton } from "./_components/UserImportButton"
 
 const ROLE_LABEL: Record<string, { label: string; className: string }> = {
   EMPLOYEE: { label: "一般",   className: "bg-gray-100 text-gray-600" },
@@ -22,12 +23,21 @@ export default async function AdminUsersPage() {
     <div className="p-4 lg:p-6">
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-base font-semibold text-gray-900">ユーザー管理</h1>
-        <Link
-          href="/admin/users/new"
-          className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-        >
-          + 新規登録
-        </Link>
+        <div className="flex items-start gap-2">
+          <a
+            href="/api/admin/users/export"
+            className="px-3 py-2 border border-gray-200 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            CSVダウンロード
+          </a>
+          <UserImportButton />
+          <Link
+            href="/admin/users/new"
+            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            + 新規登録
+          </Link>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
@@ -57,8 +67,12 @@ export default async function AdminUsersPage() {
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-center">
-                    <span className={`inline-block px-2 py-0.5 rounded text-xs ${u.employmentType === "full" ? "bg-blue-50 text-blue-700" : "bg-orange-50 text-orange-700"}`}>
-                      {u.employmentType === "full" ? "社員" : "パート"}
+                    <span className={`inline-block px-2 py-0.5 rounded text-xs ${
+                      u.employmentType === "full" ? "bg-blue-50 text-blue-700"
+                      : u.employmentType === "part" ? "bg-orange-50 text-orange-700"
+                      : "bg-gray-100 text-gray-500"
+                    }`}>
+                      {u.employmentType === "full" ? "社員" : u.employmentType === "part" ? "パート" : "雇用者"}
                     </span>
                   </td>
                   <td className="px-3 py-2.5 text-gray-500 text-xs">{u.department ?? "—"}</td>

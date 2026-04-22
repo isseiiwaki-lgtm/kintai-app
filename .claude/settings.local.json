@@ -6,7 +6,9 @@
       "Bash(mv index.html script.js style.css admin.html admin.css admin.js employees.csv dev.code-workspace _archive/)",
       "Bash(mv gas/* _archive/gas/)",
       "Bash(rmdir gas *)",
-      "Bash(mv nenngaapuri *)"
+      "Bash(mv nenngaapuri *)",
+      "Bash(mv \"D:/dev/260325_勤怠アプリ/.claude/docs/STATUS.md\" \"D:/dev/260325_勤怠アプリ/docs/STATUS.md\")",
+      "Bash(rmdir \"D:/dev/260325_勤怠アプリ/.claude/docs\")"
     ]
   }
 }

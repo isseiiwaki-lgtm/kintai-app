@@ -61,7 +61,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     const workDays     = recs.filter((r) => r.clockIn).length
     const totalMin     = recs.reduce((s, r) => s + (r.workingMinutes ?? 0), 0)
     const overtimeMin  = recs.reduce((s, r) => {
-      const scheduled = u.employmentType === "full" ? 480 : 0
+      const scheduled = u.employmentType === "full" ? 480 : 0  // パート・雇用者は所定時間なし
       return s + Math.max(0, (r.workingMinutes ?? 0) - scheduled)
     }, 0)
     const openDays      = recs.filter((r) => r.status === "OPEN").length
@@ -120,7 +120,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
                 <td className="px-3 py-2.5 text-gray-500 text-xs">{r.dept}</td>
                 <td className="px-3 py-2.5 text-center">
                   <span className={`inline-block px-1.5 py-0.5 rounded text-xs ${r.empType === "full" ? "bg-blue-50 text-blue-700" : "bg-orange-50 text-orange-700"}`}>
-                    {r.empType === "full" ? "社員" : "パート"}
+                    {r.empType === "full" ? "社員" : r.empType === "part" ? "パート" : "雇用者"}
                   </span>
                 </td>
                 <td className="px-3 py-2.5 text-center text-gray-700">{r.workDays}</td>

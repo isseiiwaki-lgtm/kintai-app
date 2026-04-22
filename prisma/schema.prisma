@@ -48,10 +48,16 @@ model User {
   image            String?
   role             Role      @default(EMPLOYEE)
   approverStep     Int?      // APPROVER のみ: 1 or 2
+  employeeCode     String?   @unique // 従業員コード（給与システム連携キー）
   department       String?
+  jobTitle         String?   // 役職名
   employmentType   String    @default("full") // full / part
   workStartTime    String?   // "08:30"
   workEndTime      String?   // "17:30"
+  hireDate         DateTime? // 入社日（有給付与計算用）
+  salaryCode       String?   // 給与個人コード（給与ソフト連携用）
+  companyEmail     String?   @unique // 会社メール（永続・管理者が登録）
+  linkedAt         DateTime?         // Googleアカウント紐づけ日時
   isActive         Boolean   @default(true)
   createdAt        DateTime  @default(now())
 
@@ -159,4 +165,13 @@ model LeaveBalance {
   usedDays   Float  @default(0)
 
   @@unique([userId, fiscalYear])
+}
+
+// 休日カレンダー（残業・休出判定の元データ）
+model Holiday {
+  id        Int      @id @default(autoincrement())
+  date      DateTime @unique // 日付のみ (00:00:00 JST)
+  name      String           // 例: "元日"、"夏季休業"
+  type      String   @default("NATIONAL") // NATIONAL / COMPANY / SUBSTITUTE
+  createdAt DateTime @default(now())
 }
