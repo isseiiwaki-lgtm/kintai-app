@@ -49,7 +49,7 @@ export default async function ApprovalPage({ searchParams }: { searchParams: Sea
   }
 
   const rows: UserRow[] = users
-    .map((u) => {
+    .map((u: typeof users[number]) => {
       const recs     = u.attendanceRecords
       const total    = recs.length
       const open     = recs.filter((r) => r.status === "OPEN").length
