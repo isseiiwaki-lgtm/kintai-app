@@ -49,7 +49,7 @@ export default function NewRequestPage() {
   }
 
   return (
-    <div className="p-4 lg:p-6 max-w-lg">
+    <div className="p-4 lg:p-6 max-w-lg mx-auto">
       <div className="flex items-center gap-3 mb-5">
         <button onClick={() => router.back()} className="text-gray-400 hover:text-gray-700 text-sm">← 戻る</button>
         <h1 className="text-base font-semibold text-gray-900">新規申請</h1>
@@ -144,7 +144,7 @@ export default function NewRequestPage() {
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">申請理由</label>
           <textarea
-            name="reason" rows={3}
+            name="reason" rows={5}
             placeholder="申請理由を入力してください"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
           />

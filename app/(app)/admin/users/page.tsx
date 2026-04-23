@@ -10,12 +10,17 @@ const ROLE_LABEL: Record<string, { label: string; className: string }> = {
 
 export default async function AdminUsersPage() {
   const users = await prisma.user.findMany({
-    orderBy: [{ isActive: "desc" }, { name: "asc" }],
+    orderBy: [
+      { isActive: "desc" },
+      { employeeCode: { sort: "asc", nulls: "last" } },
+      { name: "asc" },
+    ],
     select: {
-      id: true, name: true, email: true,
+      id: true, name: true, email: true, companyEmail: true,
       role: true, employmentType: true,
       department: true, workStartTime: true, workEndTime: true,
-      isActive: true,
+      isActive: true, employeeCode: true,
+      accounts: { select: { id: true } },
     },
   })
 
@@ -44,7 +49,8 @@ export default async function AdminUsersPage() {
         <table className="w-full text-sm min-w-[640px]">
           <thead>
             <tr className="border-b border-gray-100 text-xs text-gray-400 bg-gray-50">
-              <th className="text-left px-4 py-3 font-medium">氏名</th>
+              <th className="text-left px-4 py-3 font-medium">社員コード</th>
+              <th className="text-left px-3 py-3 font-medium">氏名</th>
               <th className="text-left px-3 py-3 font-medium">メール</th>
               <th className="text-center px-3 py-3 font-medium">権限</th>
               <th className="text-center px-3 py-3 font-medium">雇用形態</th>
@@ -57,10 +63,22 @@ export default async function AdminUsersPage() {
           <tbody>
             {users.map((u: typeof users[number]) => {
               const roleInfo = ROLE_LABEL[u.role] ?? ROLE_LABEL.EMPLOYEE
+              const isLinked = u.accounts.length > 0
               return (
                 <tr key={u.id} className={`border-b border-gray-50 last:border-0 hover:bg-gray-50 ${!u.isActive ? "opacity-50" : ""}`}>
-                  <td className="px-4 py-2.5 font-medium text-gray-800">{u.name ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-gray-500 text-xs">{u.email}</td>
+                  <td className="px-4 py-2.5 text-gray-500 text-xs font-mono">{u.employeeCode ?? "—"}</td>
+                  <td className="px-3 py-2.5 font-medium text-gray-800">{u.name ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-xs">
+                    {u.companyEmail
+                      ? <span className="text-gray-700">{u.companyEmail}</span>
+                      : <span className="text-orange-400">会社メール未設定</span>}
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className="text-gray-400">{u.email}</span>
+                      {isLinked
+                        ? <span className="text-green-500 text-[10px]">● 連携済</span>
+                        : <span className="text-gray-300 text-[10px]">○ 未連携</span>}
+                    </div>
+                  </td>
                   <td className="px-3 py-2.5 text-center">
                     <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${roleInfo.className}`}>
                       {roleInfo.label}

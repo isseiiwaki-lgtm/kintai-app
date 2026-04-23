@@ -25,6 +25,10 @@ export default async function DashboardPage() {
   const userId = session!.user!.id!
 
   const today = todayJST()
+  const userInfo = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { name: true, employeeCode: true },
+  })
   const firstOfMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1))
 
   const [todayRecord, monthRecords] = await Promise.all([
@@ -61,6 +65,16 @@ export default async function DashboardPage() {
 
   return (
     <div className="p-4 lg:p-8 max-w-3xl mx-auto space-y-4">
+      {/* ユーザー情報 */}
+      {userInfo && (
+        <div className="flex items-center gap-2">
+          {userInfo.employeeCode && (
+            <span className="text-xs text-gray-400 font-mono">{userInfo.employeeCode}</span>
+          )}
+          <span className="text-sm font-medium text-gray-700">{userInfo.name ?? "—"}</span>
+        </div>
+      )}
+
       {/* 今日の打刻カード */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <div className="flex items-start justify-between mb-4">

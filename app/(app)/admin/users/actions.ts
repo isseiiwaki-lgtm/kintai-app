@@ -191,6 +191,7 @@ export async function actionUpdateUser(formData: FormData) {
 
   const id             = formData.get("id")             as string
   const name           = formData.get("name")           as string
+  const companyEmail   = formData.get("companyEmail")   as string
   const employeeCode   = formData.get("employeeCode")   as string
   const jobTitle       = formData.get("jobTitle")       as string
   const hireDateStr    = formData.get("hireDate")       as string
@@ -206,6 +207,7 @@ export async function actionUpdateUser(formData: FormData) {
     where: { id },
     data: {
       name:           name           || null,
+      companyEmail:   companyEmail   || null,
       employeeCode:   employeeCode   || null,
       jobTitle:       jobTitle       || null,
       hireDate:       hireDateStr    ? new Date(hireDateStr) : null,

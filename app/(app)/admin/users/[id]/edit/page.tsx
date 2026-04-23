@@ -25,7 +25,7 @@ export default async function UserEditPage({ params }: { params: Params }) {
   const user   = await prisma.user.findUnique({
     where: { id },
     select: {
-      id: true, name: true, email: true,
+      id: true, name: true, email: true, companyEmail: true,
       employeeCode: true, jobTitle: true, hireDate: true, salaryCode: true,
       role: true, employmentType: true,
       department: true, workStartTime: true, workEndTime: true,
@@ -45,11 +45,19 @@ export default async function UserEditPage({ params }: { params: Params }) {
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
         <div className="mb-4 pb-4 border-b border-gray-100">
-          <p className="text-xs text-gray-400">{user.email}</p>
+          <p className="text-xs text-gray-400">Google: {user.email}</p>
         </div>
 
         <form action={actionUpdateUser} className="space-y-4">
           <input type="hidden" name="id" value={user.id} />
+
+          {/* 会社メール */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">会社メール</label>
+            <input type="email" name="companyEmail" defaultValue={user.companyEmail ?? ""}
+              placeholder="例: yamada@iwaki-i.com"
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
 
           {/* 氏名 */}
           <div>
