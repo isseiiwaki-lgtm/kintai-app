@@ -59,6 +59,14 @@ model User {
   companyEmail     String?   @unique // 会社メール（永続・管理者が登録）
   linkedAt         DateTime?         // Googleアカウント紐づけ日時
   isActive         Boolean   @default(true)
+  // 所定出勤曜日（デフォルト月〜金）
+  workSun          Boolean   @default(false)
+  workMon          Boolean   @default(true)
+  workTue          Boolean   @default(true)
+  workWed          Boolean   @default(true)
+  workThu          Boolean   @default(true)
+  workFri          Boolean   @default(true)
+  workSat          Boolean   @default(false)
   createdAt        DateTime  @default(now())
 
   attendanceRecords AttendanceRecord[]
@@ -116,10 +124,13 @@ model AttendanceRecord {
   breakEnd       DateTime?  // パート: 休憩終了
   goOutAt        DateTime?  // 外出
   returnAt       DateTime?  // 戻り
-  workingMinutes Int?
-  note           String?
-  status         AttendanceStatus @default(OPEN)
-  createdAt      DateTime         @default(now())
+  workingMinutes       Int?
+  note                 String?
+  status               AttendanceStatus @default(OPEN)
+  isAbsent             Boolean   @default(false) // 欠勤フラグ
+  scheduledStartTime   String?   // 欠勤時スナップショット（所定開始）
+  scheduledEndTime     String?   // 欠勤時スナップショット（所定終了）
+  createdAt            DateTime  @default(now())
   updatedAt      DateTime         @updatedAt
 
   user User @relation(fields: [userId], references: [id])

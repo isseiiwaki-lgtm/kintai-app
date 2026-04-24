@@ -11,6 +11,12 @@ const TYPE_LABEL: Record<string, string> = {
   OTHER:    "その他",
 }
 
+function typeLabel(type: string, detail: unknown): string {
+  const d = detail as Record<string, string> | null
+  if (type === "ABSENCE" && d?.absenceType === "absent") return "欠勤"
+  return TYPE_LABEL[type] ?? type
+}
+
 const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   PENDING:  { label: "審査中",   className: "bg-yellow-100 text-yellow-700" },
   APPROVED: { label: "承認済",   className: "bg-green-100  text-green-700"  },
@@ -80,7 +86,7 @@ export default async function RequestsPage() {
                 return (
                   <tr key={r.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
                     <td className="px-4 py-2.5 text-gray-500 text-xs">{createdStr}</td>
-                    <td className="px-3 py-2.5 text-gray-800">{TYPE_LABEL[r.type] ?? r.type}</td>
+                    <td className="px-3 py-2.5 text-gray-800">{typeLabel(r.type, r.detail)}</td>
                     <td className="px-3 py-2.5 text-gray-600 font-mono text-xs">{tgtStr}</td>
                     <td className="px-3 py-2.5 text-gray-500 text-xs">{detailSummary(r.type, r.detail)}</td>
                     <td className="px-3 py-2.5 text-center">
@@ -91,8 +97,8 @@ export default async function RequestsPage() {
                     <td className="px-3 py-2.5 text-right">
                       {r.status === "PENDING" && (
                         <form action={actionCancelRequest.bind(null, r.id)}>
-                          <button type="submit" className="text-xs text-red-400 hover:text-red-600">
-                            取消
+                          <button type="submit" className="text-xs text-red-400 hover:text-red-600 whitespace-nowrap">
+                            取り下げ
                           </button>
                         </form>
                       )}

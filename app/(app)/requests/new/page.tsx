@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { actionCreateRequest } from "../actions"
 
-type RequestType = "OVERTIME" | "ABSENCE" | "LEAVE_PAID" | "LEAVE_SUB"
+type RequestType = "OVERTIME" | "ABSENCE" | "ABSENCE_ABSENT" | "LEAVE_PAID" | "LEAVE_SUB"
 
 // 15分刻みの時刻オプション（HH:MM 形式）
 function buildTimeOptions(startHour = 0, endHour = 23): { value: string; label: string }[] {
@@ -22,10 +22,11 @@ function buildTimeOptions(startHour = 0, endHour = 23): { value: string; label: 
 const selectClass = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
 
 const TYPE_OPTIONS: { value: RequestType; label: string }[] = [
-  { value: "OVERTIME",   label: "残業申請" },
-  { value: "ABSENCE",    label: "遅刻・早退申請" },
-  { value: "LEAVE_PAID", label: "有給休暇申請" },
-  { value: "LEAVE_SUB",  label: "代休申請" },
+  { value: "OVERTIME",      label: "残業申請" },
+  { value: "ABSENCE",       label: "遅刻・早退申請" },
+  { value: "ABSENCE_ABSENT", label: "欠勤申請" },
+  { value: "LEAVE_PAID",    label: "有給休暇申請" },
+  { value: "LEAVE_SUB",     label: "代休申請" },
 ]
 
 export default function NewRequestPage() {
@@ -37,13 +38,16 @@ export default function NewRequestPage() {
     e.preventDefault()
     setPending(true)
     const fd = new FormData(e.currentTarget)
-    // LEAVE_PAID / LEAVE_SUB → type=LEAVE、detail.leaveType で区別
+    // フロントのUI種別 → DBのtype/detail に変換
     if (fd.get("type") === "LEAVE_PAID") {
       fd.set("type", "LEAVE")
       fd.set("leaveType", "paid")
     } else if (fd.get("type") === "LEAVE_SUB") {
       fd.set("type", "LEAVE")
       fd.set("leaveType", "substitute")
+    } else if (fd.get("type") === "ABSENCE_ABSENT") {
+      fd.set("type", "ABSENCE")
+      fd.set("absenceType", "absent")
     }
     await actionCreateRequest(fd)
   }
@@ -96,6 +100,11 @@ export default function NewRequestPage() {
         )}
 
         {/* 遅刻・早退: 種別 + 時刻 */}
+        {type === "ABSENCE_ABSENT" && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-700">
+            欠勤は全日欠勤（無給）として記録されます。対象日と申請理由を入力してください。
+          </div>
+        )}
         {type === "ABSENCE" && (
           <div className="grid grid-cols-2 gap-3">
             <div>

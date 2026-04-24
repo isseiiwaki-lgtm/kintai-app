@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { UserImportButton } from "./_components/UserImportButton"
+import { actionDuplicateUser } from "./actions"
 
 const ROLE_LABEL: Record<string, { label: string; className: string }> = {
   EMPLOYEE: { label: "一般",   className: "bg-gray-100 text-gray-600" },
@@ -103,12 +104,19 @@ export default async function AdminUsersPage() {
                       : <span className="text-xs text-gray-400">退職</span>}
                   </td>
                   <td className="px-3 py-2.5 text-right">
-                    <Link
-                      href={`/admin/users/${u.id}/edit`}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-                    >
-                      編集
-                    </Link>
+                    <div className="flex justify-end items-center gap-3">
+                      <form action={actionDuplicateUser.bind(null, u.id)}>
+                        <button type="submit" className="text-xs text-gray-400 hover:text-gray-600">
+                          複製
+                        </button>
+                      </form>
+                      <Link
+                        href={`/admin/users/${u.id}/edit`}
+                        className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                      >
+                        編集
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               )

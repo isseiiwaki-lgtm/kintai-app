@@ -30,6 +30,8 @@ export default async function UserEditPage({ params }: { params: Params }) {
       role: true, employmentType: true,
       department: true, workStartTime: true, workEndTime: true,
       isActive: true,
+      workSun: true, workMon: true, workTue: true,
+      workWed: true, workThu: true, workFri: true, workSat: true,
     },
   })
   if (!user) notFound()
@@ -142,6 +144,27 @@ export default async function UserEditPage({ params }: { params: Params }) {
               <select name="workEndTime" defaultValue={user.workEndTime ?? ""} className={selectCls}>
                 {workTimes.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
+            </div>
+          </div>
+
+          {/* 所定出勤曜日 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">所定出勤曜日</label>
+            <div className="flex gap-3">
+              {([
+                { name: "workSun", label: "日", checked: user.workSun },
+                { name: "workMon", label: "月", checked: user.workMon },
+                { name: "workTue", label: "火", checked: user.workTue },
+                { name: "workWed", label: "水", checked: user.workWed },
+                { name: "workThu", label: "木", checked: user.workThu },
+                { name: "workFri", label: "金", checked: user.workFri },
+                { name: "workSat", label: "土", checked: user.workSat },
+              ] as const).map(({ name, label, checked }) => (
+                <label key={name} className="flex flex-col items-center gap-1 cursor-pointer">
+                  <input type="checkbox" name={name} defaultChecked={checked} className="w-4 h-4 accent-blue-600" />
+                  <span className="text-xs text-gray-600">{label}</span>
+                </label>
+              ))}
             </div>
           </div>
 

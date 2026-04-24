@@ -147,7 +147,11 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                     {rec?.workingMinutes ? formatMinutes(rec.workingMinutes) : "--"}
                   </td>
                   <td className="px-3 py-2.5 text-center">
-                    {rec ? (
+                    {rec?.isAbsent ? (
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                        欠勤
+                      </span>
+                    ) : rec ? (
                       <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_LABEL[rec.status].className}`}>
                         {STATUS_LABEL[rec.status].label}
                       </span>
@@ -166,7 +170,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
           const dt  = new Date(Date.UTC(year, month - 1, d))
           const dow = dt.getUTCDay()
           const rec = recordMap.get(d)
-          if (!rec?.clockIn) return null // SP は打刻あり日のみ表示
+          if (!rec?.clockIn && !rec?.isAbsent) return null // SP は打刻あり or 欠勤のみ表示
           const isWeekend = dow === 0 || dow === 6
           return (
             <div key={d} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
@@ -174,24 +178,32 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                 <span className={`text-sm font-medium ${dow === 0 ? "text-red-500" : dow === 6 ? "text-blue-500" : "text-gray-800"}`}>
                   {month}/{d}（{WEEKDAY[dow]}）
                 </span>
-                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_LABEL[rec.status].className}`}>
-                  {STATUS_LABEL[rec.status].label}
-                </span>
+                {rec.isAbsent ? (
+                  <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                    欠勤
+                  </span>
+                ) : (
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_LABEL[rec.status].className}`}>
+                    {STATUS_LABEL[rec.status].label}
+                  </span>
+                )}
               </div>
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                <div>
-                  <p className="text-gray-400">出勤</p>
-                  <p className="font-mono text-gray-800">{formatTime(rec.clockIn)}</p>
+              {!rec.isAbsent && (
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div>
+                    <p className="text-gray-400">出勤</p>
+                    <p className="font-mono text-gray-800">{formatTime(rec.clockIn)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">退勤</p>
+                    <p className="font-mono text-gray-800">{formatTime(rec.clockOut)}</p>
+                  </div>
+                  <div>
+                    <p className="text-gray-400">勤務時間</p>
+                    <p className="font-mono text-gray-800">{formatMinutes(rec.workingMinutes)}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-gray-400">退勤</p>
-                  <p className="font-mono text-gray-800">{formatTime(rec.clockOut)}</p>
-                </div>
-                <div>
-                  <p className="text-gray-400">勤務時間</p>
-                  <p className="font-mono text-gray-800">{formatMinutes(rec.workingMinutes)}</p>
-                </div>
-              </div>
+              )}
             </div>
           )
         })}

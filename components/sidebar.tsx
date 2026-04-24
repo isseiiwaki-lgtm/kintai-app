@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useState, useEffect, useRef } from "react"
 
 type NavItem = {
   href: string
@@ -83,6 +84,19 @@ type Props = {
 export function Sidebar({ userName, userImage, role, logoutAction }: Props) {
   const pathname  = usePathname()
   const isAdmin   = role === "ADMIN" || role === "APPROVER"
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false)
+  const avatarRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!avatarMenuOpen) return
+    const handleClick = (e: MouseEvent) => {
+      if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) {
+        setAvatarMenuOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [avatarMenuOpen])
 
   const navLink = (item: NavItem) => {
     const active = pathname === item.href
@@ -151,7 +165,23 @@ export function Sidebar({ userName, userImage, role, logoutAction }: Props) {
         <span className="text-base font-bold text-gray-900">勤怠管理</span>
         <div className="flex items-center gap-3">
           <span className="text-xs text-gray-500 truncate max-w-[120px]">{userName}</span>
-          <Avatar />
+          <div ref={avatarRef} className="relative">
+            <button onClick={() => setAvatarMenuOpen((v) => !v)} className="block">
+              <Avatar />
+            </button>
+            {avatarMenuOpen && (
+              <div className="absolute right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden z-50 min-w-[100px]">
+                <form action={logoutAction}>
+                  <button
+                    type="submit"
+                    className="block w-full px-4 py-2.5 text-sm text-left text-gray-700 hover:bg-gray-50 whitespace-nowrap"
+                  >
+                    ログアウト
+                  </button>
+                </form>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

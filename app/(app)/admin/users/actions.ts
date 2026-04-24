@@ -202,6 +202,13 @@ export async function actionUpdateUser(formData: FormData) {
   const workStartTime  = formData.get("workStartTime")  as string
   const workEndTime    = formData.get("workEndTime")    as string
   const isActive       = formData.get("isActive") === "true"
+  const workSun        = formData.get("workSun")  === "on"
+  const workMon        = formData.get("workMon")  === "on"
+  const workTue        = formData.get("workTue")  === "on"
+  const workWed        = formData.get("workWed")  === "on"
+  const workThu        = formData.get("workThu")  === "on"
+  const workFri        = formData.get("workFri")  === "on"
+  const workSat        = formData.get("workSat")  === "on"
 
   await prisma.user.update({
     where: { id },
@@ -218,6 +225,7 @@ export async function actionUpdateUser(formData: FormData) {
       workStartTime:  workStartTime  || null,
       workEndTime:    workEndTime    || null,
       isActive,
+      workSun, workMon, workTue, workWed, workThu, workFri, workSat,
     },
   })
 
@@ -266,18 +274,60 @@ export async function actionCreateUser(formData: FormData): Promise<{ error: str
     redirect(`/admin/users/${existing.id}/edit`)
   }
 
+  const workSun = formData.get("workSun") === "on"
+  const workMon = formData.get("workMon") === "on"
+  const workTue = formData.get("workTue") === "on"
+  const workWed = formData.get("workWed") === "on"
+  const workThu = formData.get("workThu") === "on"
+  const workFri = formData.get("workFri") === "on"
+  const workSat = formData.get("workSat") === "on"
+
   await prisma.user.create({
     data: {
-      email,                          // 会社メール（リンク前は email = companyEmail）
-      companyEmail: email,            // 永続保存
+      email,
+      companyEmail: email,
       name:           name           || null,
       role:           role as "EMPLOYEE" | "APPROVER" | "ADMIN",
       employmentType: employmentType || "full",
       department:     department     || null,
       workStartTime:  workStartTime  || null,
       workEndTime:    workEndTime    || null,
+      workSun, workMon, workTue, workWed, workThu, workFri, workSat,
     },
   })
 
   redirect("/admin/users")
+}
+
+export async function actionDuplicateUser(sourceId: string) {
+  await checkAdmin()
+
+  const src = await prisma.user.findUnique({
+    where: { id: sourceId },
+    select: {
+      role: true, employmentType: true, department: true, jobTitle: true,
+      workStartTime: true, workEndTime: true,
+      workSun: true, workMon: true, workTue: true,
+      workWed: true, workThu: true, workFri: true, workSat: true,
+    },
+  })
+  if (!src) throw new Error("複製元ユーザーが見つかりません")
+
+  const tempEmail = `duplicate_${Date.now()}@temp.invalid`
+  const newUser = await prisma.user.create({
+    data: {
+      email:          tempEmail,
+      role:           src.role,
+      employmentType: src.employmentType,
+      department:     src.department,
+      jobTitle:       src.jobTitle,
+      workStartTime:  src.workStartTime,
+      workEndTime:    src.workEndTime,
+      workSun: src.workSun, workMon: src.workMon, workTue: src.workTue,
+      workWed: src.workWed, workThu: src.workThu, workFri: src.workFri,
+      workSat: src.workSat,
+    },
+  })
+
+  redirect(`/admin/users/${newUser.id}/edit`)
 }

@@ -95,6 +95,27 @@ export default function NewUserPage() {
             </div>
           </div>
 
+          {/* 所定出勤曜日 */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-2">所定出勤曜日</label>
+            <div className="flex gap-3">
+              {([
+                { name: "workSun", label: "日", defaultChecked: false },
+                { name: "workMon", label: "月", defaultChecked: true  },
+                { name: "workTue", label: "火", defaultChecked: true  },
+                { name: "workWed", label: "水", defaultChecked: true  },
+                { name: "workThu", label: "木", defaultChecked: true  },
+                { name: "workFri", label: "金", defaultChecked: true  },
+                { name: "workSat", label: "土", defaultChecked: false },
+              ] as const).map(({ name, label, defaultChecked }) => (
+                <label key={name} className="flex flex-col items-center gap-1 cursor-pointer">
+                  <input type="checkbox" name={name} defaultChecked={defaultChecked} className="w-4 h-4 accent-blue-600" />
+                  <span className="text-xs text-gray-600">{label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
           <button type="submit"
             className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors mt-2">
             登録
