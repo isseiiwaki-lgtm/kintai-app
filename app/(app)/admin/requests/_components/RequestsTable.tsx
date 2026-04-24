@@ -9,11 +9,12 @@ import {
 } from "../actions"
 
 const TYPE_LABEL: Record<string, string> = {
-  OVERTIME: "残業申請",
-  ABSENCE:  "遅刻・早退",
-  LEAVE:    "休暇申請",
-  COMMENT:  "修正依頼",
-  OTHER:    "その他",
+  OVERTIME:   "残業申請",
+  ABSENCE:    "遅刻・早退",
+  LEAVE:      "休暇申請",
+  CORRECTION: "打刻修正",
+  COMMENT:    "修正依頼",
+  OTHER:      "その他",
 }
 
 function typeLabel(type: string, detail: Record<string, string> | null): string {
@@ -163,14 +164,23 @@ const TableHeader = () => (
   </tr>
 )
 
-export function RequestsTable({ requests }: { requests: ReqRow[] }) {
-  const [editTarget, setEditTarget]   = useState<EditState | null>(null)
-  const [editType, setEditType]       = useState("")
-  const [deleteTarget, setDeleteTarget] = useState<DeleteState | null>(null)
-  const [isPending, startTransition]  = useTransition()
+import Link from "next/link"
 
-  const pending  = requests.filter(r => r.status === "PENDING")
-  const resolved = requests.filter(r => r.status !== "PENDING")
+type ProcessedNav = { year: number; month: number; prevLink: string; nextLink: string }
+
+export function RequestsTable({
+  pending,
+  processed,
+  processedNav,
+}: {
+  pending:      ReqRow[]
+  processed:    ReqRow[]
+  processedNav: ProcessedNav
+}) {
+  const [editTarget, setEditTarget]     = useState<EditState | null>(null)
+  const [editType, setEditType]         = useState("")
+  const [deleteTarget, setDeleteTarget] = useState<DeleteState | null>(null)
+  const [isPending, startTransition]    = useTransition()
 
   function openEdit(r: ReqRow) {
     setEditType(r.type)
@@ -273,14 +283,22 @@ export function RequestsTable({ requests }: { requests: ReqRow[] }) {
         </table>
       </div>
 
-      <h2 className="text-sm font-medium text-gray-700 mb-2">処理済み ({resolved.length}件)</h2>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-medium text-gray-700">
+          処理済み — {processedNav.year}年{processedNav.month}月 ({processed.length}件)
+        </h2>
+        <div className="flex items-center gap-1">
+          <Link href={processedNav.prevLink} className="p-1.5 rounded hover:bg-gray-100 text-gray-500 text-xs">◀</Link>
+          <Link href={processedNav.nextLink} className="p-1.5 rounded hover:bg-gray-100 text-gray-500 text-xs">▶</Link>
+        </div>
+      </div>
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
         <table className="w-full text-sm min-w-[800px]">
           <thead><TableHeader /></thead>
           <tbody>
-            {resolved.length === 0
-              ? <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-400">処理済みの申請はありません</td></tr>
-              : resolved.map(r => <Row key={r.id} r={r} showApproveActions={false} />)
+            {processed.length === 0
+              ? <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-400">この月の処理済み申請はありません</td></tr>
+              : processed.map(r => <Row key={r.id} r={r} showApproveActions={false} />)
             }
           </tbody>
         </table>

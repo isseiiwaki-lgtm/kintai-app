@@ -33,6 +33,12 @@ export async function actionCreateRequest(formData: FormData) {
         workDate:  (formData.get("workDate") as string) || "",
       }
       break
+    case "CORRECTION":
+      detail = {
+        targetField:   formData.get("targetField")   as string,
+        correctedTime: formData.get("correctedTime") as string,
+      }
+      break
   }
 
   await prisma.request.create({

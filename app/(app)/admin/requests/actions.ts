@@ -3,15 +3,17 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
+import { formatHHMMfromDate } from "@/lib/attendance"
 
 async function checkAdmin() {
   const session = await auth()
   const role = session?.user?.role
   if (role !== "ADMIN" && role !== "APPROVER") throw new Error("Forbidden")
+  return session!.user!.id!
 }
 
 export async function actionApproveRequest(id: string) {
-  await checkAdmin()
+  const changedById = await checkAdmin()
 
   const req = await prisma.request.findUnique({
     where: { id },
@@ -24,8 +26,9 @@ export async function actionApproveRequest(id: string) {
     data: { status: "APPROVED" },
   })
 
-  // 欠勤承認時: AttendanceRecord に反映
   const detail = req.detail as Record<string, string> | null
+
+  // 欠勤承認時: AttendanceRecord に反映
   if (req.type === "ABSENCE" && detail?.absenceType === "absent") {
     await prisma.attendanceRecord.upsert({
       where:  { userId_date: { userId: req.userId, date: req.targetDate } },
@@ -43,6 +46,72 @@ export async function actionApproveRequest(id: string) {
       },
     })
     revalidatePath("/records")
+  }
+
+  // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存
+  if (req.type === "LEAVE" && detail?.leaveType === "paid") {
+    const scheduledMins = 480 // 所定勤務時間（将来的にユーザー設定から取得）
+    const halfDay = detail?.halfDay
+    const paidMins = halfDay === "am" || halfDay === "pm" ? scheduledMins / 2 : scheduledMins
+    await prisma.attendanceRecord.upsert({
+      where:  { userId_date: { userId: req.userId, date: req.targetDate } },
+      update: { paidLeaveMinutes: paidMins },
+      create: { userId: req.userId, date: req.targetDate, paidLeaveMinutes: paidMins },
+    })
+    revalidatePath("/records")
+  }
+
+  // 打刻修正承認時: AttendanceRecord の対象フィールドを更新 + ChangeLog
+  if (req.type === "CORRECTION" && detail?.targetField && detail?.correctedTime) {
+    const [hh, mm]   = detail.correctedTime.split(":").map(Number)
+    const base        = new Date(req.targetDate)
+    const correctedAt = new Date(Date.UTC(
+      base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate(),
+      hh - 9, mm
+    ))
+
+    const allowedFields = ["clockIn", "clockOut", "goOutAt", "returnAt", "breakStart", "breakEnd"]
+    const field = allowedFields.includes(detail.targetField) ? detail.targetField : null
+    if (field) {
+      const existing = await prisma.attendanceRecord.findUnique({
+        where: { userId_date: { userId: req.userId, date: req.targetDate } },
+      })
+
+      const updateData: Record<string, Date | null> = { [field]: correctedAt }
+
+      // 原打刻の保存（初回変更時のみ）
+      if (field === "clockIn" && existing && !existing.originalClockIn && existing.clockIn) {
+        updateData.originalClockIn = existing.clockIn
+      }
+      if (field === "clockOut" && existing && !existing.originalClockOut && existing.clockOut) {
+        updateData.originalClockOut = existing.clockOut
+      }
+
+      const oldValue = existing ? formatHHMMfromDate(existing[field as keyof typeof existing] as Date | null) : null
+
+      if (existing) {
+        await prisma.$transaction([
+          prisma.attendanceRecord.update({
+            where: { id: existing.id },
+            data:  updateData,
+          }),
+          prisma.attendanceChangeLog.create({
+            data: {
+              recordId:    existing.id,
+              changedById,
+              fieldName:   field,
+              oldValue,
+              newValue:    detail.correctedTime,
+            },
+          }),
+        ])
+      } else {
+        await prisma.attendanceRecord.create({
+          data: { userId: req.userId, date: req.targetDate, [field]: correctedAt },
+        })
+      }
+      revalidatePath("/records")
+    }
   }
 
   revalidatePath("/admin/requests")

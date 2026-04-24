@@ -24,29 +24,63 @@ export default async function DashboardPage() {
   const session = await auth()
   const userId = session!.user!.id!
 
-  const today = todayJST()
-  const userInfo = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { name: true, employeeCode: true },
-  })
-  const firstOfMonth = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1))
+  const today   = todayJST()
+  const setting = await prisma.setting.findUnique({ where: { id: 1 } })
+  const closingDay = setting?.closingDay ?? 25
 
-  const [todayRecord, monthRecords] = await Promise.all([
+  // 締め日基準の当月集計期間
+  const todayDate  = today.getUTCDate()
+  const periodYear  = todayDate > closingDay
+    ? (today.getUTCMonth() === 11 ? today.getUTCFullYear() + 1 : today.getUTCFullYear())
+    : today.getUTCFullYear()
+  const periodMonth = todayDate > closingDay
+    ? (today.getUTCMonth() + 2 > 12 ? 1 : today.getUTCMonth() + 2)
+    : today.getUTCMonth() + 1
+  const firstDay = new Date(Date.UTC(periodYear, periodMonth - 2, closingDay + 1))
+  const lastDay  = new Date(Date.UTC(periodYear, periodMonth - 1, closingDay))
+
+  const [userInfo, todayRecord, monthRecords, pendingRequests, rejectedRequests, missedClockOut] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { name: true, employeeCode: true },
+    }),
     prisma.attendanceRecord.findUnique({
       where: { userId_date: { userId, date: today } },
     }),
     prisma.attendanceRecord.findMany({
+      where: { userId, date: { gte: firstDay, lte: lastDay }, clockIn: { not: null } },
+      select: { workingMinutes: true, clockIn: true, status: true },
+    }),
+    // 審査中の申請
+    prisma.request.findMany({
+      where: { userId, status: "PENDING" },
+      select: { id: true, type: true, targetDate: true },
+      orderBy: { createdAt: "desc" },
+    }),
+    // 却下された申請
+    prisma.request.findMany({
+      where: { userId, status: "REJECTED" },
+      select: { id: true, type: true, targetDate: true },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+    // 退勤漏れ: 昨日以前 + clockIn あり + clockOut なし
+    prisma.attendanceRecord.findMany({
       where: {
         userId,
-        date: { gte: firstOfMonth },
-        clockIn: { not: null },
+        date:     { gte: firstDay, lt: today },
+        clockIn:  { not: null },
+        clockOut: null,
       },
-      select: { workingMinutes: true, clockIn: true },
+      select: { date: true },
+      orderBy: { date: "desc" },
+      take: 5,
     }),
   ])
 
-  const workDays = monthRecords.length
+  const workDays     = monthRecords.length
   const totalMinutes = monthRecords.reduce((s: number, r: { workingMinutes: number | null }) => s + (r.workingMinutes ?? 0), 0)
+  const openCount    = monthRecords.filter((r) => r.status === "OPEN").length
 
   const dateLabel = today.toLocaleDateString("ja-JP", {
     timeZone: "UTC",
@@ -131,6 +165,71 @@ export default async function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* インフォメーション欄 */}
+      {(missedClockOut.length > 0 || rejectedRequests.length > 0 || openCount > 0 || pendingRequests.length > 0) && (
+        <div className="space-y-2">
+          {/* 退勤漏れ */}
+          {missedClockOut.map((r) => {
+            const jst = new Date(r.date.getTime() + 9 * 60 * 60 * 1000)
+            const label = `${jst.getUTCMonth() + 1}/${jst.getUTCDate()}`
+            return (
+              <div key={r.date.toISOString()} className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+                <span className="text-red-500 mt-0.5 text-base leading-none">⚠</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-red-700">{label} 退勤打刻がありません</p>
+                  <p className="text-xs text-red-400 mt-0.5">打刻漏れの可能性があります</p>
+                </div>
+                <Link href={`/requests/new?date=${jst.getUTCFullYear()}-${String(jst.getUTCMonth() + 1).padStart(2, "0")}-${String(jst.getUTCDate()).padStart(2, "0")}&mode=correction`}
+                  className="text-xs text-red-600 hover:underline whitespace-nowrap self-center">
+                  修正依頼
+                </Link>
+              </div>
+            )
+          })}
+
+          {/* 却下された申請 */}
+          {rejectedRequests.length > 0 && (
+            <div className="flex items-start gap-3 bg-orange-50 border border-orange-200 rounded-xl px-4 py-3">
+              <span className="text-orange-500 mt-0.5 text-base leading-none">!</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-orange-700">却下された申請が {rejectedRequests.length} 件あります</p>
+                <p className="text-xs text-orange-400 mt-0.5">内容を確認してください</p>
+              </div>
+              <Link href="/requests" className="text-xs text-orange-600 hover:underline whitespace-nowrap self-center">
+                申請一覧
+              </Link>
+            </div>
+          )}
+
+          {/* 未確認の勤怠記録 */}
+          {openCount > 0 && (
+            <div className="flex items-start gap-3 bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
+              <span className="text-yellow-500 mt-0.5 text-base leading-none">📋</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-yellow-700">今月 {openCount} 日分の勤怠が未確認です</p>
+                <p className="text-xs text-yellow-400 mt-0.5">勤怠記録を確認・提出してください</p>
+              </div>
+              <Link href={`/records?year=${periodYear}&month=${periodMonth}`} className="text-xs text-yellow-600 hover:underline whitespace-nowrap self-center">
+                記録を確認
+              </Link>
+            </div>
+          )}
+
+          {/* 審査中の申請 */}
+          {pendingRequests.length > 0 && (
+            <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+              <span className="text-blue-400 mt-0.5 text-base leading-none">🕐</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-blue-700">審査中の申請が {pendingRequests.length} 件あります</p>
+              </div>
+              <Link href="/requests" className="text-xs text-blue-500 hover:underline whitespace-nowrap self-center">
+                申請一覧
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

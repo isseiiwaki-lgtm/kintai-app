@@ -1,7 +1,6 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { SubmitMonthButton } from "./submit-button"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
 
@@ -34,17 +33,53 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
   const userId  = session!.user!.id!
   const params  = await searchParams
 
-  const now   = toJST(new Date())
-  const year  = Number(params.year  ?? now.getUTCFullYear())
-  const month = Number(params.month ?? now.getUTCMonth() + 1)
+  const now     = toJST(new Date())
+  const setting = await prisma.setting.findUnique({ where: { id: 1 } })
+  const closingDay = setting?.closingDay ?? 25
 
-  const firstDay = new Date(Date.UTC(year, month - 1, 1))
-  const lastDay  = new Date(Date.UTC(year, month,     0))
+  // 締め日考慮のデフォルト月算出（締め日翌日から翌月扱い）
+  const todayDate = now.getUTCDate()
+  const defaultYear  = todayDate > closingDay
+    ? (now.getUTCMonth() === 11 ? now.getUTCFullYear() + 1 : now.getUTCFullYear())
+    : now.getUTCFullYear()
+  const defaultMonth = todayDate > closingDay
+    ? (now.getUTCMonth() + 2 > 12 ? 1 : now.getUTCMonth() + 2)
+    : now.getUTCMonth() + 1
 
-  const records = await prisma.attendanceRecord.findMany({
-    where: { userId, date: { gte: firstDay, lte: lastDay } },
-    orderBy: { date: "asc" },
-  })
+  const year  = Number(params.year  ?? defaultYear)
+  const month = Number(params.month ?? defaultMonth)
+
+  // 集計期間: 前月(closingDay+1) 〜 当月(closingDay)
+  const firstDay = new Date(Date.UTC(year, month - 2, closingDay + 1))
+  const lastDay  = new Date(Date.UTC(year, month - 1, closingDay))
+
+  const [records, user] = await Promise.all([
+    prisma.attendanceRecord.findMany({
+      where: { userId, date: { gte: firstDay, lte: lastDay } },
+      orderBy: { date: "asc" },
+    }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { workStartTime: true },
+    }),
+  ])
+
+  // 遅刻・打刻漏れ判定（個別フラグ）
+  function getCorrectionFlags(rec: typeof records[number]) {
+    if (rec.status !== "OPEN" || !rec.clockIn) {
+      return { isLate: false, missingClockOut: false, needsButton: false }
+    }
+    const recDate = new Date(Date.UTC(year, month - 1, rec.date ? toJST(rec.date).getUTCDate() : 0))
+    const isBeforeToday = recDate < new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+    const missingClockOut = !rec.clockOut && isBeforeToday
+    let isLate = false
+    if (user?.workStartTime) {
+      const [sh, sm] = user.workStartTime.split(":").map(Number)
+      const jst = toJST(rec.clockIn)
+      isLate = jst.getUTCHours() * 60 + jst.getUTCMinutes() > sh * 60 + sm
+    }
+    return { isLate, missingClockOut, needsButton: isLate || missingClockOut }
+  }
 
   // 月次サマリー
   type Rec = typeof records[number]
@@ -52,24 +87,35 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
   const totalMinutes = records.reduce((s: number, r: Rec) => s + (r.workingMinutes ?? 0), 0)
 
   // 前月・翌月のリンク用
-  const prevDate = new Date(Date.UTC(year, month - 2, 1))
-  const nextDate = new Date(Date.UTC(year, month,     1))
-  const prevLink = `/records?year=${prevDate.getUTCFullYear()}&month=${prevDate.getUTCMonth() + 1}`
-  const nextLink = `/records?year=${nextDate.getUTCFullYear()}&month=${nextDate.getUTCMonth() + 1}`
+  const prevMonth = month === 1 ? 12 : month - 1
+  const prevYear  = month === 1 ? year - 1 : year
+  const nextMonth = month === 12 ? 1 : month + 1
+  const nextYear  = month === 12 ? year + 1 : year
+  const prevLink  = `/records?year=${prevYear}&month=${prevMonth}`
+  const nextLink  = `/records?year=${nextYear}&month=${nextMonth}`
 
-  // レコードを日付キーで引けるようにする
+  // 集計期間の表示用
+  const periodStart = `${firstDay.getUTCMonth() + 1}/${firstDay.getUTCDate()}`
+  const periodEnd   = `${lastDay.getUTCMonth() + 1}/${lastDay.getUTCDate()}`
+
+  // レコードを日付キーで引けるようにする（"YYYY-M-D" キー）
   const recordMap = new Map(
-    records.map((r) => [toJST(r.date).getUTCDate(), r])
+    records.map((r) => {
+      const jst = toJST(r.date)
+      return [`${jst.getUTCFullYear()}-${jst.getUTCMonth() + 1}-${jst.getUTCDate()}`, r]
+    })
   )
 
-  // 月の全日程を生成
-  const days = Array.from({ length: lastDay.getUTCDate() }, (_, i) => i + 1)
+  // 集計期間の全日程を生成
+  const days: { year: number; month: number; day: number }[] = []
+  const cur = new Date(firstDay)
+  while (cur <= lastDay) {
+    const jst = toJST(cur)
+    days.push({ year: jst.getUTCFullYear(), month: jst.getUTCMonth() + 1, day: jst.getUTCDate() })
+    cur.setUTCDate(cur.getUTCDate() + 1)
+  }
 
   // 提出状態の判定
-  const workRecords  = records.filter((r: Rec) => r.clockIn)
-  const hasRecords   = workRecords.length > 0
-  const allSubmitted = hasRecords && workRecords.every((r: Rec) => r.status !== "OPEN")
-  const anyLocked    = workRecords.some((r: Rec) => r.status === "LOCKED" || r.status === "APPROVED")
 
   return (
     <div className="p-4 lg:p-6">
@@ -77,17 +123,12 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-1">
           <Link href={prevLink} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">◀</Link>
-          <h1 className="text-base font-semibold text-gray-900">{year}年{month}月</h1>
+          <div className="text-center">
+            <h1 className="text-base font-semibold text-gray-900">{year}年{month}月</h1>
+            <p className="text-[10px] text-gray-400">{periodStart}〜{periodEnd}</p>
+          </div>
           <Link href={nextLink} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">▶</Link>
         </div>
-        {hasRecords && !anyLocked && (
-          <SubmitMonthButton
-            userId={userId}
-            year={year}
-            month={month}
-            isSubmitted={allSubmitted}
-          />
-        )}
       </div>
 
       {/* 月次サマリー */}
@@ -119,28 +160,35 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
               <th className="text-center px-3 py-3 font-medium">戻り</th>
               <th className="text-center px-3 py-3 font-medium">勤務時間</th>
               <th className="text-center px-3 py-3 font-medium">状態</th>
+              <th className="px-3 py-3 font-medium"></th>
             </tr>
           </thead>
           <tbody>
-            {days.map((d) => {
-              const dt  = new Date(Date.UTC(year, month - 1, d))
+            {days.map(({ year: dy, month: dm, day: d }) => {
+              const dt  = new Date(Date.UTC(dy, dm - 1, d))
               const dow = dt.getUTCDay()
-              const rec = recordMap.get(d)
+              const rec = recordMap.get(`${dy}-${dm}-${d}`)
               const isWeekend = dow === 0 || dow === 6
+              const flags = rec ? getCorrectionFlags(rec) : { isLate: false, missingClockOut: false, needsButton: false }
+              const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
               return (
                 <tr
-                  key={d}
+                  key={dateStr}
                   className={`border-b border-gray-50 last:border-0 ${
                     isWeekend ? "bg-gray-50/60" : "hover:bg-gray-50"
                   }`}
                 >
                   <td className="px-4 py-2.5">
                     <span className={dow === 0 ? "text-red-500" : dow === 6 ? "text-blue-500" : "text-gray-800"}>
-                      {month}/{d}（{WEEKDAY[dow]}）
+                      {dm}/{d}（{WEEKDAY[dow]}）
                     </span>
                   </td>
-                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{formatTime(rec?.clockIn)}</td>
-                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{formatTime(rec?.clockOut)}</td>
+                  <td className={`px-3 py-2.5 text-center font-mono ${flags.isLate ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
+                    {formatTime(rec?.clockIn)}
+                  </td>
+                  <td className={`px-3 py-2.5 text-center font-mono ${flags.missingClockOut ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
+                    {formatTime(rec?.clockOut)}
+                  </td>
                   <td className="px-3 py-2.5 text-center font-mono text-gray-500 text-xs">{formatTime(rec?.goOutAt)}</td>
                   <td className="px-3 py-2.5 text-center font-mono text-gray-500 text-xs">{formatTime(rec?.returnAt)}</td>
                   <td className="px-3 py-2.5 text-center font-mono text-gray-700">
@@ -157,6 +205,16 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                       </span>
                     ) : null}
                   </td>
+                  <td className="px-3 py-2.5 text-center">
+                    {flags.needsButton && (
+                      <Link
+                        href={`/requests/new?date=${dateStr}&mode=correction`}
+                        className="inline-block text-xs px-2.5 py-1 rounded border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 whitespace-nowrap"
+                      >
+                        修正依頼
+                      </Link>
+                    )}
+                  </td>
                 </tr>
               )
             })}
@@ -166,37 +224,48 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
       {/* SP: カードリスト */}
       <div className="lg:hidden space-y-2">
-        {days.map((d) => {
-          const dt  = new Date(Date.UTC(year, month - 1, d))
+        {days.map(({ year: dy, month: dm, day: d }) => {
+          const dt  = new Date(Date.UTC(dy, dm - 1, d))
           const dow = dt.getUTCDay()
-          const rec = recordMap.get(d)
+          const rec = recordMap.get(`${dy}-${dm}-${d}`)
           if (!rec?.clockIn && !rec?.isAbsent) return null // SP は打刻あり or 欠勤のみ表示
-          const isWeekend = dow === 0 || dow === 6
+          const flags = rec ? getCorrectionFlags(rec) : { isLate: false, missingClockOut: false, needsButton: false }
+          const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
           return (
-            <div key={d} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
+            <div key={dateStr} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
               <div className="flex items-center justify-between mb-2">
                 <span className={`text-sm font-medium ${dow === 0 ? "text-red-500" : dow === 6 ? "text-blue-500" : "text-gray-800"}`}>
-                  {month}/{d}（{WEEKDAY[dow]}）
+                  {dm}/{d}（{WEEKDAY[dow]}）
                 </span>
-                {rec.isAbsent ? (
-                  <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
-                    欠勤
-                  </span>
-                ) : (
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_LABEL[rec.status].className}`}>
-                    {STATUS_LABEL[rec.status].label}
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {flags.needsButton && (
+                    <Link
+                      href={`/requests/new?date=${dateStr}&mode=correction`}
+                      className="text-xs px-2 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-700 whitespace-nowrap"
+                    >
+                      修正依頼
+                    </Link>
+                  )}
+                  {rec.isAbsent ? (
+                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+                      欠勤
+                    </span>
+                  ) : (
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_LABEL[rec.status].className}`}>
+                      {STATUS_LABEL[rec.status].label}
+                    </span>
+                  )}
+                </div>
               </div>
               {!rec.isAbsent && (
                 <div className="grid grid-cols-3 gap-2 text-center text-xs">
                   <div>
                     <p className="text-gray-400">出勤</p>
-                    <p className="font-mono text-gray-800">{formatTime(rec.clockIn)}</p>
+                    <p className={`font-mono ${flags.isLate ? "text-amber-600 font-semibold" : "text-gray-800"}`}>{formatTime(rec.clockIn)}</p>
                   </div>
                   <div>
                     <p className="text-gray-400">退勤</p>
-                    <p className="font-mono text-gray-800">{formatTime(rec.clockOut)}</p>
+                    <p className={`font-mono ${flags.missingClockOut ? "text-amber-600 font-semibold" : "text-gray-800"}`}>{formatTime(rec.clockOut)}</p>
                   </div>
                   <div>
                     <p className="text-gray-400">勤務時間</p>

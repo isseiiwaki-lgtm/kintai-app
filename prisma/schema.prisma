@@ -21,10 +21,11 @@ enum AttendanceStatus {
 }
 
 enum RequestType {
-  OVERTIME   // 残業申請
-  LEAVE      // 休暇申請
-  ABSENCE    // 欠勤
-  COMMENT    // 打刻コメント・修正依頼
+  OVERTIME    // 残業申請
+  LEAVE       // 休暇申請
+  ABSENCE     // 欠勤・遅刻・早退
+  CORRECTION  // 打刻修正申請
+  COMMENT     // テキストのみの連絡
   OTHER
 }
 
@@ -74,6 +75,7 @@ model User {
   approvals         Approval[]
   accounts          Account[]
   sessions          Session[]
+  changeLogs        AttendanceChangeLog[]
 }
 
 // NextAuth 必須テーブル
@@ -130,12 +132,35 @@ model AttendanceRecord {
   isAbsent             Boolean   @default(false) // 欠勤フラグ
   scheduledStartTime   String?   // 欠勤時スナップショット（所定開始）
   scheduledEndTime     String?   // 欠勤時スナップショット（所定終了）
+  // 原打刻（初回のみ保存・以降不変）
+  originalClockIn      DateTime?
+  originalClockOut     DateTime?
+  // 承認/締め時に計算・確定する集計値
+  lateMinutes          Int?      // 遅刻分
+  earlyLeaveMinutes    Int?      // 早退分
+  overtimeMinutes      Int?      // 残業分
+  paidLeaveMinutes     Int?      // 有給取得時間（分）
   createdAt            DateTime  @default(now())
   updatedAt      DateTime         @updatedAt
 
-  user User @relation(fields: [userId], references: [id])
+  user       User                  @relation(fields: [userId], references: [id])
+  changeLogs AttendanceChangeLog[]
 
   @@unique([userId, date])
+}
+
+// 打刻変更ログ
+model AttendanceChangeLog {
+  id          String   @id @default(cuid())
+  recordId    String
+  changedById String
+  changedAt   DateTime @default(now())
+  fieldName   String   // "clockIn" / "clockOut" など
+  oldValue    String?  // HH:MM または null
+  newValue    String?
+
+  record    AttendanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  changedBy User             @relation(fields: [changedById], references: [id])
 }
 
 // 各種申請
@@ -176,6 +201,17 @@ model LeaveBalance {
   usedDays   Float  @default(0)
 
   @@unique([userId, fiscalYear])
+}
+
+// 会社設定（シングルトン id=1）
+model Setting {
+  id               Int      @id @default(1)
+  closingDay       Int      @default(25)  // 締め日（1-28）
+  break1Threshold  Int      @default(360) // 休憩45分控除の閾値（分）= 6時間
+  break1Minutes    Int      @default(45)  // 45分
+  break2Threshold  Int      @default(480) // 休憩60分控除の閾値（分）= 8時間
+  break2Minutes    Int      @default(60)  // 60分
+  updatedAt        DateTime @updatedAt
 }
 
 // 休日カレンダー（残業・休出判定の元データ）

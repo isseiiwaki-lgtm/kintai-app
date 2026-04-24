@@ -17,20 +17,38 @@ function fmtMin(min: number) {
 }
 
 export default async function AdminAttendancePage({ searchParams }: { searchParams: SearchParams }) {
-  const params = await searchParams
-  const now    = toJST(new Date())
-  const year   = Number(params.year  ?? now.getUTCFullYear())
-  const month  = Number(params.month ?? now.getUTCMonth() + 1)
+  const params     = await searchParams
+  const now        = toJST(new Date())
+  const setting    = await prisma.setting.findUnique({ where: { id: 1 } })
+  const closingDay = setting?.closingDay ?? 25
 
-  const firstDay = new Date(Date.UTC(year, month - 1, 1))
-  const lastDay  = new Date(Date.UTC(year, month,     0))
+  // 締め日考慮のデフォルト月
+  const todayDate    = now.getUTCDate()
+  const defaultYear  = todayDate > closingDay
+    ? (now.getUTCMonth() === 11 ? now.getUTCFullYear() + 1 : now.getUTCFullYear())
+    : now.getUTCFullYear()
+  const defaultMonth = todayDate > closingDay
+    ? (now.getUTCMonth() + 2 > 12 ? 1 : now.getUTCMonth() + 2)
+    : now.getUTCMonth() + 1
 
-  const prevDate = new Date(Date.UTC(year, month - 2, 1))
-  const nextDate = new Date(Date.UTC(year, month,     1))
-  const prevLink = `/admin/attendance?year=${prevDate.getUTCFullYear()}&month=${prevDate.getUTCMonth() + 1}`
-  const nextLink = `/admin/attendance?year=${nextDate.getUTCFullYear()}&month=${nextDate.getUTCMonth() + 1}`
+  const year  = Number(params.year  ?? defaultYear)
+  const month = Number(params.month ?? defaultMonth)
 
-  // 全アクティブユーザー + その月の打刻レコード
+  // 集計期間: 前月(closingDay+1) 〜 当月(closingDay)
+  const firstDay = new Date(Date.UTC(year, month - 2, closingDay + 1))
+  const lastDay  = new Date(Date.UTC(year, month - 1, closingDay))
+
+  const prevMonth = month === 1 ? 12 : month - 1
+  const prevYear  = month === 1 ? year - 1 : year
+  const nextMonth = month === 12 ? 1 : month + 1
+  const nextYear  = month === 12 ? year + 1 : year
+  const prevLink  = `/admin/attendance?year=${prevYear}&month=${prevMonth}`
+  const nextLink  = `/admin/attendance?year=${nextYear}&month=${nextMonth}`
+
+  const periodStart = `${firstDay.getUTCMonth() + 1}/${firstDay.getUTCDate()}`
+  const periodEnd   = `${lastDay.getUTCMonth() + 1}/${lastDay.getUTCDate()}`
+
+  // 全アクティブユーザー + 集計期間の打刻レコード
   const users = await prisma.user.findMany({
     where: { isActive: true },
     orderBy: { name: "asc" },
@@ -84,7 +102,10 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <Link href={prevLink} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">◀</Link>
-          <h1 className="text-base font-semibold text-gray-900">{year}年{month}月 勤務状況一覧</h1>
+          <div>
+            <h1 className="text-base font-semibold text-gray-900">{year}年{month}月 勤務状況一覧</h1>
+            <p className="text-[10px] text-gray-400 text-center">{periodStart}〜{periodEnd}</p>
+          </div>
           <Link href={nextLink} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">▶</Link>
         </div>
         <a
@@ -117,7 +138,14 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
           <tbody>
             {rows.map((r) => (
               <tr key={r.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-                <td className="px-4 py-2.5 font-medium text-gray-800">{r.name}</td>
+                <td className="px-4 py-2.5">
+                  <Link
+                    href={`/admin/approval/${r.id}?year=${year}&month=${month}`}
+                    className="font-medium text-blue-600 hover:underline"
+                  >
+                    {r.name}
+                  </Link>
+                </td>
                 <td className="px-3 py-2.5 text-gray-500 text-xs">{r.dept}</td>
                 <td className="px-3 py-2.5 text-center">
                   <span className={`inline-block px-1.5 py-0.5 rounded text-xs ${r.empType === "full" ? "bg-blue-50 text-blue-700" : "bg-orange-50 text-orange-700"}`}>
