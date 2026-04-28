@@ -1,6 +1,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
+import { calcNeedsReview } from "@/lib/attendance"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
 
@@ -54,12 +55,21 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     orderBy: { name: "asc" },
     select: {
       id: true, name: true, email: true, employmentType: true, department: true,
+      workStartTime: true, workEndTime: true,
       attendanceRecords: {
         where: { date: { gte: firstDay, lte: lastDay } },
-        select: { workingMinutes: true, clockIn: true, status: true },
+        select: { workingMinutes: true, clockIn: true, clockOut: true, date: true, status: true },
       },
     },
   })
+
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+
+  function parseHHMM(s: string | null | undefined): number | null {
+    if (!s) return null
+    const [h, m] = s.split(":").map(Number)
+    return h * 60 + m
+  }
 
   // 集計
   type Row = {
@@ -69,30 +79,38 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     empType: string
     workDays: number
     totalMin: number
+    scheduledTotalMin: number
     overtimeMin: number
-    openDays: number
-    submittedDays: number
+    unapprovedDays: number
     approvedDays: number
   }
-  type Rec = { clockIn: Date | null; workingMinutes: number | null; status: string }
+  type Rec = { clockIn: Date | null; clockOut: Date | null; date: Date; workingMinutes: number | null; status: string }
   const rows: Row[] = users.map((u: typeof users[number]) => {
-    const recs = u.attendanceRecords
-    const workDays     = recs.filter((r: Rec) => r.clockIn).length
-    const totalMin     = recs.reduce((s: number, r: Rec) => s + (r.workingMinutes ?? 0), 0)
-    const overtimeMin  = recs.reduce((s: number, r: Rec) => {
-      const scheduled = u.employmentType === "full" ? 480 : 0  // パート・雇用者は所定時間なし
-      return s + Math.max(0, (r.workingMinutes ?? 0) - scheduled)
-    }, 0)
-    const openDays      = recs.filter((r: Rec) => r.status === "OPEN").length
-    const submittedDays = recs.filter((r: Rec) => r.status === "SUBMITTED").length
-    const approvedDays  = recs.filter((r: Rec) => r.status === "APPROVED" || r.status === "LOCKED").length
+    const recs = u.attendanceRecords as Rec[]
+    const startM = parseHHMM(u.workStartTime)
+    const endM   = parseHHMM(u.workEndTime)
+    const scheduledPerDay = startM !== null && endM !== null && endM > startM
+      ? endM - startM
+      : u.employmentType === "full" ? 480 : 0
+
+    const workDays          = recs.filter((r) => r.clockIn).length
+    const totalMin          = recs.reduce((s, r) => s + (r.workingMinutes ?? 0), 0)
+    const scheduledTotalMin = workDays * scheduledPerDay
+    const overtimeMin       = recs.reduce((s, r) => s + Math.max(0, (r.workingMinutes ?? 0) - scheduledPerDay), 0)
+    const unapprovedDays    = recs.filter((r) =>
+      r.status === "OPEN" && calcNeedsReview({
+        clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today: todayUTC,
+        workStartTime: u.workStartTime, workEndTime: u.workEndTime,
+      }) || r.status === "SUBMITTED"
+    ).length
+    const approvedDays      = recs.filter((r) => r.status === "APPROVED" || r.status === "LOCKED").length
     return {
       id: u.id,
       name: u.name ?? u.email ?? "?",
       dept: u.department ?? "—",
       empType: u.employmentType,
-      workDays, totalMin, overtimeMin,
-      openDays, submittedDays, approvedDays,
+      workDays, totalMin, scheduledTotalMin, overtimeMin,
+      unapprovedDays, approvedDays,
     }
   })
 
@@ -128,10 +146,10 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
               <th className="text-left px-3 py-3 font-medium">部署</th>
               <th className="text-center px-3 py-3 font-medium">雇用</th>
               <th className="text-center px-3 py-3 font-medium">出勤日数</th>
-              <th className="text-center px-3 py-3 font-medium">総勤務時間</th>
-              <th className="text-center px-3 py-3 font-medium">残業時間</th>
-              <th className="text-center px-3 py-3 font-medium">未確認</th>
-              <th className="text-center px-3 py-3 font-medium">提出済</th>
+              <th className="text-center px-3 py-3 font-medium">総勤務</th>
+              <th className="text-center px-3 py-3 font-medium">所定</th>
+              <th className="text-center px-3 py-3 font-medium">残業</th>
+              <th className="text-center px-3 py-3 font-medium">未承認</th>
               <th className="text-center px-3 py-3 font-medium">承認済</th>
             </tr>
           </thead>
@@ -154,17 +172,15 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
                 </td>
                 <td className="px-3 py-2.5 text-center text-gray-700">{r.workDays}</td>
                 <td className="px-3 py-2.5 text-center font-mono text-gray-700">{r.totalMin > 0 ? fmtMin(r.totalMin) : "—"}</td>
-                <td className={`px-3 py-2.5 text-center font-mono ${r.overtimeMin > 0 ? "text-red-600 font-medium" : "text-gray-400"}`}>
+                <td className="px-3 py-2.5 text-center font-mono text-gray-500">{r.scheduledTotalMin > 0 ? fmtMin(r.scheduledTotalMin) : "—"}</td>
+                <td className={`px-3 py-2.5 text-center font-mono ${r.overtimeMin > 0 ? "text-blue-600 font-medium" : "text-gray-300"}`}>
                   {r.overtimeMin > 0 ? fmtMin(r.overtimeMin) : "—"}
                 </td>
                 <td className="px-3 py-2.5 text-center">
-                  {r.openDays > 0 ? <span className="text-gray-500">{r.openDays}</span> : <span className="text-gray-300">—</span>}
+                  {r.unapprovedDays > 0 ? <span className="text-amber-600 font-medium">{r.unapprovedDays}日</span> : <span className="text-gray-300">—</span>}
                 </td>
                 <td className="px-3 py-2.5 text-center">
-                  {r.submittedDays > 0 ? <span className="text-blue-600 font-medium">{r.submittedDays}</span> : <span className="text-gray-300">—</span>}
-                </td>
-                <td className="px-3 py-2.5 text-center">
-                  {r.approvedDays > 0 ? <span className="text-green-600 font-medium">{r.approvedDays}</span> : <span className="text-gray-300">—</span>}
+                  {r.approvedDays > 0 ? <span className="text-green-600 font-medium">{r.approvedDays}日</span> : <span className="text-gray-300">—</span>}
                 </td>
               </tr>
             ))}

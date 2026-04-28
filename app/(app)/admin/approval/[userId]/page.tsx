@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
+import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes } from "@/lib/attendance"
 
 type Params      = Promise<{ userId: string }>
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -106,6 +107,8 @@ export default async function UserApprovalPage({
     })
   )
 
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+
   // 集計期間の全日程を生成（レコードある日のみ表示）
   const tableRows = records.map((r) => {
     const jst = toJST(r.date)
@@ -114,6 +117,21 @@ export default async function UserApprovalPage({
     const dd  = jst.getUTCDate()
     const dow = jst.getUTCDay()
     const key = `${dy}-${dm}-${dd}`
+    const needsReview = calcNeedsReview({
+      clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today: todayUTC,
+      workStartTime: user.workStartTime, workEndTime: user.workEndTime,
+    })
+    const metrics = calcMetrics({
+      clockIn: r.clockIn, clockOut: r.clockOut,
+      workingMinutes: r.workingMinutes,
+      workStartTime: user.workStartTime, workEndTime: user.workEndTime,
+      scheduledMinutes,
+    })
+    const nightMinutes = calcNightMinutes(r.clockIn, r.clockOut)
+    const goOutMins =
+      r.goOutAt && r.returnAt
+        ? Math.round((r.returnAt.getTime() - r.goOutAt.getTime()) / 60000)
+        : r.goOutAt ? null : 0
     return {
       id:          r.id,
       dateISO:     `${dy}-${String(dm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`,
@@ -124,8 +142,13 @@ export default async function UserApprovalPage({
       breakEnd:    formatHHMM(r.breakEnd),
       goOutAt:     formatHHMM(r.goOutAt),
       returnAt:    formatHHMM(r.returnAt),
-      workingMinutes: r.workingMinutes,
+      workingMinutes:    r.workingMinutes,
+      lateMinutes:       metrics.lateMinutes,
+      earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+      nightMinutes,
+      goOutMins,
       status:      r.status,
+      displayStatus: getDisplayStatus(r.status, needsReview),
       isAbsent:    r.isAbsent,
       requestId:   requestMap.get(key) ?? null,
       scheduledMinutes,

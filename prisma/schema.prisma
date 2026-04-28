@@ -210,8 +210,10 @@ model Setting {
   break1Threshold  Int      @default(360) // 休憩45分控除の閾値（分）= 6時間
   break1Minutes    Int      @default(45)  // 45分
   break2Threshold  Int      @default(480) // 休憩60分控除の閾値（分）= 8時間
-  break2Minutes    Int      @default(60)  // 60分
-  updatedAt        DateTime @updatedAt
+  break2Minutes       Int      @default(60)    // 60分
+  roundEarlyClockIn  Boolean  @default(false) // 定時前打刻→定時扱い
+  roundNearClockTime Boolean  @default(false) // 定時±14分以内→定時きっかり
+  updatedAt           DateTime @updatedAt
 }
 
 // 休日カレンダー（残業・休出判定の元データ）

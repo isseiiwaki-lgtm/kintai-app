@@ -2,6 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { QuickClockButton } from "./clock/QuickClockButton"
+import { calcNeedsReview } from "@/lib/attendance"
 
 /** UTC の Date を JST の同じ日付の 00:00:00 UTC に変換 */
 function todayJST(): Date {
@@ -43,14 +44,14 @@ export default async function DashboardPage() {
   const [userInfo, todayRecord, monthRecords, pendingRequests, rejectedRequests, missedClockOut] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { name: true, employeeCode: true },
+      select: { name: true, employeeCode: true, workStartTime: true, workEndTime: true },
     }),
     prisma.attendanceRecord.findUnique({
       where: { userId_date: { userId, date: today } },
     }),
     prisma.attendanceRecord.findMany({
       where: { userId, date: { gte: firstDay, lte: lastDay }, clockIn: { not: null } },
-      select: { workingMinutes: true, clockIn: true, status: true, date: true },
+      select: { workingMinutes: true, clockIn: true, clockOut: true, status: true, date: true },
     }),
     // 審査中の申請
     prisma.request.findMany({
@@ -81,14 +82,14 @@ export default async function DashboardPage() {
 
   const workDays     = monthRecords.length
   const totalMinutes = monthRecords.reduce((s: number, r: { workingMinutes: number | null }) => s + (r.workingMinutes ?? 0), 0)
-  // 今日（JST）の日付キー
-  const todayKey = `${today.getUTCFullYear()}-${today.getUTCMonth() + 1}-${today.getUTCDate()}`
-  // 未確認カウント: 昨日以前のみ（今日は打刻中の可能性があるため除外）
-  const openCount = monthRecords.filter((r) => {
-    const jst = new Date(r.date.getTime() + 9 * 60 * 60 * 1000)
-    const key  = `${jst.getUTCFullYear()}-${jst.getUTCMonth() + 1}-${jst.getUTCDate()}`
-    return r.status === "OPEN" && key !== todayKey
-  }).length
+  // 要確認カウント: 昨日以前 OPEN レコードで要確認条件に該当するもの
+  const openCount = monthRecords.filter((r) =>
+    r.status === "OPEN" && calcNeedsReview({
+      clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today,
+      workStartTime: userInfo?.workStartTime ?? null,
+      workEndTime: userInfo?.workEndTime ?? null,
+    })
+  ).length
 
   const dateLabel = today.toLocaleDateString("ja-JP", {
     timeZone: "UTC",
@@ -227,7 +228,7 @@ export default async function DashboardPage() {
             <div className="flex items-start gap-3 bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
               <span className="text-yellow-500 mt-0.5 text-base leading-none">📋</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-yellow-700">今月 {openCount} 日分に打刻漏れの可能性があります</p>
+                <p className="text-sm font-medium text-yellow-700">今月 {openCount} 日分に要確認の打刻があります</p>
                 <p className="text-xs text-yellow-400 mt-0.5">勤怠記録を確認してください</p>
               </div>
               <Link href={`/records?year=${periodYear}&month=${periodMonth}`} className="text-xs text-yellow-600 hover:underline whitespace-nowrap self-center">

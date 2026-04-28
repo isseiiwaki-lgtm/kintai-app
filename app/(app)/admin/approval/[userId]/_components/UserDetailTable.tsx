@@ -14,20 +14,19 @@ type Rec = {
   breakEnd:   string | null
   goOutAt:    string | null
   returnAt:   string | null
-  workingMinutes: number | null
-  status:     string
-  isAbsent:   boolean
+  workingMinutes:    number | null
+  lateMinutes:       number
+  earlyLeaveMinutes: number
+  nightMinutes:      number
+  goOutMins:         number | null   // null = 外出中
+  status:        string
+  displayStatus: { label: string; className: string }
+  isAbsent:      boolean
   requestId:  string | null
   scheduledMinutes: number  // 所定勤務時間（分）
   isWeekend:  boolean
 }
 
-const STATUS_LABEL: Record<string, { label: string; className: string }> = {
-  OPEN:      { label: "未確認", className: "bg-gray-100 text-gray-500" },
-  SUBMITTED: { label: "確認済", className: "bg-blue-100 text-blue-700" },
-  APPROVED:  { label: "承認済", className: "bg-green-100 text-green-700" },
-  LOCKED:    { label: "締め済", className: "bg-purple-100 text-purple-700" },
-}
 
 function buildTimeOptions() {
   const opts: string[] = []
@@ -114,17 +113,21 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
 
       {/* テーブル */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
-        <table className="w-full text-sm min-w-[700px]">
+        <table className="w-full text-sm min-w-[960px]">
           <thead>
             <tr className="border-b border-gray-100 text-xs text-gray-400 bg-gray-50">
               <th className="text-left px-4 py-3 font-medium">日付</th>
-              <th className="text-center px-3 py-3 font-medium">状態</th>
               <th className="text-center px-3 py-3 font-medium">出勤</th>
               <th className="text-center px-3 py-3 font-medium">退勤</th>
-              <th className="text-center px-3 py-3 font-medium">外出/戻り</th>
-              <th className="text-center px-3 py-3 font-medium">勤務時間</th>
+              <th className="text-center px-3 py-3 font-medium">中抜</th>
+              <th className="text-center px-3 py-3 font-medium">労働</th>
+              <th className="text-center px-3 py-3 font-medium">所定</th>
               <th className="text-center px-3 py-3 font-medium">残業</th>
-              <th className="px-3 py-3 font-medium w-[80px]"></th>
+              <th className="text-center px-3 py-3 font-medium">深夜</th>
+              <th className="text-center px-3 py-3 font-medium">遅刻</th>
+              <th className="text-center px-3 py-3 font-medium">早退</th>
+              <th className="text-center px-3 py-3 font-medium">状態</th>
+              <th className="px-3 py-3 font-medium w-[72px]"></th>
             </tr>
           </thead>
           <tbody>
@@ -140,23 +143,35 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                   }`}
                 >
                   <td className="px-4 py-2.5 text-gray-700">{rec.dateLabel}</td>
+                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{rec.clockIn ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{rec.clockOut ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-center font-mono text-gray-500 text-xs">
+                    {rec.goOutMins === null ? "外出中" : rec.goOutMins > 0 ? fmtMin(rec.goOutMins) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{fmtMin(rec.workingMinutes)}</td>
+                  <td className="px-3 py-2.5 text-center font-mono text-gray-400">
+                    {rec.scheduledMinutes > 0 ? fmtMin(rec.scheduledMinutes) : "—"}
+                  </td>
+                  <td className={`px-3 py-2.5 text-center font-mono text-xs ${overtimeMin > 0 ? "text-blue-600 font-medium" : "text-gray-300"}`}>
+                    {overtimeMin > 0 ? fmtMin(overtimeMin) : "—"}
+                  </td>
+                  <td className={`px-3 py-2.5 text-center font-mono text-xs ${rec.nightMinutes > 0 ? "text-purple-600 font-medium" : "text-gray-300"}`}>
+                    {rec.nightMinutes > 0 ? fmtMin(rec.nightMinutes) : "—"}
+                  </td>
+                  <td className={`px-3 py-2.5 text-center font-mono text-xs ${rec.lateMinutes > 0 ? "text-amber-600 font-medium" : "text-gray-300"}`}>
+                    {rec.lateMinutes > 0 ? fmtMin(rec.lateMinutes) : "—"}
+                  </td>
+                  <td className={`px-3 py-2.5 text-center font-mono text-xs ${rec.earlyLeaveMinutes > 0 ? "text-amber-600 font-medium" : "text-gray-300"}`}>
+                    {rec.earlyLeaveMinutes > 0 ? fmtMin(rec.earlyLeaveMinutes) : "—"}
+                  </td>
                   <td className="px-3 py-2.5 text-center">
                     {rec.isAbsent ? (
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                     ) : (
-                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_LABEL[rec.status].className}`}>
-                        {STATUS_LABEL[rec.status].label}
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${rec.displayStatus.className}`}>
+                        {rec.displayStatus.label}
                       </span>
                     )}
-                  </td>
-                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{rec.clockIn ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{rec.clockOut ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-center font-mono text-gray-500 text-xs">
-                    {rec.goOutAt ? `${rec.goOutAt}/${rec.returnAt ?? "—"}` : "—"}
-                  </td>
-                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{fmtMin(rec.workingMinutes)}</td>
-                  <td className={`px-3 py-2.5 text-center font-mono text-xs ${overtimeMin > 0 ? "text-red-600 font-medium" : "text-gray-300"}`}>
-                    {overtimeMin > 0 ? fmtMin(overtimeMin) : "—"}
                   </td>
                   <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                     {rec.requestId && (

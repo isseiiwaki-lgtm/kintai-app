@@ -4,11 +4,13 @@ import { prisma } from "@/lib/prisma"
 import { actionSaveSetting } from "./actions"
 
 const DEFAULT_SETTING = {
-  closingDay:      25,
-  break1Threshold: 360,
-  break1Minutes:   45,
-  break2Threshold: 480,
-  break2Minutes:   60,
+  closingDay:         25,
+  break1Threshold:    360,
+  break1Minutes:      45,
+  break2Threshold:    480,
+  break2Minutes:      60,
+  roundEarlyClockIn:  false,
+  roundNearClockTime: false,
 }
 
 export default async function SettingsPage() {
@@ -90,6 +92,40 @@ export default async function SettingsPage() {
           <p className="text-xs text-gray-400 mt-3">
             ※ ルール2が優先（8時間超はルール1ではなくルール2を適用）
           </p>
+        </div>
+
+        {/* 打刻丸め処理 */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <h2 className="text-sm font-semibold text-gray-800 mb-1">打刻丸め処理</h2>
+          <p className="text-xs text-gray-400 mb-4">
+            打刻時刻を自動で定時に補正します。ユーザーごとの所定開始・終了時刻が設定されている場合に有効です。
+          </p>
+          <div className="space-y-4">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox" name="roundEarlyClockIn"
+                defaultChecked={setting.roundEarlyClockIn}
+                value="true"
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <div>
+                <p className="text-sm text-gray-700 font-medium">定時前打刻 → 定時扱い</p>
+                <p className="text-xs text-gray-400 mt-0.5">例: 9:00始業の人が 8:40 に打刻 → 9:00 で記録</p>
+              </div>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox" name="roundNearClockTime"
+                defaultChecked={setting.roundNearClockTime}
+                value="true"
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <div>
+                <p className="text-sm text-gray-700 font-medium">定時から14分以内 → 定時きっかり</p>
+                <p className="text-xs text-gray-400 mt-0.5">例: 17:00終業の人が 17:13 に退勤打刻 → 17:00 で記録</p>
+              </div>
+            </label>
+          </div>
         </div>
 
         <button
