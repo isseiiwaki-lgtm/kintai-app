@@ -1,6 +1,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
+import { QuickClockButton } from "./clock/QuickClockButton"
 
 /** UTC の Date を JST の同じ日付の 00:00:00 UTC に変換 */
 function todayJST(): Date {
@@ -150,12 +151,7 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <Link
-          href="/clock"
-          className="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 rounded-lg text-sm transition-colors"
-        >
-          打刻する
-        </Link>
+        <QuickClockButton status={clockStatus.label as "未出勤" | "出勤中" | "退勤済"} />
       </div>
 
       {/* 今月サマリー */}
