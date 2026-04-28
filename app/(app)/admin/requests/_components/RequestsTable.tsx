@@ -38,7 +38,7 @@ function detailSummary(type: string, detail: Record<string, string> | null): str
   const d = detail
   if (!d) return ""
   switch (type) {
-    case "OVERTIME": return d.endTime ? `終了: ${d.endTime}` : ""
+    case "OVERTIME": return d.endTime ? `残業終了 ${d.endTime}` : ""
     case "ABSENCE":
       if (d.absenceType === "absent") return "欠勤（全日）"
       return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
@@ -47,6 +47,14 @@ function detailSummary(type: string, detail: Record<string, string> | null): str
       const hd = d.halfDay === "am" ? "（午前）" : d.halfDay === "pm" ? "（午後）" : ""
       const wb = d.workDate ? ` ← ${d.workDate}` : ""
       return `${lt}${hd}${wb}`
+    }
+    case "CORRECTION": {
+      const fieldLabel: Record<string, string> = {
+        clockIn: "出勤", clockOut: "退勤", goOutAt: "外出",
+        returnAt: "戻り", breakStart: "休憩開始", breakEnd: "休憩終了",
+      }
+      const field = d.targetField ? (fieldLabel[d.targetField] ?? d.targetField) : ""
+      return field && d.correctedTime ? `${field} ${d.correctedTime}` : field
     }
     default: return ""
   }

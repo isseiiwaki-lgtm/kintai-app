@@ -151,7 +151,7 @@ export default function NewRequestPage() {
             <label className="block text-xs font-medium text-gray-600 mb-1">残業終了時刻</label>
             <select name="endTime" required defaultValue="" className={selectClass}>
               <option value="" disabled>-- 時刻を選択 --</option>
-              {buildTimeOptions(17, 23).map((o) => (
+              {buildTimeOptions(13, 23).map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>

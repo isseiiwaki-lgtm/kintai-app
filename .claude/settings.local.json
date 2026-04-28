@@ -10,7 +10,8 @@
       "Bash(mv \"D:/dev/260325_勤怠アプリ/.claude/docs/STATUS.md\" \"D:/dev/260325_勤怠アプリ/docs/STATUS.md\")",
       "Bash(rmdir \"D:/dev/260325_勤怠アプリ/.claude/docs\")",
       "Bash(grep -v \"^$\")",
-      "Bash(npm list *)"
+      "Bash(npm list *)",
+      "Bash(xargs grep *)"
     ]
   }
 }

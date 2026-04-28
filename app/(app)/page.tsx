@@ -49,7 +49,7 @@ export default async function DashboardPage() {
     }),
     prisma.attendanceRecord.findMany({
       where: { userId, date: { gte: firstDay, lte: lastDay }, clockIn: { not: null } },
-      select: { workingMinutes: true, clockIn: true, status: true },
+      select: { workingMinutes: true, clockIn: true, status: true, date: true },
     }),
     // 審査中の申請
     prisma.request.findMany({
@@ -80,7 +80,14 @@ export default async function DashboardPage() {
 
   const workDays     = monthRecords.length
   const totalMinutes = monthRecords.reduce((s: number, r: { workingMinutes: number | null }) => s + (r.workingMinutes ?? 0), 0)
-  const openCount    = monthRecords.filter((r) => r.status === "OPEN").length
+  // 今日（JST）の日付キー
+  const todayKey = `${today.getUTCFullYear()}-${today.getUTCMonth() + 1}-${today.getUTCDate()}`
+  // 未確認カウント: 昨日以前のみ（今日は打刻中の可能性があるため除外）
+  const openCount = monthRecords.filter((r) => {
+    const jst = new Date(r.date.getTime() + 9 * 60 * 60 * 1000)
+    const key  = `${jst.getUTCFullYear()}-${jst.getUTCMonth() + 1}-${jst.getUTCDate()}`
+    return r.status === "OPEN" && key !== todayKey
+  }).length
 
   const dateLabel = today.toLocaleDateString("ja-JP", {
     timeZone: "UTC",
@@ -89,6 +96,9 @@ export default async function DashboardPage() {
     day: "numeric",
     weekday: "short",
   })
+
+  // 今日まだ打刻していない（出勤打刻なし）
+  const todayNotClockedIn = !todayRecord?.clockIn
 
   // 打刻状態ラベル
   const clockStatus = !todayRecord?.clockIn
@@ -167,7 +177,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* インフォメーション欄 */}
-      {(missedClockOut.length > 0 || rejectedRequests.length > 0 || openCount > 0 || pendingRequests.length > 0) && (
+      {(missedClockOut.length > 0 || rejectedRequests.length > 0 || openCount > 0 || pendingRequests.length > 0 || todayNotClockedIn) && (
         <div className="space-y-2">
           {/* 退勤漏れ */}
           {missedClockOut.map((r) => {
@@ -202,13 +212,27 @@ export default async function DashboardPage() {
             </div>
           )}
 
-          {/* 未確認の勤怠記録 */}
+          {/* 今日未打刻 */}
+          {todayNotClockedIn && (
+            <div className="flex items-start gap-3 bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
+              <span className="text-yellow-500 mt-0.5 text-base leading-none">⏰</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-yellow-700">本日の出勤打刻がありません</p>
+                <p className="text-xs text-yellow-400 mt-0.5">出勤時は打刻してください</p>
+              </div>
+              <Link href="/clock" className="text-xs text-yellow-600 hover:underline whitespace-nowrap self-center">
+                打刻する
+              </Link>
+            </div>
+          )}
+
+          {/* 昨日以前の打刻漏れ（要確認） */}
           {openCount > 0 && (
             <div className="flex items-start gap-3 bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
               <span className="text-yellow-500 mt-0.5 text-base leading-none">📋</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-yellow-700">今月 {openCount} 日分の勤怠が未確認です</p>
-                <p className="text-xs text-yellow-400 mt-0.5">勤怠記録を確認・提出してください</p>
+                <p className="text-sm font-medium text-yellow-700">今月 {openCount} 日分に打刻漏れの可能性があります</p>
+                <p className="text-xs text-yellow-400 mt-0.5">勤怠記録を確認してください</p>
               </div>
               <Link href={`/records?year=${periodYear}&month=${periodMonth}`} className="text-xs text-yellow-600 hover:underline whitespace-nowrap self-center">
                 記録を確認

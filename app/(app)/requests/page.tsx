@@ -4,11 +4,12 @@ import Link from "next/link"
 import { actionCancelRequest } from "./actions"
 
 const TYPE_LABEL: Record<string, string> = {
-  OVERTIME: "残業申請",
-  ABSENCE:  "遅刻・早退",
-  LEAVE:    "休暇申請",
-  COMMENT:  "修正依頼",
-  OTHER:    "その他",
+  OVERTIME:   "残業申請",
+  ABSENCE:    "遅刻・早退",
+  LEAVE:      "休暇申請",
+  CORRECTION: "打刻修正",
+  COMMENT:    "修正依頼",
+  OTHER:      "その他",
 }
 
 function typeLabel(type: string, detail: unknown): string {
@@ -27,12 +28,20 @@ function detailSummary(type: string, detail: unknown): string {
   const d = detail as Record<string, string> | null
   if (!d) return ""
   switch (type) {
-    case "OVERTIME": return d.endTime ? `残業終了: ${d.endTime}` : ""
+    case "OVERTIME": return d.endTime ? `残業終了 ${d.endTime}` : ""
     case "ABSENCE":  return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
     case "LEAVE": {
       const lt = d.leaveType === "substitute" ? "代休" : "有給"
       const hd = d.halfDay === "am" ? "（午前）" : d.halfDay === "pm" ? "（午後）" : ""
       return `${lt}${hd}`
+    }
+    case "CORRECTION": {
+      const fieldLabel: Record<string, string> = {
+        clockIn: "出勤", clockOut: "退勤", goOutAt: "外出",
+        returnAt: "戻り", breakStart: "休憩開始", breakEnd: "休憩終了",
+      }
+      const field = d.targetField ? (fieldLabel[d.targetField] ?? d.targetField) : ""
+      return field && d.correctedTime ? `${field} ${d.correctedTime}` : field
     }
     default: return ""
   }

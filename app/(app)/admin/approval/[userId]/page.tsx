@@ -85,8 +85,18 @@ export default async function UserApprovalPage({
     })
   )
 
-  // 所定勤務時間（分）
-  const scheduledMinutes = user.employmentType === "full" ? 480 : 0
+  // 所定勤務時間（分）: workStartTime/workEndTime から算出。未設定時は employmentType で fallback
+  function parseHHMM(s: string | null | undefined): number | null {
+    if (!s) return null
+    const [h, m] = s.split(":").map(Number)
+    return h * 60 + m
+  }
+  const startMins = parseHHMM(user.workStartTime)
+  const endMins   = parseHHMM(user.workEndTime)
+  const scheduledMinutes =
+    startMins !== null && endMins !== null && endMins > startMins
+      ? endMins - startMins
+      : user.employmentType === "full" ? 480 : 0
 
   // レコードを日付キーでマップ
   const recordMap = new Map(
