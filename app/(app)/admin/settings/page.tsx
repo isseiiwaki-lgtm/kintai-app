@@ -59,14 +59,14 @@ export default async function SettingsPage() {
               <input
                 type="number" name="break1Threshold"
                 defaultValue={setting.break1Threshold}
-                min={1} step={15} required
+                min={0} step={15} required
                 className={inputClass}
               />
               <span className="text-sm text-gray-500">分超で</span>
               <input
                 type="number" name="break1Minutes"
                 defaultValue={setting.break1Minutes}
-                min={1} step={5} required
+                min={0} step={5} required
                 className={inputClass}
               />
               <span className="text-sm text-gray-500">分控除</span>
@@ -76,14 +76,14 @@ export default async function SettingsPage() {
               <input
                 type="number" name="break2Threshold"
                 defaultValue={setting.break2Threshold}
-                min={1} step={15} required
+                min={0} step={15} required
                 className={inputClass}
               />
               <span className="text-sm text-gray-500">分超で</span>
               <input
                 type="number" name="break2Minutes"
                 defaultValue={setting.break2Minutes}
-                min={1} step={5} required
+                min={0} step={5} required
                 className={inputClass}
               />
               <span className="text-sm text-gray-500">分控除</span>
