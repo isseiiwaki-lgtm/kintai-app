@@ -4,6 +4,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes } from "@/lib/attendance"
+import { calcLegalBreak } from "@/config/attendance.config"
 
 type Params      = Promise<{ userId: string }>
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -94,10 +95,13 @@ export default async function UserApprovalPage({
   }
   const startMins = parseHHMM(user.workStartTime)
   const endMins   = parseHHMM(user.workEndTime)
-  const scheduledMinutes =
-    startMins !== null && endMins !== null && endMins > startMins
-      ? endMins - startMins
-      : user.employmentType === "full" ? 480 : 0
+  const scheduledMinutes = (() => {
+    if (startMins !== null && endMins !== null && endMins > startMins) {
+      const raw = endMins - startMins
+      return raw - calcLegalBreak(raw)
+    }
+    return user.employmentType === "full" ? 480 : 0
+  })()
 
   // レコードを日付キーでマップ
   const recordMap = new Map(
@@ -156,8 +160,8 @@ export default async function UserApprovalPage({
     }
   })
 
-  const submittedCount = records.filter((r) => r.status === "SUBMITTED").length
-  const approvedCount  = records.filter((r) => r.status === "APPROVED").length
+  const openCount     = records.filter((r) => r.status === "OPEN" || r.status === "SUBMITTED").length
+  const approvedCount = records.filter((r) => r.status === "APPROVED").length
 
   const periodStart = `${firstDay.getUTCMonth() + 1}/${firstDay.getUTCDate()}`
   const periodEnd   = `${lastDay.getUTCMonth() + 1}/${lastDay.getUTCDate()}`
@@ -189,7 +193,7 @@ export default async function UserApprovalPage({
         lastDayISO={lastDay.toISOString()}
         userId={userId}
         isAdmin={role === "ADMIN"}
-        submittedCount={submittedCount}
+        openCount={openCount}
         approvedCount={approvedCount}
       />
     </div>

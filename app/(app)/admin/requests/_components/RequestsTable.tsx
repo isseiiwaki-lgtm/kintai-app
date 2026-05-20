@@ -18,7 +18,8 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 function typeLabel(type: string, detail: Record<string, string> | null): string {
-  if (type === "ABSENCE" && detail?.absenceType === "absent") return "欠勤"
+  if (type === "ABSENCE"  && detail?.absenceType  === "absent")     return "欠勤"
+  if (type === "OVERTIME" && detail?.overtimeType  === "earlyStart") return "早出申請"
   return TYPE_LABEL[type] ?? type
 }
 
@@ -38,7 +39,14 @@ function detailSummary(type: string, detail: Record<string, string> | null): str
   const d = detail
   if (!d) return ""
   switch (type) {
-    case "OVERTIME": return d.endTime ? `残業終了 ${d.endTime}` : ""
+    case "OVERTIME": {
+      if (d.overtimeType === "earlyStart") {
+        const scheduled = d.scheduledStartTime ? `（定時 ${d.scheduledStartTime}）` : ""
+        return d.startTime ? `早出開始 ${d.startTime}${scheduled}` : ""
+      }
+      const scheduled = d.scheduledEndTime ? `（定時 ${d.scheduledEndTime}）` : ""
+      return d.endTime ? `残業終了 ${d.endTime}${scheduled}` : ""
+    }
     case "ABSENCE":
       if (d.absenceType === "absent") return "欠勤（全日）"
       return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
@@ -54,7 +62,9 @@ function detailSummary(type: string, detail: Record<string, string> | null): str
         returnAt: "戻り", breakStart: "休憩開始", breakEnd: "休憩終了",
       }
       const field = d.targetField ? (fieldLabel[d.targetField] ?? d.targetField) : ""
-      return field && d.correctedTime ? `${field} ${d.correctedTime}` : field
+      if (!field || !d.correctedTime) return field
+      const before = d.originalValue ? `${d.originalValue} → ` : "（記録なし）→ "
+      return `${field} ${before}${d.correctedTime}`
     }
     default: return ""
   }

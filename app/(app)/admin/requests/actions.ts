@@ -4,6 +4,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { formatHHMMfromDate } from "@/lib/attendance"
+import { calcLegalBreak } from "@/config/attendance.config"
 
 async function checkAdmin() {
   const session = await auth()
@@ -17,7 +18,7 @@ export async function actionApproveRequest(id: string) {
 
   const req = await prisma.request.findUnique({
     where: { id },
-    include: { user: { select: { workStartTime: true, workEndTime: true } } },
+    include: { user: { select: { workStartTime: true, workEndTime: true, employmentType: true } } },
   })
   if (!req) return
 
@@ -77,7 +78,7 @@ export async function actionApproveRequest(id: string) {
         where: { userId_date: { userId: req.userId, date: req.targetDate } },
       })
 
-      const updateData: Record<string, Date | null> = { [field]: correctedAt }
+      const updateData: Record<string, Date | null | number> = { [field]: correctedAt }
 
       // 原打刻の保存（初回変更時のみ）
       if (field === "clockIn" && existing && !existing.originalClockIn && existing.clockIn) {
@@ -85,6 +86,33 @@ export async function actionApproveRequest(id: string) {
       }
       if (field === "clockOut" && existing && !existing.originalClockOut && existing.clockOut) {
         updateData.originalClockOut = existing.clockOut
+      }
+
+      // 修正後の値で workingMinutes を再計算
+      if (existing) {
+        const newClockIn  = field === "clockIn"  ? correctedAt : existing.clockIn
+        const newClockOut = field === "clockOut" ? correctedAt : existing.clockOut
+        const newGoOutAt  = field === "goOutAt"  ? correctedAt : existing.goOutAt
+        const newReturnAt = field === "returnAt" ? correctedAt : existing.returnAt
+        const newBreakStart = field === "breakStart" ? correctedAt : existing.breakStart
+        const newBreakEnd   = field === "breakEnd"   ? correctedAt : existing.breakEnd
+
+        if (newClockIn && newClockOut) {
+          const totalMs  = newClockOut.getTime() - newClockIn.getTime()
+          const goOutMs  = newGoOutAt && newReturnAt
+            ? newReturnAt.getTime() - newGoOutAt.getTime()
+            : 0
+          const rawMinutes = Math.floor((totalMs - goOutMs) / 60000)
+
+          if (req.user.employmentType === "part") {
+            const breakMs = newBreakStart && newBreakEnd
+              ? newBreakEnd.getTime() - newBreakStart.getTime()
+              : 0
+            updateData.workingMinutes = Math.max(0, rawMinutes - Math.floor(breakMs / 60000))
+          } else {
+            updateData.workingMinutes = Math.max(0, rawMinutes - calcLegalBreak(rawMinutes))
+          }
+        }
       }
 
       const oldValue = existing ? formatHHMMfromDate(existing[field as keyof typeof existing] as Date | null) : null

@@ -4,6 +4,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { calcMetrics, formatHHMMfromDate } from "@/lib/attendance"
+import { calcLegalBreak } from "@/config/attendance.config"
 
 async function checkRole() {
   const session = await auth()
@@ -63,15 +64,56 @@ export async function actionAdminUpdateRecord(
   }
 
   // 承認時の集計値を計算
-  const newClockIn    = (data.clockIn  as Date | undefined) ?? current.clockIn
-  const newClockOut   = (data.clockOut as Date | undefined) ?? current.clockOut
-  const scheduledMins = current.user.employmentType === "full" ? 480 : 0
+  const newClockIn    = (data.clockIn    as Date | undefined) ?? current.clockIn
+  const newClockOut   = (data.clockOut   as Date | undefined) ?? current.clockOut
+  const newGoOutAt    = (data.goOutAt    as Date | undefined) ?? current.goOutAt
+  const newReturnAt   = (data.returnAt   as Date | undefined) ?? current.returnAt
+  const newBreakStart = (data.breakStart as Date | undefined) ?? current.breakStart
+  const newBreakEnd   = (data.breakEnd   as Date | undefined) ?? current.breakEnd
+
+  // workingMinutes を再計算
+  let newWorkingMinutes: number | null = current.workingMinutes
+  if (newClockIn && newClockOut) {
+    const totalMs    = newClockOut.getTime() - newClockIn.getTime()
+    const goOutMs    = newGoOutAt && newReturnAt
+      ? newReturnAt.getTime() - newGoOutAt.getTime()
+      : 0
+    const rawMinutes = Math.floor((totalMs - goOutMs) / 60000)
+
+    if (current.user.employmentType === "part") {
+      const breakMs = newBreakStart && newBreakEnd
+        ? newBreakEnd.getTime() - newBreakStart.getTime()
+        : 0
+      newWorkingMinutes = Math.max(0, rawMinutes - Math.floor(breakMs / 60000))
+    } else {
+      newWorkingMinutes = Math.max(0, rawMinutes - calcLegalBreak(rawMinutes))
+    }
+    data.workingMinutes = newWorkingMinutes
+  }
+
+  // 所定時間（休憩控除済み）
+  const { workStartTime, workEndTime, employmentType } = current.user
+  const scheduledMins = (() => {
+    const parseHHMM = (s: string | null) => {
+      if (!s) return null
+      const [h, m] = s.split(":").map(Number)
+      return h * 60 + m
+    }
+    const s = parseHHMM(workStartTime)
+    const e = parseHHMM(workEndTime)
+    if (s !== null && e !== null && e > s) {
+      const raw = e - s
+      return raw - calcLegalBreak(raw)
+    }
+    return employmentType === "full" ? 480 : 0
+  })()
+
   const metrics = calcMetrics({
     clockIn:          newClockIn,
     clockOut:         newClockOut,
-    workingMinutes:   current.workingMinutes,
-    workStartTime:    current.user.workStartTime,
-    workEndTime:      current.user.workEndTime,
+    workingMinutes:   newWorkingMinutes,
+    workStartTime,
+    workEndTime,
     scheduledMinutes: scheduledMins,
   })
   data.lateMinutes       = metrics.lateMinutes
@@ -91,7 +133,7 @@ export async function actionAdminUpdateRecord(
   revalidatePath("/admin/attendance")
 }
 
-// 月一括承認（各レコードの集計値を計算して保存）
+// 月一括承認（OPEN → APPROVED、各レコードの集計値を計算して保存）
 export async function actionBulkApprove(userId: string, firstDay: string, lastDay: string) {
   await checkRole()
 
@@ -100,7 +142,7 @@ export async function actionBulkApprove(userId: string, firstDay: string, lastDa
       where: {
         userId,
         date:   { gte: new Date(firstDay), lte: new Date(lastDay) },
-        status: "SUBMITTED",
+        status: { in: ["OPEN", "SUBMITTED"] },
       },
     }),
     prisma.user.findUnique({
@@ -110,7 +152,20 @@ export async function actionBulkApprove(userId: string, firstDay: string, lastDa
   ])
   if (!user) return
 
-  const scheduledMins = user.employmentType === "full" ? 480 : 0
+  const parseHHMM = (s: string | null) => {
+    if (!s) return null
+    const [h, m] = s.split(":").map(Number)
+    return h * 60 + m
+  }
+  const sMin = parseHHMM(user.workStartTime)
+  const eMin = parseHHMM(user.workEndTime)
+  const scheduledMins = (() => {
+    if (sMin !== null && eMin !== null && eMin > sMin) {
+      const raw = eMin - sMin
+      return raw - calcLegalBreak(raw)
+    }
+    return user.employmentType === "full" ? 480 : 0
+  })()
 
   await prisma.$transaction(
     records.map((r) => {

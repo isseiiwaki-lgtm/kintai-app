@@ -51,8 +51,8 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
 
   // 全アクティブユーザー + 集計期間の打刻レコード
   const users = await prisma.user.findMany({
-    where: { isActive: true },
-    orderBy: { name: "asc" },
+    where: { isActive: true, department: { notIn: ["管理者", "管理職"] } },
+    orderBy: { employeeCode: "asc" },
     select: {
       id: true, name: true, email: true, employmentType: true, department: true,
       workStartTime: true, workEndTime: true,

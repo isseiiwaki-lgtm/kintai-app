@@ -2,6 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes } from "@/lib/attendance"
+import { calcLegalBreak } from "@/config/attendance.config"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
 
@@ -53,7 +54,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
   const firstDay = new Date(Date.UTC(year, month - 2, closingDay + 1))
   const lastDay  = new Date(Date.UTC(year, month - 1, closingDay))
 
-  const [records, user] = await Promise.all([
+  const [records, user, correctionRequests] = await Promise.all([
     prisma.attendanceRecord.findMany({
       where: { userId, date: { gte: firstDay, lte: lastDay } },
       orderBy: { date: "asc" },
@@ -62,15 +63,34 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
       where: { id: userId },
       select: { workStartTime: true, workEndTime: true, employmentType: true },
     }),
+    prisma.request.findMany({
+      where: { userId, type: "CORRECTION", targetDate: { gte: firstDay, lte: lastDay } },
+      select: { targetDate: true, status: true },
+      orderBy: { createdAt: "desc" },
+    }),
   ])
+
+  // 日付文字列 → 打刻修正申請ステータス（最新のみ）
+  const correctionMap = new Map<string, "PENDING" | "APPROVED" | "REJECTED">()
+  for (const req of correctionRequests) {
+    const jst = toJST(req.targetDate)
+    const key = `${jst.getUTCFullYear()}-${jst.getUTCMonth() + 1}-${jst.getUTCDate()}`
+    if (!correctionMap.has(key)) {
+      correctionMap.set(key, req.status as "PENDING" | "APPROVED" | "REJECTED")
+    }
+  }
 
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 
   const startMins     = parseHHMM(user?.workStartTime)
   const endMins       = parseHHMM(user?.workEndTime)
-  const scheduledMins = startMins !== null && endMins !== null && endMins > startMins
-    ? endMins - startMins
-    : user?.employmentType === "full" ? 480 : 0
+  const scheduledMins = (() => {
+    if (startMins !== null && endMins !== null && endMins > startMins) {
+      const raw = endMins - startMins
+      return raw - calcLegalBreak(raw)
+    }
+    return user?.employmentType === "full" ? 480 : 0
+  })()
 
   type Rec = typeof records[number]
 
@@ -212,9 +232,13 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
               const dow     = dt.getUTCDay()
               const rec     = recordMap.get(`${dy}-${dm}-${d}`)
               const isWeekend = dow === 0 || dow === 6
+              const isToday = dt.getTime() === todayUTC.getTime()
               const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
               const data    = rec ? buildRowData(rec) : null
               const { needsReview = false } = data ?? {}
+              const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
+              // 修正依頼リンクの表示条件: 要確認 or 当日かつ出勤済み（ただし申請中は非表示）
+              const showCorrection = (needsReview || (isToday && !!rec?.clockIn)) && correctionStatus !== "PENDING"
 
               return (
                 <tr
@@ -226,10 +250,10 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                       {dm}/{d}（{WEEKDAY[dow]}）
                     </span>
                   </td>
-                  <td className={`px-2 py-2 text-center font-mono text-xs ${needsReview ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
+                  <td className={`px-2 py-2 text-center font-mono text-xs ${needsReview && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
                     {formatTime(rec?.clockIn)}
                   </td>
-                  <td className={`px-2 py-2 text-center font-mono text-xs ${needsReview && !rec?.clockOut ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
+                  <td className={`px-2 py-2 text-center font-mono text-xs ${needsReview && !rec?.clockOut && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
                     {formatTime(rec?.clockOut)}
                   </td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-700">{fmtDur(rec?.workingMinutes)}</td>
@@ -245,13 +269,13 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                     ) : rec ? (
                       (() => {
-                        const s = getDisplayStatus(rec.status, needsReview)
+                        const s = getDisplayStatus(rec.status, needsReview, correctionStatus)
                         return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${s.className}`}>{s.label}</span>
                       })()
                     ) : null}
                   </td>
                   <td className="px-2 py-2 text-center">
-                    {data?.needsReview && (
+                    {showCorrection && (
                       <Link
                         href={`/requests/new?date=${dateStr}&mode=correction`}
                         className="inline-block text-xs px-2 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 whitespace-nowrap"
@@ -274,9 +298,13 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
           const dow     = dt.getUTCDay()
           const rec     = recordMap.get(`${dy}-${dm}-${d}`)
           if (!rec?.clockIn && !rec?.isAbsent) return null
+          const isToday = dt.getTime() === todayUTC.getTime()
           const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
           const data    = rec ? buildRowData(rec) : null
           const { needsReview = false } = data ?? {}
+          const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
+          // 申請中は修正依頼ボタンを非表示
+          const showCorrection = (needsReview || (isToday && !!rec?.clockIn)) && correctionStatus !== "PENDING"
 
           return (
             <div key={dateStr} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
@@ -285,7 +313,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   {dm}/{d}（{WEEKDAY[dow]}）
                 </span>
                 <div className="flex items-center gap-2">
-                  {data?.needsReview && (
+                  {showCorrection && (
                     <Link
                       href={`/requests/new?date=${dateStr}&mode=correction`}
                       className="text-xs px-2 py-0.5 rounded border border-amber-300 bg-amber-50 text-amber-700 whitespace-nowrap"
@@ -297,7 +325,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                     <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                   ) : (
                     (() => {
-                      const s = getDisplayStatus(rec.status, needsReview)
+                      const s = getDisplayStatus(rec.status, needsReview, correctionStatus)
                       return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${s.className}`}>{s.label}</span>
                     })()
                   )}
@@ -308,11 +336,11 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   <div className="grid grid-cols-3 gap-2 text-center text-xs mb-1.5">
                     <div>
                       <p className="text-gray-400">出勤</p>
-                      <p className={`font-mono ${needsReview ? "text-amber-600 font-semibold" : "text-gray-800"}`}>{formatTime(rec.clockIn)}</p>
+                      <p className={`font-mono ${needsReview && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-800"}`}>{formatTime(rec.clockIn)}</p>
                     </div>
                     <div>
                       <p className="text-gray-400">退勤</p>
-                      <p className={`font-mono ${needsReview && !rec.clockOut ? "text-amber-600 font-semibold" : "text-gray-800"}`}>{formatTime(rec.clockOut)}</p>
+                      <p className={`font-mono ${needsReview && !rec.clockOut && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-800"}`}>{formatTime(rec.clockOut)}</p>
                     </div>
                     <div>
                       <p className="text-gray-400">労働</p>

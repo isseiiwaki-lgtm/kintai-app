@@ -17,9 +17,25 @@ export async function actionCreateRequest(formData: FormData) {
   // 種別ごとの追加情報
   let detail: Record<string, string> = {}
   switch (type) {
-    case "OVERTIME":
-      detail = { endTime: formData.get("endTime") as string }
+    case "OVERTIME": {
+      // 定時（修正前ベースライン）を記録
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { workEndTime: true } })
+      detail = {
+        endTime:          formData.get("endTime") as string,
+        scheduledEndTime: user?.workEndTime ?? "",
+      }
       break
+    }
+    case "EARLY_START": {
+      // DBタイプはOVERTIMEに収める。overtimeTypeで区別
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { workStartTime: true } })
+      detail = {
+        overtimeType:       "earlyStart",
+        startTime:          formData.get("startTime") as string,
+        scheduledStartTime: user?.workStartTime ?? "",
+      }
+      break
+    }
     case "ABSENCE":
       detail = {
         absenceType: formData.get("absenceType") as string,
@@ -33,18 +49,35 @@ export async function actionCreateRequest(formData: FormData) {
         workDate:  (formData.get("workDate") as string) || "",
       }
       break
-    case "CORRECTION":
-      detail = {
-        targetField:   formData.get("targetField")   as string,
-        correctedTime: formData.get("correctedTime") as string,
+    case "CORRECTION": {
+      const tf = formData.get("targetField")   as string
+      const ct = formData.get("correctedTime") as string
+      detail = { targetField: tf, correctedTime: ct }
+
+      // 修正前の現在値を記録
+      const allowedFields = ["clockIn", "clockOut", "goOutAt", "returnAt", "breakStart", "breakEnd"]
+      if (allowedFields.includes(tf) && targetDate) {
+        const record = await prisma.attendanceRecord.findUnique({
+          where: { userId_date: { userId, date: new Date(targetDate) } },
+          select: { clockIn: true, clockOut: true, goOutAt: true, returnAt: true, breakStart: true, breakEnd: true },
+        })
+        const current = record?.[tf as keyof typeof record] as Date | null | undefined
+        if (current instanceof Date) {
+          const jst = new Date(current.getTime() + 9 * 60 * 60 * 1000)
+          detail.originalValue = `${String(jst.getUTCHours()).padStart(2, "0")}:${String(jst.getUTCMinutes()).padStart(2, "0")}`
+        }
       }
       break
+    }
   }
+
+  // EARLY_START は UI専用タイプ → DB は OVERTIME として保存
+  const dbType = type === "EARLY_START" ? "OVERTIME" : type
 
   await prisma.request.create({
     data: {
       userId,
-      type:       type as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER",
+      type:       dbType as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER",
       targetDate: new Date(targetDate),
       reason,
       detail,

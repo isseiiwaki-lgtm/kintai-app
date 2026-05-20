@@ -82,9 +82,19 @@ export default async function DashboardPage() {
 
   const workDays     = monthRecords.length
   const totalMinutes = monthRecords.reduce((s: number, r: { workingMinutes: number | null }) => s + (r.workingMinutes ?? 0), 0)
-  // 要確認カウント: 昨日以前 OPEN レコードで要確認条件に該当するもの
+
+  // PENDING な修正申請がある日付（ISOString）を集合化 → アラート二重表示を抑制
+  const pendingCorrectionDates = new Set(
+    pendingRequests
+      .filter(r => r.type === "CORRECTION")
+      .map(r => r.targetDate.toISOString())
+  )
+
+  // 要確認カウント: 昨日以前 OPEN レコードで要確認条件に該当 かつ 審査中の修正申請がない日
   const openCount = monthRecords.filter((r) =>
-    r.status === "OPEN" && calcNeedsReview({
+    r.status === "OPEN" &&
+    !pendingCorrectionDates.has(r.date.toISOString()) &&
+    calcNeedsReview({
       clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today,
       workStartTime: userInfo?.workStartTime ?? null,
       workEndTime: userInfo?.workEndTime ?? null,
@@ -176,8 +186,8 @@ export default async function DashboardPage() {
       {/* インフォメーション欄 */}
       {(missedClockOut.length > 0 || rejectedRequests.length > 0 || openCount > 0 || pendingRequests.length > 0 || todayNotClockedIn) && (
         <div className="space-y-2">
-          {/* 退勤漏れ */}
-          {missedClockOut.map((r) => {
+          {/* 退勤漏れ（審査中の修正申請がある日は非表示） */}
+          {missedClockOut.filter(r => !pendingCorrectionDates.has(r.date.toISOString())).map((r) => {
             const jst = new Date(r.date.getTime() + 9 * 60 * 60 * 1000)
             const label = `${jst.getUTCMonth() + 1}/${jst.getUTCDate()}`
             return (

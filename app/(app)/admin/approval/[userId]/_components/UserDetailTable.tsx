@@ -47,11 +47,11 @@ type Props = {
   lastDayISO:  string
   userId:      string
   isAdmin:     boolean
-  submittedCount: number
-  approvedCount:  number
+  openCount:     number
+  approvedCount: number
 }
 
-export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAdmin, submittedCount, approvedCount }: Props) {
+export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAdmin, openCount, approvedCount }: Props) {
   const [editRec, setEditRec]   = useState<Rec | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -91,13 +91,13 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
     <>
       {/* アクションバー */}
       <div className="flex gap-2 mb-4 justify-end">
-        {submittedCount > 0 && (
+        {openCount > 0 && (
           <button
             onClick={handleBulkApprove}
             disabled={isPending}
             className="px-3 py-1.5 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors disabled:opacity-40"
           >
-            一括承認 ({submittedCount}件)
+            一括承認 ({openCount}件)
           </button>
         )}
         {isAdmin && approvedCount > 0 && (

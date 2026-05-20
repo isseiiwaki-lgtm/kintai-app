@@ -148,11 +148,18 @@ export function calcNeedsReview({
 export function getDisplayStatus(
   status: string,
   needsReview: boolean,
+  correctionStatus?: "PENDING" | "APPROVED" | "REJECTED" | null,
 ): { label: string; className: string } {
   if (status === "LOCKED")    return { label: "締め済", className: "bg-purple-100 text-purple-700" }
-  if (status === "APPROVED")  return { label: "承認済", className: "bg-green-100 text-green-700" }
+  if (status === "APPROVED") {
+    // 打刻修正承認済みは「修正済」で区別
+    if (correctionStatus === "APPROVED") return { label: "修正済", className: "bg-teal-100 text-teal-700" }
+    return { label: "承認済", className: "bg-green-100 text-green-700" }
+  }
   if (status === "SUBMITTED") return { label: "確認済", className: "bg-blue-100 text-blue-700" }
   // OPEN
+  // 申請中（CORRECTION申請が審査中）
+  if (correctionStatus === "PENDING") return { label: "申請中", className: "bg-blue-100 text-blue-600" }
   if (needsReview) return { label: "要確認", className: "bg-red-100 text-red-600" }
   return { label: "打刻済", className: "bg-gray-100 text-gray-500" }
 }

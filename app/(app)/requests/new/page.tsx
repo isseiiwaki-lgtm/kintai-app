@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { actionCreateRequest } from "../actions"
 
-type RequestType = "OVERTIME" | "ABSENCE" | "ABSENCE_ABSENT" | "LEAVE_PAID" | "LEAVE_SUB" | "CORRECTION"
+type RequestType = "OVERTIME" | "EARLY_START" | "ABSENCE" | "ABSENCE_ABSENT" | "LEAVE_PAID" | "LEAVE_SUB" | "CORRECTION"
 
 // 15分刻みの時刻オプション（HH:MM 形式）
 function buildTimeOptions(startHour = 0, endHour = 23): { value: string; label: string }[] {
@@ -25,6 +25,7 @@ const selectClass = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm 
 
 const TYPE_OPTIONS: { value: RequestType; label: string }[] = [
   { value: "OVERTIME",       label: "残業申請" },
+  { value: "EARLY_START",    label: "早出申請" },
   { value: "ABSENCE",        label: "遅刻・早退申請" },
   { value: "ABSENCE_ABSENT", label: "欠勤申請" },
   { value: "LEAVE_PAID",     label: "有給休暇申請" },
@@ -34,8 +35,8 @@ const TYPE_OPTIONS: { value: RequestType; label: string }[] = [
 
 // 勤怠記録からの修正依頼モード用（2択のみ）
 const CORRECTION_MODE_OPTIONS: { value: RequestType; label: string; description: string }[] = [
-  { value: "ABSENCE",    label: "遅刻・早退",  description: "実際の出退勤時刻が所定と異なる" },
-  { value: "CORRECTION", label: "打刻漏れ",    description: "出勤・退勤などの打刻を忘れた" },
+  { value: "CORRECTION", label: "打刻修正申請", description: "出勤・退勤などの打刻を修正する" },
+  { value: "ABSENCE",    label: "遅刻・早退",   description: "実際の出退勤時刻が所定と異なる（報告のみ）" },
 ]
 
 const CORRECTION_FIELDS: { value: string; label: string }[] = [
@@ -59,10 +60,8 @@ export default function NewRequestPage() {
   const correctionMode  = searchParams.get("mode") === "correction"
 
   useEffect(() => {
-    if (correctionMode) {
-      setType("ABSENCE") // 修正依頼モードのデフォルトは遅刻・早退
-    } else if (presetField) {
-      setType("CORRECTION")
+    if (correctionMode || presetField) {
+      setType("CORRECTION") // 修正依頼モードのデフォルトは打刻修正申請
     }
   }, [correctionMode, presetField])
 
@@ -152,6 +151,19 @@ export default function NewRequestPage() {
             <select name="endTime" required defaultValue="" className={selectClass}>
               <option value="" disabled>-- 時刻を選択 --</option>
               {buildTimeOptions(13, 23).map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* 早出: 開始時刻 */}
+        {type === "EARLY_START" && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">早出開始時刻</label>
+            <select name="startTime" required defaultValue="" className={selectClass}>
+              <option value="" disabled>-- 時刻を選択 --</option>
+              {buildTimeOptions(5, 12).map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>

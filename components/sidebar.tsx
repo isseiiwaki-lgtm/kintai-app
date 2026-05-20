@@ -91,12 +91,13 @@ const LogoHorizontal = (
 )
 
 const adminItems: NavItem[] = [
-  { href: "/admin/attendance", label: "勤務状況一覧", icon: TableIcon },
-  { href: "/admin/approval",   label: "勤怠承認",     icon: CheckIcon },
-  { href: "/admin/requests",   label: "申請承認",     icon: DocIcon   },
-  { href: "/admin/changelog",  label: "変更履歴",     icon: HistoryIcon },
+  { href: "/admin/attendance", label: "勤務状況一覧",   icon: TableIcon },
+  { href: "/admin/approval",   label: "勤怠承認",       icon: CheckIcon },
+  { href: "/admin/requests",   label: "申請承認",       icon: DocIcon   },
+  { href: "/admin/changelog",  label: "変更履歴",       icon: HistoryIcon },
   { href: "/admin/holidays",   label: "休日カレンダー", icon: CalendarHolidayIcon },
-  { href: "/admin/users",      label: "ユーザー管理", icon: UsersIcon },
+  { href: "/admin/users",      label: "ユーザー管理",   icon: UsersIcon },
+  { href: "/admin/manual",     label: "管理マニュアル", icon: BookIcon },
 ]
 
 const adminOnlyItems: NavItem[] = [
