@@ -3,6 +3,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { calcLegalBreak } from "@/config/attendance.config"
+import { applyRounding } from "@/lib/attendance"
 import { revalidatePath } from "next/cache"
 
 function todayJST(): Date {
@@ -17,42 +18,26 @@ async function getUserId(): Promise<string> {
   return session.user.id
 }
 
-/** HH:MM 文字列を当日の UTC Date に変換 */
-function hhmmToDate(hhmm: string, todayUTC: Date): Date {
-  const [h, m] = hhmm.split(":").map(Number)
-  return new Date(todayUTC.getTime() + (h * 60 + m) * 60 * 1000)
-}
-
-/** 打刻丸め: 設定に従い clockIn/clockOut を補正して返す */
-function applyRounding(
-  actual: Date,
-  scheduled: string | null,
-  opts: { roundEarly: boolean; roundNear: boolean },
-): Date {
-  if (!scheduled) return actual
-  const todayUTC = new Date(Date.UTC(
-    actual.getUTCFullYear(), actual.getUTCMonth(), actual.getUTCDate(),
-  ) - 9 * 60 * 60 * 1000)
-  const scheduledDate = hhmmToDate(scheduled, todayUTC)
-  const diffMin = Math.round((actual.getTime() - scheduledDate.getTime()) / 60000)
-
-  // 定時前打刻→定時扱い（diffMin < 0 = 定時より前）
-  if (opts.roundEarly && diffMin < 0) return scheduledDate
-  // 定時から14分以内→定時きっかり（0 <= diffMin <= 14）
-  if (opts.roundNear && diffMin >= 0 && diffMin <= 14) return scheduledDate
-
-  return actual
-}
-
 export async function actionClockIn() {
   const userId = await getUserId()
   const today = todayJST()
-  const [user, setting] = await Promise.all([
+  const [user, setting, earlyStartReq] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { workStartTime: true } }),
     prisma.setting.findUnique({ where: { id: 1 } }),
+    // 当日に早出申請（申請中 or 承認済）があれば roundEarly を無効にする
+    prisma.request.findFirst({
+      where: {
+        userId,
+        targetDate: today,
+        type:       "OVERTIME",
+        status:     { in: ["PENDING", "APPROVED"] },
+        detail:     { path: ["overtimeType"], equals: "earlyStart" },
+      },
+      select: { id: true },
+    }),
   ])
   const clockIn = applyRounding(new Date(), user?.workStartTime ?? null, {
-    roundEarly: setting?.roundEarlyClockIn ?? false,
+    roundEarly: earlyStartReq ? false : (setting?.roundEarlyClockIn ?? false),
     roundNear:  setting?.roundNearClockTime ?? false,
   })
   await prisma.attendanceRecord.upsert({

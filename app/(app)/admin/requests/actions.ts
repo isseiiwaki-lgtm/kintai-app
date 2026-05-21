@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
-import { formatHHMMfromDate } from "@/lib/attendance"
+import { formatHHMMfromDate, applyRounding } from "@/lib/attendance"
 import { calcLegalBreak } from "@/config/attendance.config"
 
 async function checkAdmin() {
@@ -147,10 +147,60 @@ export async function actionApproveRequest(id: string) {
 
 export async function actionRejectRequest(id: string) {
   await checkAdmin()
+
+  const req = await prisma.request.findUnique({
+    where: { id },
+    include: { user: { select: { workStartTime: true, employmentType: true } } },
+  })
+
   await prisma.request.update({
     where: { id },
     data: { status: "REJECTED" },
   })
+
+  // 早出申請却下時: clockIn に丸め処理を適用（スキップしていた分を補正）
+  if (req?.type === "OVERTIME") {
+    const detail = req.detail as Record<string, string> | null
+    if (detail?.overtimeType === "earlyStart") {
+      const setting = await prisma.setting.findUnique({ where: { id: 1 } })
+      if (setting?.roundEarlyClockIn || setting?.roundNearClockTime) {
+        const existing = await prisma.attendanceRecord.findUnique({
+          where: { userId_date: { userId: req.userId, date: req.targetDate } },
+        })
+        if (existing?.clockIn) {
+          const corrected = applyRounding(existing.clockIn, req.user.workStartTime, {
+            roundEarly: setting.roundEarlyClockIn  ?? false,
+            roundNear:  setting.roundNearClockTime ?? false,
+          })
+          if (corrected.getTime() !== existing.clockIn.getTime()) {
+            const updateData: Record<string, Date | number> = { clockIn: corrected }
+            // clockOut があれば workingMinutes も再計算
+            if (existing.clockOut) {
+              const totalMs    = existing.clockOut.getTime() - corrected.getTime()
+              const goOutMs    = existing.goOutAt && existing.returnAt
+                ? existing.returnAt.getTime() - existing.goOutAt.getTime()
+                : 0
+              const rawMinutes = Math.floor((totalMs - goOutMs) / 60000)
+              if (req.user.employmentType === "part") {
+                const breakMs = existing.breakStart && existing.breakEnd
+                  ? existing.breakEnd.getTime() - existing.breakStart.getTime()
+                  : 0
+                updateData.workingMinutes = Math.max(0, rawMinutes - Math.floor(breakMs / 60000))
+              } else {
+                updateData.workingMinutes = Math.max(0, rawMinutes - calcLegalBreak(rawMinutes))
+              }
+            }
+            await prisma.attendanceRecord.update({
+              where: { id: existing.id },
+              data:  updateData,
+            })
+            revalidatePath("/records")
+          }
+        }
+      }
+    }
+  }
+
   revalidatePath("/admin/requests")
 }
 

@@ -144,6 +144,36 @@ export function calcNeedsReview({
   return false
 }
 
+/** HH:MM 文字列を当日の UTC Date に変換（打刻丸め用） */
+export function hhmmToUTCDate(hhmm: string, todayUTC: Date): Date {
+  const [h, m] = hhmm.split(":").map(Number)
+  return new Date(todayUTC.getTime() + (h * 60 + m) * 60 * 1000)
+}
+
+/**
+ * 打刻丸め: 設定に従い clockIn/clockOut を補正して返す
+ * - roundEarly: 定時前打刻 → 定時扱い
+ * - roundNear:  定時〜14分以内 → 定時きっかり
+ */
+export function applyRounding(
+  actual: Date,
+  scheduled: string | null,
+  opts: { roundEarly: boolean; roundNear: boolean },
+): Date {
+  if (!scheduled) return actual
+  // actual の日付部分（UTC）から JST 日付ベースを算出
+  const todayUTC = new Date(
+    Date.UTC(actual.getUTCFullYear(), actual.getUTCMonth(), actual.getUTCDate())
+    - 9 * 60 * 60 * 1000,
+  )
+  const scheduledDate = hhmmToUTCDate(scheduled, todayUTC)
+  const diffMin = Math.round((actual.getTime() - scheduledDate.getTime()) / 60000)
+
+  if (opts.roundEarly && diffMin < 0) return scheduledDate
+  if (opts.roundNear  && diffMin >= 0 && diffMin <= 14) return scheduledDate
+  return actual
+}
+
 /** DBステータス + 要確認判定 → 表示用ラベル・クラス */
 export function getDisplayStatus(
   status: string,
