@@ -104,9 +104,15 @@ export function calcNightMinutes(clockIn: Date | null, clockOut: Date | null): n
 /**
  * 「要確認」判定
  * OPEN レコードに対して表示ラベルを 打刻済 / 要確認 で分類する。
+ * - 遅刻（clockIn > workStartTime + 1分）→ 要確認（今日も対象）
  * - 退勤なし（昨日以前）→ 要確認
- * - 遅刻（clockIn > workStartTime + 1分）→ 要確認
- * - 早退（clockOut < workEndTime - 1分）→ 要確認
+ * - 早退（clockOut < workEndTime - 1分）→ 要確認（昨日以前）
+ *
+ * 判定順序:
+ *   ① 遅刻チェック（今日含む）
+ *   ② 今日以降は以降のチェック不要（退勤未打刻は問題なし）
+ *   ③ 昨日以前で退勤なし
+ *   ④ 早退チェック
  */
 export function calcNeedsReview({
   clockIn,
@@ -124,18 +130,20 @@ export function calcNeedsReview({
   workEndTime:   string | null // "17:30"
 }): boolean {
   if (!clockIn) return false
-  if (date >= today) return false   // 今日は対象外
 
-  // 退勤打刻なし
-  if (!clockOut) return true
-
-  // 遅刻: clockIn > workStartTime + 1分
+  // ① 遅刻: 今日も含めて判定（先に評価）
   if (workStartTime) {
     const startMins = parseHHMM(workStartTime)
     if (startMins !== null && hhmm(clockIn) > startMins + 1) return true
   }
 
-  // 早退: clockOut < workEndTime - 1分
+  // ② 今日以降: 退勤未打刻・早退は問題なし
+  if (date >= today) return false
+
+  // ③ 昨日以前で退勤打刻なし
+  if (!clockOut) return true
+
+  // ④ 早退: clockOut < workEndTime - 1分
   if (workEndTime && clockOut) {
     const endMins = parseHHMM(workEndTime)
     if (endMins !== null && hhmm(clockOut) < endMins - 1) return true

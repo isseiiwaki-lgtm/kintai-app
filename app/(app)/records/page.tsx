@@ -54,7 +54,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
   const firstDay = new Date(Date.UTC(year, month - 2, closingDay + 1))
   const lastDay  = new Date(Date.UTC(year, month - 1, closingDay))
 
-  const [records, user, correctionRequests] = await Promise.all([
+  const [records, user, correctionRequests, absenceRequests] = await Promise.all([
     prisma.attendanceRecord.findMany({
       where: { userId, date: { gte: firstDay, lte: lastDay } },
       orderBy: { date: "asc" },
@@ -68,6 +68,12 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
       select: { targetDate: true, status: true },
       orderBy: { createdAt: "desc" },
     }),
+    // 遅刻・早退申請（PENDING/APPROVED の場合は修正依頼ボタンを抑制）
+    prisma.request.findMany({
+      where: { userId, type: "ABSENCE", targetDate: { gte: firstDay, lte: lastDay } },
+      select: { targetDate: true, status: true },
+      orderBy: { createdAt: "desc" },
+    }),
   ])
 
   // 日付文字列 → 打刻修正申請ステータス（最新のみ）
@@ -77,6 +83,16 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
     const key = `${jst.getUTCFullYear()}-${jst.getUTCMonth() + 1}-${jst.getUTCDate()}`
     if (!correctionMap.has(key)) {
       correctionMap.set(key, req.status as "PENDING" | "APPROVED" | "REJECTED")
+    }
+  }
+
+  // 日付文字列 → 遅刻・早退申請が申請中 or 承認済みか（最新のみ）
+  const absenceActiveSet = new Set<string>()
+  for (const req of absenceRequests) {
+    const jst = toJST(req.targetDate)
+    const key = `${jst.getUTCFullYear()}-${jst.getUTCMonth() + 1}-${jst.getUTCDate()}`
+    if (!absenceActiveSet.has(key) && (req.status === "PENDING" || req.status === "APPROVED")) {
+      absenceActiveSet.add(key)
     }
   }
 
@@ -232,13 +248,13 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
               const dow     = dt.getUTCDay()
               const rec     = recordMap.get(`${dy}-${dm}-${d}`)
               const isWeekend = dow === 0 || dow === 6
-              const isToday = dt.getTime() === todayUTC.getTime()
               const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
               const data    = rec ? buildRowData(rec) : null
               const { needsReview = false } = data ?? {}
               const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
-              // 修正依頼リンクの表示条件: 要確認 or 当日かつ出勤済み（ただし申請中は非表示）
-              const showCorrection = (needsReview || (isToday && !!rec?.clockIn)) && correctionStatus !== "PENDING"
+              const hasAbsenceRequest = absenceActiveSet.has(`${dy}-${dm}-${d}`)
+              // 修正依頼リンクの表示条件: 要確認 かつ CORRECTION申請中でない かつ 遅刻・早退申請（申請中/承認済）がない
+              const showCorrection = needsReview && correctionStatus !== "PENDING" && !hasAbsenceRequest
 
               return (
                 <tr
@@ -298,13 +314,13 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
           const dow     = dt.getUTCDay()
           const rec     = recordMap.get(`${dy}-${dm}-${d}`)
           if (!rec?.clockIn && !rec?.isAbsent) return null
-          const isToday = dt.getTime() === todayUTC.getTime()
           const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
           const data    = rec ? buildRowData(rec) : null
           const { needsReview = false } = data ?? {}
           const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
-          // 申請中は修正依頼ボタンを非表示
-          const showCorrection = (needsReview || (isToday && !!rec?.clockIn)) && correctionStatus !== "PENDING"
+          const hasAbsenceRequest = absenceActiveSet.has(`${dy}-${dm}-${d}`)
+          // 修正依頼ボタンの表示条件: 要確認 かつ CORRECTION申請中でない かつ 遅刻・早退申請（申請中/承認済）がない
+          const showCorrection = needsReview && correctionStatus !== "PENDING" && !hasAbsenceRequest
 
           return (
             <div key={dateStr} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
