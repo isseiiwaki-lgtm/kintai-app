@@ -178,7 +178,7 @@ export function applyRounding(
   const diffMin = Math.round((actual.getTime() - scheduledDate.getTime()) / 60000)
 
   if (opts.roundEarly && diffMin < 0) return scheduledDate
-  if (opts.roundNear  && diffMin >= 0 && diffMin <= 14) return scheduledDate
+  if (opts.roundNear  && Math.abs(diffMin) <= 14) return scheduledDate
   return actual
 }
 

@@ -38,7 +38,8 @@ export async function actionClockIn() {
   ])
   const clockIn = applyRounding(new Date(), user?.workStartTime ?? null, {
     roundEarly: earlyStartReq ? false : (setting?.roundEarlyClockIn ?? false),
-    roundNear:  setting?.roundNearClockTime ?? false,
+    // 早出申請がある日は roundNear も無効（定時前打刻を定時に吸収しないため）
+    roundNear:  earlyStartReq ? false : (setting?.roundNearClockTime ?? false),
   })
   await prisma.attendanceRecord.upsert({
     where: { userId_date: { userId, date: today } },
@@ -53,17 +54,29 @@ export async function actionClockOut() {
   const userId = await getUserId()
   const today = todayJST()
 
-  const [record, user, setting] = await Promise.all([
+  const [record, user, setting, overtimeReq] = await Promise.all([
     prisma.attendanceRecord.findUnique({
       where: { userId_date: { userId, date: today } },
     }),
     prisma.user.findUnique({ where: { id: userId }, select: { employmentType: true, workEndTime: true } }),
     prisma.setting.findUnique({ where: { id: 1 } }),
+    // 当日に残業申請（申請中 or 承認済）があれば roundNear を無効にする
+    prisma.request.findFirst({
+      where: {
+        userId,
+        targetDate: today,
+        type:   "OVERTIME",
+        status: { in: ["PENDING", "APPROVED"] },
+        detail: { path: ["overtimeType"], not: "earlyStart" },
+      },
+      select: { id: true },
+    }),
   ])
   if (!record?.clockIn) throw new Error("出勤打刻がありません")
   const now = applyRounding(new Date(), user?.workEndTime ?? null, {
-    roundEarly: false, // 退勤は早め打刻→定時扱い不要
-    roundNear:  setting?.roundNearClockTime ?? false,
+    roundEarly: false,
+    // 残業申請がある日は roundNear を無効（定時付近の打刻を定時に吸収しないため）
+    roundNear:  overtimeReq ? false : (setting?.roundNearClockTime ?? false),
   })
 
   // 外出中の時間を除いた在席時間（分）
