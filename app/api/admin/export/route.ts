@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
         select: {
           date: true, clockIn: true, clockOut: true,
           goOutAt: true, returnAt: true,
-          workingMinutes: true, note: true, status: true,
+          workingMinutes: true, overtimeMinutes: true, note: true, status: true,
         },
       },
     },
@@ -57,8 +57,8 @@ export async function GET(req: NextRequest) {
   for (const u of users) {
     for (const r of u.attendanceRecords) {
       if (!r.clockIn) continue // 打刻なし日はスキップ
-      const scheduled   = u.employmentType === "full" ? 480 : 0  // パート・雇用者は所定時間なし
-      const overtime    = Math.max(0, (r.workingMinutes ?? 0) - scheduled)
+      // overtimeMinutes は打刻時・一括再計算時に保存済み（法定1日8h超）
+      const overtime = r.overtimeMinutes ?? 0
       rows.push([
         u.name ?? u.email ?? "",
         u.department ?? "",
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
         fmtTime(r.goOutAt),
         fmtTime(r.returnAt),
         String(r.workingMinutes ?? ""),
-        overtime > 0 ? String(overtime) : "",
+        overtime > 0 ? String(overtime) : "",  // 0分の場合は空欄
         r.note ?? "",
         STATUS_LABEL[r.status] ?? r.status,
       ])

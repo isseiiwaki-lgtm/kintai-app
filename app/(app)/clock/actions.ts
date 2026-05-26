@@ -88,9 +88,12 @@ export async function actionClockOut() {
     workingMinutes = Math.max(0, rawMinutes - legalBreak)
   }
 
+  // 法定残業: 1日8時間(480分)超の分（パート・フルタイム共通）
+  const overtimeMinutes = Math.max(0, workingMinutes - 480)
+
   await prisma.attendanceRecord.update({
     where: { userId_date: { userId, date: today } },
-    data: { clockOut: now, workingMinutes },
+    data: { clockOut: now, workingMinutes, overtimeMinutes },
   })
   revalidatePath("/clock")
   revalidatePath("/")
