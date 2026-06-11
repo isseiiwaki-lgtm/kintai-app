@@ -129,7 +129,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
       breakMins = Math.round((rec.breakEnd.getTime() - rec.breakStart.getTime()) / 60000)
     } else if (rec.clockIn && rec.clockOut && rec.workingMinutes !== null) {
       // フルタイム: 逆算（拘束時間 - 中抜け - 実労働）
-      const rawMins = Math.round((rec.clockOut.getTime() - rec.clockIn.getTime()) / 60000)
+      const rawMins = Math.floor((rec.clockOut.getTime() - rec.clockIn.getTime()) / 60000)
       breakMins = Math.max(0, rawMins - goOutMins - (rec.workingMinutes ?? 0))
     } else {
       breakMins = 0
