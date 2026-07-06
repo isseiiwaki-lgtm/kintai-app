@@ -28,12 +28,14 @@
 - **半日有給**: 一律240分（8h÷2）で計算中。本来は本人所定時間の半分にすべき（既知課題）。半休判定は `halfDay === "am" || === "pm"`（"full" が truthy な点に注意）
 - **申請タイプはUIとDBで別**: UI `EARLY_START`→DB `OVERTIME`+`detail.overtimeType="earlyStart"`、UI `LEAVE_PAID/LEAVE_SUB`→DB `LEAVE`+`leaveType="paid"/"substitute"`。DB enum だけ grep すると見落とす
 - **除外ユーザー基準**: 一覧/承認/Excel とも部署名 `department notIn ["管理者","管理職"]` に統一（2026-07-06〜）。Excel は加えて `employmentType in ["full","part"]`
+- **申請承認は部署により多段階**: `ApprovalRoute` に経路がある部署は step 順の承認が必要（最終 step 承認で APPROVED + 勤怠反映）。経路なし部署は一段階。判定は `lib/approval.ts`
 - **JST↔UTC**: DB は UTC 保存。日付基準を作るとき「+9hしてから日付部品を取り、-9h」する。`getUTCDate()` を先に呼ぶと JST 0:00〜8:59 で前日にズレる（過去に丸め全滅バグの根因）
 
 ## ファイルマップ（要点）
 
 - `lib/attendance.ts` — 丸め・calcNeedsReview・getDisplayStatus・calcMetrics
 - `lib/closing.ts` — 締め期間計算の共通関数
+- `lib/approval.ts` — 申請の多段階承認判定（経路・現在ステップ・進捗）
 - `config/attendance.config.ts` — 法定休憩ルール（ハードコード。Setting の閾値とは別物）
 - `app/(app)/clock/actions.ts` — 打刻サーバーアクション（丸め適用・workingMinutes確定）
 - `app/(app)/admin/requests/actions.ts` — 申請承認時の勤怠反映

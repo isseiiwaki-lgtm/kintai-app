@@ -11,18 +11,20 @@
 - **打刻** `/clock` — 出勤・退勤・外出・戻り・休憩開始/終了（2×2グリッド）
 - **勤怠記録** `/records` — 月次一覧（出勤〜早退・状態バッジ）。修正依頼リンク。CORRECTION申請状態に連動したバッジ（申請中/修正済）
 - **申請** `/requests` — 申請一覧・取り下げ
-- **申請 新規** `/requests/new` — 残業・早出・遅刻早退・欠勤・休暇（有給/代休/半日）・打刻修正・その他
+- **申請 新規** `/requests/new` — 残業・早出・遅刻早退・欠勤・休暇（有給/振休/半日）・打刻修正・その他
 - **マニュアル** `/manual`
 
 ### 管理者 (ADMIN/APPROVER)
 - **勤務状況一覧** `/admin/attendance` — 全ユーザー月次一覧・締め日連動・従業員コード順・管理系部署除外
 - **勤怠承認** `/admin/approval` — ユーザー別承認状況（未承認/承認済/締め済）。承認/承認取消/締め。個人詳細: 編集モーダル・一括承認・一括締め
-- **申請承認** `/admin/requests` — 承認/却下/修正/削除。修正前値表示（CORRECTION: 修正前時刻、OVERTIME: 定時）
+- **申請承認** `/admin/requests` — 承認/却下/修正/削除。修正前値表示（CORRECTION: 修正前時刻、OVERTIME: 定時）。**多段階承認対応**（経路設定部署のみ。進捗バッジ・担当外は操作不可・ADMIN飛び越し承認）
+- **承認経路管理** `/admin/approval-routes` — ADMIN専用。部署×step×承認者の登録/上書き/削除。経路未設定部署は一段階承認
 - **休日カレンダー** `/admin/holidays` — 祝日一括シード・手動追加/削除
 - **ユーザー管理** `/admin/users` — CRUD・複製・CSVインポート/エクスポート
 - **設定** `/admin/settings` — 締め日・休憩控除ルール・打刻丸めスイッチ（定時前打刻→定時扱い・定時前後14分→定時きっかり）
 - **Excel出力** `/api/admin/export-xlsx` — 個人別日別勤務報告書（1ファイル・人別シート）。33列・未実装列は空欄。締め期間単位。管理系部署（管理者/管理職）・管理外雇用形態を除外・従業員コード昇順・有給使用合計（日/時間）表示
 - **変更履歴** `/admin/changelog`
+- **打刻異常検知** `GET /api/admin/anomaly-check?date=YYYY-MM-DD` — 退勤漏れ・戻り漏れ・パート休憩打刻漏れ（6h超）・workingMinutes NULL を JSON で返す。ADMIN セッション or `ANOMALY_CHECK_TOKEN`（Bearer、n8n 日次バッチ用）で認証。省略時は JST 昨日
 
 ### 認証
 - Google OAuth (NextAuth v5) + JWT。ADMIN/APPROVER/EMPLOYEE の3ロール
@@ -47,7 +49,7 @@
 - [ ] **締め期間計算の共通関数化（残り4箇所）** — records / admin/attendance / admin/approval / home のコピペ式を `lib/closing.ts` へ置換
 
 ### 優先③: 大規模機能
-- [ ] **多段階承認** — 承認経路管理（部署ごと）。飛び越し承認ボタン。決裁者承認で完全承認完了
+- [x] **多段階承認（申請承認）** — 2026-07-06実装。承認経路管理（部署ごと・可変段数）・飛び越し承認・最終step承認で確定。設計: `docs/DESIGN_MULTISTAGE_APPROVAL.md`。勤怠承認（/admin/approval）の多段階化は将来拡張（実質不要と判断）
 - [ ] **メール通知** — 承認依頼 > 打刻漏れ（管理者向け） > 却下通知 > 承認完了通知。`companyEmail` 優先
 - [x] **xlsx出力** — 個人別日別勤務報告書（exceljs）実装済み。未実装列（法定内/外残業・深夜・休日出勤系）は空欄
 
@@ -77,6 +79,10 @@
 - **Excel出力改善** — ①対象者を role 基準（ADMIN/APPROVER除外）→部署基準（管理者/管理職のみ除外）に変更し一覧・承認画面と統一。②有給使用合計（日/時間）をヘッダに追加。③日次有給日数の半日判定 truthy バグ修正（全日 "full" が 0.5 と誤カウントされていた）
 - **文言修正: 代休→振休** — `leaveType="substitute"` の表示名を「振休」に統一（Excel列名・申請フォーム・申請一覧・承認画面の4ファイル。DB値は不変）
 - **改修体制の整備** — `docs/DOMAIN_MAP.md`（修正時必読・短い）/ `docs/DOMAIN_REFERENCE.md`（詳細参照）/ skill `kintai-fix`（修正指示ワークフロー: 5軸確認→before/after合意→実装→検証）新設。CLAUDE.md に参照ルール追記。`docs/IMPROVEMENT_BACKLOG.md`（改善案15件）新設
+- **回帰テスト導入（vitest）** — `tests/` に丸め・要確認判定・集計・深夜・法定休憩・締め期間の境界値32テスト。`npm run test` で実行。TZ回帰（JST深夜打刻の丸め）を恒久ガード
+- **機能追加: 打刻異常検知 API** — `GET /api/admin/anomaly-check` 新規作成（退勤漏れ・戻り漏れ・パート休憩漏れ・workingMinutes NULL）。n8n 日次通知の土台（`ANOMALY_CHECK_TOKEN` 環境変数で Bearer 認証可）
+- **ドキュメント新規** — `docs/DEPLOY_CHECKLIST.md`（デプロイ前チェックリスト）・`docs/DESIGN_MULTISTAGE_APPROVAL.md`（多段階承認設計書）
+- **機能追加: 多段階承認（申請承認）** — `ApprovalRoute` テーブル新設（部署×step×承認者）・`Approval` ログ運用開始（`SKIPPED` 追加・Cascade化）。経路設定部署の申請は step 順承認、最終 step で APPROVED+勤怠反映。担当外は操作不可・ADMIN 飛び越し承認・進捗バッジ。経路管理画面 `/admin/approval-routes` 新設。**migration `20260706000000_add_approval_route` 未適用（dev/本番とも。デプロイ時に `prisma migrate deploy` 要）**
 
 ### 2026-05-27
 - **機能追加: Excel出力** — `GET /api/admin/export-xlsx` 新規作成。個人別日別勤務報告書（1ファイル・人別シート・33列）。`exceljs` 追加。ADMIN/APPROVER除外・従業員コード数値昇順・休日行色分け・A4横印刷設定

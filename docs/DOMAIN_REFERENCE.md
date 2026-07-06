@@ -54,7 +54,8 @@
   - LEAVE(substitute)・special・ABSENCE(late/early): **勤怠へ非反映**（記録のみ）
 - `leaveType="special"`（特別休暇）は Excel に列があるが UI 作成導線なし
 - `halfDay`: "full" / "am" / "pm"。**"full" は truthy** — 半休判定は `=== "am" || === "pm"` で書く（過去に Excel 側で `halfDay ?` 判定して全日を0.5日誤カウントするバグ）
-- 用語: `substitute` の表示名は「振休（振替休日）」（2026-07-06に代休から改称。法的に代休は別概念・将来別機能）
+- 用語: `substitute` の表示名は「振休（振替休日）」（2026-07-06に代休から改称。法的に代休は別概念・将来別機能。当社運用はまず振休のみ — 2026-07-06 ユーザー確認済）
+- **多段階承認（2026-07-06実装）**: 申請者の部署に `ApprovalRoute` があれば step 順承認。最終 step 承認時のみ `applyRequestEffects()` で勤怠反映。中間承認は PENDING のまま。飛び越し=ADMIN 専用（中間 SKIPPED 消化）。詳細 `docs/DESIGN_MULTISTAGE_APPROVAL.md`
 
 ## 5. ステータス
 
