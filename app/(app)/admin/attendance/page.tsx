@@ -2,6 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { calcNeedsReview } from "@/lib/attendance"
+import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
 
@@ -23,21 +24,12 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
   const setting    = await prisma.setting.findUnique({ where: { id: 1 } })
   const closingDay = setting?.closingDay ?? 25
 
-  // 締め日考慮のデフォルト月
-  const todayDate    = now.getUTCDate()
-  const defaultYear  = todayDate > closingDay
-    ? (now.getUTCMonth() === 11 ? now.getUTCFullYear() + 1 : now.getUTCFullYear())
-    : now.getUTCFullYear()
-  const defaultMonth = todayDate > closingDay
-    ? (now.getUTCMonth() + 2 > 12 ? 1 : now.getUTCMonth() + 2)
-    : now.getUTCMonth() + 1
+  // 締め日考慮のデフォルト月・集計期間（前月 closingDay+1 日〜当月 closingDay 日）
+  const def   = getDefaultClosingMonth(closingDay)
+  const year  = Number(params.year  ?? def.year)
+  const month = Number(params.month ?? def.month)
 
-  const year  = Number(params.year  ?? defaultYear)
-  const month = Number(params.month ?? defaultMonth)
-
-  // 集計期間: 前月(closingDay+1) 〜 当月(closingDay)
-  const firstDay = new Date(Date.UTC(year, month - 2, closingDay + 1))
-  const lastDay  = new Date(Date.UTC(year, month - 1, closingDay))
+  const { firstDay, lastDay } = getClosingPeriod(year, month, closingDay)
 
   const prevMonth = month === 1 ? 12 : month - 1
   const prevYear  = month === 1 ? year - 1 : year

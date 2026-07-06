@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { QuickClockButton } from "./clock/QuickClockButton"
 import { calcNeedsReview } from "@/lib/attendance"
+import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 /** UTC の Date を JST の同じ日付の 00:00:00 UTC に変換 */
 function todayJST(): Date {
@@ -31,15 +32,8 @@ export default async function DashboardPage() {
   const closingDay = setting?.closingDay ?? 25
 
   // 締め日基準の当月集計期間
-  const todayDate  = today.getUTCDate()
-  const periodYear  = todayDate > closingDay
-    ? (today.getUTCMonth() === 11 ? today.getUTCFullYear() + 1 : today.getUTCFullYear())
-    : today.getUTCFullYear()
-  const periodMonth = todayDate > closingDay
-    ? (today.getUTCMonth() + 2 > 12 ? 1 : today.getUTCMonth() + 2)
-    : today.getUTCMonth() + 1
-  const firstDay = new Date(Date.UTC(periodYear, periodMonth - 2, closingDay + 1))
-  const lastDay  = new Date(Date.UTC(periodYear, periodMonth - 1, closingDay))
+  const { year: periodYear, month: periodMonth } = getDefaultClosingMonth(closingDay)
+  const { firstDay, lastDay } = getClosingPeriod(periodYear, periodMonth, closingDay)
 
   const [userInfo, todayRecord, monthRecords, pendingRequests, rejectedRequests, missedClockOut] = await Promise.all([
     prisma.user.findUnique({
