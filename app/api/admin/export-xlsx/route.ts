@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { calcLegalBreak } from "@/config/attendance.config"
+import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 import ExcelJS from "exceljs"
 
 // JST変換
@@ -41,7 +42,7 @@ const HEADERS = [
   "法定休日出勤\n（時間内）", "法定休日出勤\n（時間外）",
   "法定休日出勤\n（時間内（深夜））", "法定休日出勤\n（時間外(深夜)）",
   "休日出勤\n（時間内）", "休日出勤\n（時間内（深夜））", "休日出勤\n（時間外）", "休日出勤\n（時間外（深夜））",
-  "有給休暇\n（日）", "有給休暇\n（時間）", "特別休暇\n（有給）", "特別休暇\n（無給）", "代休",
+  "有給休暇\n（日）", "有給休暇\n（時間）", "特別休暇\n（有給）", "特別休暇\n（無給）", "振休",
   "遅刻／早退", "欠勤", "出勤", "退勤", "変更出勤", "変更退勤",
 ]
 
@@ -53,7 +54,7 @@ const COL_WIDTHS = [
   10, 10,             // 深夜2列
   14, 14, 16, 16,     // 法定休日4列
   14, 16, 14, 16,     // 休日出勤4列
-  8,  8, 10, 10,  6,  // 有給日・有給時間・特別有給・特別無給・代休
+  8,  8, 10, 10,  6,  // 有給日・有給時間・特別有給・特別無給・振休
   8,  6,  7,  7,  8,  8, // 遅刻早退〜変更退勤
 ]
 
@@ -64,13 +65,16 @@ export async function GET(req: NextRequest) {
     return new NextResponse("Forbidden", { status: 403 })
   }
 
-  const { searchParams } = req.nextUrl
-  const now   = toJST(new Date())
-  const year  = Number(searchParams.get("year")  ?? now.getUTCFullYear())
-  const month = Number(searchParams.get("month") ?? now.getUTCMonth() + 1)
+  const setting    = await prisma.setting.findUnique({ where: { id: 1 } })
+  const closingDay = setting?.closingDay ?? 25
 
-  const firstDay = new Date(Date.UTC(year, month - 1, 1))
-  const lastDay  = new Date(Date.UTC(year, month, 0))
+  const { searchParams } = req.nextUrl
+  const def   = getDefaultClosingMonth(closingDay)
+  const year  = Number(searchParams.get("year")  ?? def.year)
+  const month = Number(searchParams.get("month") ?? def.month)
+
+  // 締め期間（前月 closingDay+1 日 〜 当月 closingDay 日）
+  const { firstDay, lastDay } = getClosingPeriod(year, month, closingDay)
 
   // 休日マップ（dateKey → 休日名）
   const holidays = await prisma.holiday.findMany({
@@ -81,7 +85,8 @@ export async function GET(req: NextRequest) {
   const users = await prisma.user.findMany({
     where: {
       isActive: true,
-      role: { notIn: ["ADMIN", "APPROVER"] },
+      // 経営者レベル（管理系部署）のみ除外。管理者権限でも一般部署は出力対象（一覧・承認画面と同基準）
+      department: { notIn: ["管理者", "管理職"] },
       employmentType: { in: ["full", "part"] },
     },
     orderBy: { employeeCode: "asc" },
@@ -117,8 +122,9 @@ export async function GET(req: NextRequest) {
 
   const empLabel = (t: string) =>
     t === "full" ? "社員" : t === "part" ? "パート" : t
-  const periodLabel = `${year}年${month}月`
-  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate()
+  const fmtMD = (dt: Date) => `${dt.getUTCMonth() + 1}/${dt.getUTCDate()}`
+  const periodLabel = `${year}年${month}月度（${fmtMD(firstDay)}〜${fmtMD(lastDay)}）`
+  const periodDates = listClosingPeriodDates(firstDay, lastDay)
 
   // ヘッダー行のスタイル定数
   const headerFill: ExcelJS.Fill = {
@@ -137,6 +143,18 @@ export async function GET(req: NextRequest) {
   for (const user of users) {
     const sheetName = (user.name ?? user.email ?? user.id).slice(0, 31)
     const sheet = workbook.addWorksheet(sheetName)
+
+    // 有給使用合計（締め期間内・承認済。全日=1日/480分、半日=0.5日/240分 ※現状8hベース固定）
+    let paidDaysTotal = 0
+    let paidMinutesTotal = 0
+    for (const r of user.requests) {
+      if (r.type !== "LEAVE") continue
+      const det = r.detail as Record<string, unknown> | null
+      if (det?.leaveType !== "paid") continue
+      const half = det?.halfDay === "am" || det?.halfDay === "pm"
+      paidDaysTotal    += half ? 0.5 : 1
+      paidMinutesTotal += half ? 240 : 480
+    }
 
     // --- 情報ヘッダー（2行）---
     sheet.mergeCells("A1:AG1")
@@ -167,6 +185,10 @@ export async function GET(req: NextRequest) {
     sheet.getCell("L2").value = empLabel(user.employmentType)
     sheet.getCell("M2").value = "対象期間"; sheet.getCell("M2").font = { bold: true }
     sheet.getCell("N2").value = periodLabel
+    sheet.mergeCells("N2:Q2")
+    sheet.getCell("R2").value = "有給使用"; sheet.getCell("R2").font = { bold: true }
+    sheet.getCell("S2").value = `${paidDaysTotal}日 / ${fmtMin(paidMinutesTotal)}`
+    sheet.mergeCells("S2:U2")
 
     sheet.getRow(3).height = 4  // 空白行
 
@@ -195,12 +217,12 @@ export async function GET(req: NextRequest) {
     )
 
     // --- データ行（5行目〜）---
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateKey = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+    for (const dayDate of periodDates) {
+      const dateKey = dayDate.toISOString().slice(0, 10)
       const rec = recordMap.get(dateKey)
       const holidayName = holidayMap.get(dateKey) ?? ""
       const leave = leaveMap.get(dateKey)
-      const dayOfWeek = new Date(Date.UTC(year, month - 1, d)).getUTCDay()
+      const dayOfWeek = dayDate.getUTCDay()
       const isHoliday = !!holidayName || dayOfWeek === 0 || dayOfWeek === 6
 
       // 勤務時間計算
@@ -239,7 +261,8 @@ export async function GET(req: NextRequest) {
       if (leave?.type === "LEAVE") {
         const d = leave.detail as Record<string, unknown>
         if (d?.leaveType === "paid") {
-          paidLeaveDays = d?.halfDay ? "0.5" : "1"
+          // "full" も truthy のため厳密比較必須（半日=am/pm のみ 0.5）
+          paidLeaveDays = d?.halfDay === "am" || d?.halfDay === "pm" ? "0.5" : "1"
         } else if (d?.leaveType === "special") {
           if (d?.isPaid !== false) specialPaid = "1"
           else specialUnpaid = "1"
@@ -251,7 +274,7 @@ export async function GET(req: NextRequest) {
       const absent = rec?.isAbsent ? "1" : ""
 
       const rowData = [
-        `${month}/${d}`,                        // 日付
+        `${dayDate.getUTCMonth() + 1}/${dayDate.getUTCDate()}`, // 日付
         rec ? (STATUS_LABEL[rec.status] ?? rec.status) : "", // 承認
         rec?.clockIn ? "○" : "",                // 勤務
         holidayName,                             // 休日
@@ -267,7 +290,7 @@ export async function GET(req: NextRequest) {
         "",  "",  "",  "",                       // 休日出勤4列（未実装）
         paidLeaveDays, paidLeaveTime,            // 有給日・時間
         specialPaid, specialUnpaid,              // 特別休暇
-        subLeave,                                // 代休
+        subLeave,                                // 振休
         fmtMin(lateEarly),                       // 遅刻／早退
         absent,                                  // 欠勤
         fmtTime(rec?.clockIn),                   // 出勤

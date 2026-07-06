@@ -51,7 +51,7 @@ function detailSummary(type: string, detail: Record<string, string> | null): str
       if (d.absenceType === "absent") return "欠勤（全日）"
       return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
     case "LEAVE": {
-      const lt = d.leaveType === "substitute" ? "代休" : "有給"
+      const lt = d.leaveType === "substitute" ? "振休" : "有給"
       const hd = d.halfDay === "am" ? "（午前）" : d.halfDay === "pm" ? "（午後）" : ""
       const wb = d.workDate ? ` ← ${d.workDate}` : ""
       return `${lt}${hd}${wb}`
@@ -148,7 +148,7 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
           <label className={labelClass}>休暇種別</label>
           <select name="leaveType" defaultValue={detail.leaveType ?? "annual"} className={inputClass}>
             <option value="annual">有給</option>
-            <option value="substitute">代休</option>
+            <option value="substitute">振休</option>
           </select>
         </div>
         <div>
@@ -160,7 +160,7 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
           </select>
         </div>
         <div>
-          <label className={labelClass}>振替出勤日（代休の場合）</label>
+          <label className={labelClass}>振替出勤日（振休の場合）</label>
           <input type="date" name="workDate" defaultValue={detail.workDate ?? ""} className={inputClass} />
         </div>
       </>

@@ -1,22 +1,21 @@
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { RequestsTable } from "./_components/RequestsTable"
+import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
 
-function toJST(dt: Date) {
-  return new Date(dt.getTime() + 9 * 60 * 60 * 1000)
-}
-
 export default async function AdminRequestsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams
-  const now    = toJST(new Date())
-  const year   = Number(params.year  ?? now.getUTCFullYear())
-  const month  = Number(params.month ?? now.getUTCMonth() + 1)
+  const setting    = await prisma.setting.findUnique({ where: { id: 1 } })
+  const closingDay = setting?.closingDay ?? 25
+  const def    = getDefaultClosingMonth(closingDay)
+  const year   = Number(params.year  ?? def.year)
+  const month  = Number(params.month ?? def.month)
 
-  // 処理済みの月範囲（JST 月初〜月末）
-  const firstDay = new Date(Date.UTC(year, month - 1, 1))
-  const lastDay  = new Date(Date.UTC(year, month, 0, 14, 59, 59, 999)) // 月末 23:59:59 JST = UTC+14:59:59
+  // 処理済みの締め期間（前月 closingDay+1 日 〜 当月 closingDay 日の JST 終日まで）
+  const { firstDay, lastDay: lastDayStart } = getClosingPeriod(year, month, closingDay)
+  const lastDay = new Date(lastDayStart.getTime() + (14 * 60 + 59) * 60 * 1000 + 59999) // 締め日 23:59:59 JST
 
   const prevMonth = month === 1 ? 12 : month - 1
   const prevYear  = month === 1 ? year - 1 : year

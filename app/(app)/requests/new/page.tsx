@@ -29,7 +29,7 @@ const TYPE_OPTIONS: { value: RequestType; label: string }[] = [
   { value: "ABSENCE",        label: "遅刻・早退申請" },
   { value: "ABSENCE_ABSENT", label: "欠勤申請" },
   { value: "LEAVE_PAID",     label: "有給休暇申請" },
-  { value: "LEAVE_SUB",      label: "代休申請" },
+  { value: "LEAVE_SUB",      label: "振休申請" },
   { value: "CORRECTION",     label: "打刻修正申請" },
 ]
 
@@ -135,7 +135,7 @@ export default function NewRequestPage() {
         {/* 対象日 */}
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            {type === "LEAVE_SUB" ? "代休取得日" : "対象日"}
+            {type === "LEAVE_SUB" ? "振休取得日" : "対象日"}
           </label>
           <input
             type="date" name="targetDate" required
@@ -211,7 +211,7 @@ export default function NewRequestPage() {
           </div>
         )}
 
-        {/* 代休: 振替元出勤日 */}
+        {/* 振休: 振替元出勤日 */}
         {type === "LEAVE_SUB" && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">振替元の休日出勤日</label>

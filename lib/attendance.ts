@@ -169,9 +169,12 @@ export function applyRounding(
   opts: { roundEarly: boolean; roundNear: boolean },
 ): Date {
   if (!scheduled) return actual
-  // actual の日付部分（UTC）から JST 日付ベースを算出
+  // JST の日付 0:00 を UTC で表した基準日を算出
+  // 注意: 先に +9h して JST の日付部品を取ること。actual.getUTCDate() を直接使うと
+  // JST 0:00〜8:59 の打刻（UTC では前日）で基準日が1日ズレ、丸めが不発になる
+  const jst = new Date(actual.getTime() + 9 * 60 * 60 * 1000)
   const todayUTC = new Date(
-    Date.UTC(actual.getUTCFullYear(), actual.getUTCMonth(), actual.getUTCDate())
+    Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), jst.getUTCDate())
     - 9 * 60 * 60 * 1000,
   )
   const scheduledDate = hhmmToUTCDate(scheduled, todayUTC)

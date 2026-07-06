@@ -38,7 +38,11 @@
 
 セッション開始時・タスク着手前に必ず `docs/STATUS.md` を読むこと。
 
+**勤怠ロジックの修正指示（丸め・締め日・申請・計算・出力・表示条件）を受けたら、コードに触れる前に必ず skill `kintai-fix` を起動し、`docs/DOMAIN_MAP.md` を読むこと。**
+
 - `docs/STATUS.md` — 実装状況・タスクリスト・懸念事項・検討事項
+- `docs/DOMAIN_MAP.md` — ドメインルール要点（修正時必読・短い）
+- `docs/DOMAIN_REFERENCE.md` — ドメイン詳細（必要な節だけ参照。全読み禁止）
 - `docs/DESIGN.md` — 設計方針
 - `docs/requirements-meeting.md` — 要件定義
 - `docs/` 配下がドキュメントの正典。`.claude/` には指示のみ置く

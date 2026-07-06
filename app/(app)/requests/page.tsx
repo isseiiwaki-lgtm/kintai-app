@@ -39,7 +39,7 @@ function detailSummary(type: string, detail: unknown): string {
     }
     case "ABSENCE":  return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
     case "LEAVE": {
-      const lt = d.leaveType === "substitute" ? "代休" : "有給"
+      const lt = d.leaveType === "substitute" ? "振休" : "有給"
       const hd = d.halfDay === "am" ? "（午前）" : d.halfDay === "pm" ? "（午後）" : ""
       return `${lt}${hd}`
     }
