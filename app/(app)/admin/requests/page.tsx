@@ -4,7 +4,7 @@ import { RequestsTable } from "./_components/RequestsTable"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 import { getCurrentStep, isStepApprover, approvalProgress, type RouteStep } from "@/lib/approval"
 
-type SearchParams = Promise<{ year?: string; month?: string }>
+type SearchParams = Promise<{ year?: string; month?: string; sort?: string }>
 
 export default async function AdminRequestsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams
@@ -17,6 +17,7 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
   const def    = getDefaultClosingMonth(closingDay)
   const year   = Number(params.year  ?? def.year)
   const month  = Number(params.month ?? def.month)
+  const sort   = params.sort === "date" ? "date" as const : "user" as const // 既定は申請者順
 
   // 処理済みの締め期間（前月 closingDay+1 日 〜 当月 closingDay 日の JST 終日まで）
   const { firstDay, lastDay: lastDayStart } = getClosingPeriod(year, month, closingDay)
@@ -26,8 +27,10 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
   const prevYear  = month === 1 ? year - 1 : year
   const nextMonth = month === 12 ? 1 : month + 1
   const nextYear  = month === 12 ? year + 1 : year
-  const prevLink  = `/admin/requests?year=${prevYear}&month=${prevMonth}`
-  const nextLink  = `/admin/requests?year=${nextYear}&month=${nextMonth}`
+  const prevLink  = `/admin/requests?year=${prevYear}&month=${prevMonth}&sort=${sort}`
+  const nextLink  = `/admin/requests?year=${nextYear}&month=${nextMonth}&sort=${sort}`
+  const sortUserLink = `/admin/requests?year=${year}&month=${month}&sort=user`
+  const sortDateLink = `/admin/requests?year=${year}&month=${month}&sort=date`
 
   const [pendingRaw, processedRaw, routesRaw] = await Promise.all([
     prisma.request.findMany({
@@ -43,7 +46,10 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
         status:     { in: ["APPROVED", "REJECTED"] },
         targetDate: { gte: firstDay, lte: lastDay },
       },
-      orderBy: { targetDate: "desc" },
+      // 申請者順（人ごと→対象日降順でグルーピング）/ 対象日順を切替
+      orderBy: sort === "user"
+        ? [{ user: { name: "asc" as const } }, { targetDate: "desc" as const }]
+        : [{ targetDate: "desc" as const }],
       include: { user: { select: { name: true, email: true } } },
     }),
     prisma.approvalRoute.findMany({ select: { department: true, step: true, approverId: true } }),
@@ -100,7 +106,7 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
       <RequestsTable
         pending={pending}
         processed={processed}
-        processedNav={{ year, month, prevLink, nextLink }}
+        processedNav={{ year, month, prevLink, nextLink, sort, sortUserLink, sortDateLink }}
       />
     </div>
   )

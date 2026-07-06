@@ -177,7 +177,7 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
 
 const TableHeader = () => (
   <tr className="border-b border-gray-100 text-xs text-gray-400 bg-gray-50">
-    <th className="text-left px-4 py-3 font-medium">申請者</th>
+    <th className="text-left px-3 py-3 font-medium whitespace-nowrap">申請者</th>
     <th className="text-left px-3 py-3 font-medium">種別</th>
     <th className="text-left px-3 py-3 font-medium">申請日</th>
     <th className="text-left px-3 py-3 font-medium">対象日</th>
@@ -190,7 +190,15 @@ const TableHeader = () => (
 
 import Link from "next/link"
 
-type ProcessedNav = { year: number; month: number; prevLink: string; nextLink: string }
+type ProcessedNav = {
+  year: number
+  month: number
+  prevLink: string
+  nextLink: string
+  sort: "user" | "date"
+  sortUserLink: string
+  sortDateLink: string
+}
 
 export function RequestsTable({
   pending,
@@ -246,14 +254,23 @@ export function RequestsTable({
     })
   }
 
-  const Row = ({ r, showApproveActions }: { r: ReqRow; showApproveActions: boolean }) => {
+  const Row = ({ r, showApproveActions, groupStart, repeatUser }: {
+    r: ReqRow
+    showApproveActions: boolean
+    groupStart?: boolean  // 申請者順表示で申請者が切り替わる行（区切り線を濃く）
+    repeatUser?: boolean  // 直前行と同一申請者（名前を薄く省略表示）
+  }) => {
     const status = STATUS_LABEL[r.status] ?? STATUS_LABEL.PENDING
     // 多段階承認の進捗（審査中 1/2 のように表示）
     const progress = r.status === "PENDING" && r.approvalTotal ? ` ${r.approvalDone}/${r.approvalTotal}` : ""
     return (
-      <tr className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
-        <td className="px-4 py-2.5 text-gray-800 font-medium">{r.user.name ?? r.user.email}</td>
-        <td className="px-3 py-2.5 text-gray-700">{typeLabel(r.type, r.detail)}</td>
+      <tr className={`border-b border-gray-50 last:border-0 hover:bg-gray-50 ${groupStart ? "border-t border-t-gray-200" : ""}`}>
+        <td className="px-3 py-2.5 text-gray-800 font-medium whitespace-nowrap">
+          {repeatUser
+            ? <span className="text-gray-300">〃</span>
+            : (r.user.name ?? r.user.email)}
+        </td>
+        <td className="px-3 py-2.5 text-gray-700 whitespace-nowrap">{typeLabel(r.type, r.detail)}</td>
         <td className="px-3 py-2.5 text-gray-500 font-mono text-xs whitespace-nowrap">{formatDate(r.createdAt)}</td>
         <td className="px-3 py-2.5 text-gray-600 font-mono text-xs whitespace-nowrap">{formatDate(r.targetDate)}</td>
         <td className="px-3 py-2.5 text-gray-500 text-xs min-w-[120px]">{detailSummary(r.type, r.detail)}</td>
@@ -337,9 +354,26 @@ export function RequestsTable({
         <h2 className="text-sm font-medium text-gray-700">
           処理済み — {processedNav.year}年{processedNav.month}月 ({processed.length}件)
         </h2>
-        <div className="flex items-center gap-1">
-          <Link href={processedNav.prevLink} className="p-1.5 rounded hover:bg-gray-100 text-gray-500 text-xs">◀</Link>
-          <Link href={processedNav.nextLink} className="p-1.5 rounded hover:bg-gray-100 text-gray-500 text-xs">▶</Link>
+        <div className="flex items-center gap-2">
+          {/* 並び順切替 */}
+          <div className="flex items-center rounded-lg border border-gray-200 overflow-hidden text-xs">
+            <Link
+              href={processedNav.sortUserLink}
+              className={`px-2.5 py-1 ${processedNav.sort === "user" ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-500 hover:bg-gray-50"}`}
+            >
+              申請者順
+            </Link>
+            <Link
+              href={processedNav.sortDateLink}
+              className={`px-2.5 py-1 border-l border-gray-200 ${processedNav.sort === "date" ? "bg-blue-50 text-blue-700 font-medium" : "text-gray-500 hover:bg-gray-50"}`}
+            >
+              対象日順
+            </Link>
+          </div>
+          <div className="flex items-center gap-1">
+            <Link href={processedNav.prevLink} className="p-1.5 rounded hover:bg-gray-100 text-gray-500 text-xs">◀</Link>
+            <Link href={processedNav.nextLink} className="p-1.5 rounded hover:bg-gray-100 text-gray-500 text-xs">▶</Link>
+          </div>
         </div>
       </div>
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
@@ -348,7 +382,19 @@ export function RequestsTable({
           <tbody>
             {processed.length === 0
               ? <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-400">この月の処理済み申請はありません</td></tr>
-              : processed.map(r => <Row key={r.id} r={r} showApproveActions={false} />)
+              : processed.map((r, i) => {
+                  // 申請者順のときは同一申請者をグルーピング表示
+                  const sameAsPrev = processedNav.sort === "user" && i > 0 && processed[i - 1].user.email === r.user.email
+                  return (
+                    <Row
+                      key={r.id}
+                      r={r}
+                      showApproveActions={false}
+                      groupStart={processedNav.sort === "user" && i > 0 && !sameAsPrev}
+                      repeatUser={sameAsPrev}
+                    />
+                  )
+                })
             }
           </tbody>
         </table>
