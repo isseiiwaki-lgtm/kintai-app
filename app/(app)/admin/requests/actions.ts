@@ -5,28 +5,40 @@ import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { formatHHMMfromDate, applyRounding } from "@/lib/attendance"
 import { calcLegalBreak } from "@/config/attendance.config"
+import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
 
 async function checkAdmin() {
   const session = await auth()
   const role = session?.user?.role
   if (role !== "ADMIN" && role !== "APPROVER") throw new Error("Forbidden")
-  return session!.user!.id!
+  return { userId: session!.user!.id!, role }
 }
 
-export async function actionApproveRequest(id: string) {
-  const changedById = await checkAdmin()
-
-  const req = await prisma.request.findUnique({
+function findRequest(id: string) {
+  return prisma.request.findUnique({
     where: { id },
-    include: { user: { select: { workStartTime: true, workEndTime: true, employmentType: true } } },
+    include: { user: { select: { workStartTime: true, workEndTime: true, employmentType: true, department: true } } },
   })
-  if (!req) return
+}
 
-  await prisma.request.update({
-    where: { id },
-    data: { status: "APPROVED" },
+/** 申請者の部署の承認経路（未設定なら空配列 = 従来の一段階承認） */
+function findRoute(department: string | null) {
+  if (!department) return Promise.resolve([])
+  return prisma.approvalRoute.findMany({
+    where: { department },
+    orderBy: { step: "asc" },
+    select: { step: true, approverId: true },
   })
+}
 
+/**
+ * 承認確定時の勤怠反映（最終ステップ承認時のみ呼ぶ）
+ * 欠勤 → isAbsent / 有給 → paidLeaveMinutes / 打刻修正 → 対象フィールド更新 + ChangeLog
+ */
+async function applyRequestEffects(
+  req: NonNullable<Awaited<ReturnType<typeof findRequest>>>,
+  changedById: string,
+) {
   const detail = req.detail as Record<string, string> | null
 
   // 欠勤承認時: AttendanceRecord に反映
@@ -141,18 +153,111 @@ export async function actionApproveRequest(id: string) {
       revalidatePath("/records")
     }
   }
+}
 
+export async function actionApproveRequest(id: string) {
+  const { userId: changedById, role } = await checkAdmin()
+
+  const req = await findRequest(id)
+  if (!req || req.status !== "PENDING") return
+
+  const route = await findRoute(req.user.department)
+
+  if (route.length > 0) {
+    // 多段階承認: 現在ステップの担当承認者（or ADMIN）のみ承認可
+    const approvals = await prisma.approval.findMany({
+      where: { requestId: id },
+      select: { step: true, action: true },
+    })
+    const cur = getCurrentStep(route, approvals)
+    if (cur === null) return // 全ステップ消化済み（通常到達しない）
+    if (role !== "ADMIN" && !isStepApprover(route, cur, changedById)) {
+      throw new Error("Forbidden: 現在の承認ステップの担当者ではありません")
+    }
+    await prisma.approval.create({
+      data: { requestId: id, approverId: changedById, step: cur, action: "APPROVED" },
+    })
+    if (!isFinalStep(route, cur)) {
+      // 中間承認: 申請は PENDING のまま次ステップの承認待ち
+      revalidatePath("/admin/requests")
+      return
+    }
+  } else {
+    // 経路未設定の部署: 従来の一段階承認（監査用にログは残す）
+    await prisma.approval.create({
+      data: { requestId: id, approverId: changedById, step: 1, action: "APPROVED" },
+    })
+  }
+
+  await prisma.request.update({ where: { id }, data: { status: "APPROVED" } })
+  await applyRequestEffects(req, changedById)
+  revalidatePath("/admin/requests")
+}
+
+/** 飛び越し承認（ADMIN 専用）: 未消化ステップを SKIPPED で一括消化し最終承認まで進める */
+export async function actionForceApproveRequest(id: string) {
+  const { userId: changedById, role } = await checkAdmin()
+  if (role !== "ADMIN") throw new Error("Forbidden: 飛び越し承認は ADMIN のみ")
+
+  const req = await findRequest(id)
+  if (!req || req.status !== "PENDING") return
+
+  const route = await findRoute(req.user.department)
+  if (route.length > 0) {
+    const approvals = await prisma.approval.findMany({
+      where: { requestId: id },
+      select: { step: true, action: true },
+    })
+    const done = new Set(
+      approvals.filter(a => a.action === "APPROVED" || a.action === "SKIPPED").map(a => a.step),
+    )
+    const finalStep = Math.max(...route.map(r => r.step))
+    const logs = route
+      .filter(r => !done.has(r.step))
+      .map(r => ({
+        requestId:  id,
+        approverId: changedById,
+        step:       r.step,
+        action:     (r.step === finalStep ? "APPROVED" : "SKIPPED") as "APPROVED" | "SKIPPED",
+      }))
+    if (logs.length > 0) await prisma.approval.createMany({ data: logs })
+  } else {
+    await prisma.approval.create({
+      data: { requestId: id, approverId: changedById, step: 1, action: "APPROVED" },
+    })
+  }
+
+  await prisma.request.update({ where: { id }, data: { status: "APPROVED" } })
+  await applyRequestEffects(req, changedById)
   revalidatePath("/admin/requests")
 }
 
 export async function actionRejectRequest(id: string) {
-  await checkAdmin()
+  const { userId: changedById, role } = await checkAdmin()
 
-  const req = await prisma.request.findUnique({
-    where: { id },
-    include: { user: { select: { workStartTime: true, employmentType: true } } },
+  const req = await findRequest(id)
+  if (!req || req.status !== "PENDING") return
+
+  // 多段階経路がある場合、却下も現在ステップの担当承認者（or ADMIN）のみ
+  const route = await findRoute(req.user.department)
+  let step = 1
+  if (route.length > 0) {
+    const approvals = await prisma.approval.findMany({
+      where: { requestId: id },
+      select: { step: true, action: true },
+    })
+    const cur = getCurrentStep(route, approvals)
+    if (cur !== null) {
+      if (role !== "ADMIN" && !isStepApprover(route, cur, changedById)) {
+        throw new Error("Forbidden: 現在の承認ステップの担当者ではありません")
+      }
+      step = cur
+    }
+  }
+
+  await prisma.approval.create({
+    data: { requestId: id, approverId: changedById, step, action: "REJECTED" },
   })
-
   await prisma.request.update({
     where: { id },
     data: { status: "REJECTED" },

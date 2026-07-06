@@ -101,7 +101,8 @@ const adminItems: NavItem[] = [
 ]
 
 const adminOnlyItems: NavItem[] = [
-  { href: "/admin/settings", label: "会社設定", icon: GearIcon },
+  { href: "/admin/approval-routes", label: "承認経路", icon: CheckIcon },
+  { href: "/admin/settings",        label: "会社設定", icon: GearIcon  },
 ]
 
 type Props = {

@@ -1,12 +1,17 @@
 import { prisma } from "@/lib/prisma"
-import Link from "next/link"
+import { auth } from "@/auth"
 import { RequestsTable } from "./_components/RequestsTable"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
+import { getCurrentStep, isStepApprover, approvalProgress, type RouteStep } from "@/lib/approval"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
 
 export default async function AdminRequestsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams
+  const session = await auth()
+  const sessionUserId = session?.user?.id ?? ""
+  const isAdmin = session?.user?.role === "ADMIN"
+
   const setting    = await prisma.setting.findUnique({ where: { id: 1 } })
   const closingDay = setting?.closingDay ?? 25
   const def    = getDefaultClosingMonth(closingDay)
@@ -24,11 +29,14 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
   const prevLink  = `/admin/requests?year=${prevYear}&month=${prevMonth}`
   const nextLink  = `/admin/requests?year=${nextYear}&month=${nextMonth}`
 
-  const [pendingRaw, processedRaw] = await Promise.all([
+  const [pendingRaw, processedRaw, routesRaw] = await Promise.all([
     prisma.request.findMany({
       where:   { status: "PENDING" },
       orderBy: { createdAt: "asc" },
-      include: { user: { select: { name: true, email: true } } },
+      include: {
+        user:      { select: { name: true, email: true, department: true } },
+        approvals: { select: { step: true, action: true } },
+      },
     }),
     prisma.request.findMany({
       where: {
@@ -38,17 +46,53 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
       orderBy: { targetDate: "desc" },
       include: { user: { select: { name: true, email: true } } },
     }),
+    prisma.approvalRoute.findMany({ select: { department: true, step: true, approverId: true } }),
   ])
 
-  const serialize = <T extends typeof pendingRaw[number]>(r: T) => ({
-    ...r,
-    targetDate: r.targetDate.toISOString(),
-    createdAt:  r.createdAt.toISOString(),
-    detail:     r.detail as Record<string, string> | null,
+  // 部署 → 承認経路
+  const routesByDept = new Map<string, RouteStep[]>()
+  for (const r of routesRaw) {
+    const list = routesByDept.get(r.department) ?? []
+    list.push({ step: r.step, approverId: r.approverId })
+    routesByDept.set(r.department, list)
+  }
+
+  const pending = pendingRaw.map(r => {
+    const route = (r.user.department && routesByDept.get(r.user.department)) || []
+    const cur = getCurrentStep(route, r.approvals)
+    const progress = approvalProgress(route, r.approvals)
+    // 承認可否: ADMIN は常に可。経路ありは現在ステップ担当者のみ、経路なしは従来どおり APPROVER も可
+    const canApprove =
+      isAdmin ||
+      (route.length > 0
+        ? cur !== null && isStepApprover(route, cur, sessionUserId)
+        : true)
+    return {
+      id:         r.id,
+      type:       r.type as string,
+      status:     r.status as string,
+      targetDate: r.targetDate.toISOString(),
+      createdAt:  r.createdAt.toISOString(),
+      reason:     r.reason,
+      detail:     r.detail as Record<string, string> | null,
+      user:       { name: r.user.name, email: r.user.email },
+      approvalDone:  route.length > 0 ? progress.done  : null,
+      approvalTotal: route.length > 0 ? progress.total : null,
+      canApprove,
+      canForce: isAdmin && route.length > 0 && progress.total - progress.done > 1, // 残り2ステップ以上で飛び越しに意味がある
+    }
   })
 
-  const pending   = pendingRaw.map(serialize)
-  const processed = processedRaw.map(serialize)
+  const processed = processedRaw.map(r => ({
+    id:         r.id,
+    type:       r.type as string,
+    status:     r.status as string,
+    targetDate: r.targetDate.toISOString(),
+    createdAt:  r.createdAt.toISOString(),
+    reason:     r.reason,
+    detail:     r.detail as Record<string, string> | null,
+    user:       { name: r.user.name, email: r.user.email },
+  }))
 
   return (
     <div className="p-4 lg:p-6">

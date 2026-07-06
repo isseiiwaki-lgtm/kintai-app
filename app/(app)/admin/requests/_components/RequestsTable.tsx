@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react"
 import {
   actionApproveRequest,
+  actionForceApproveRequest,
   actionRejectRequest,
   actionUpdateRequest,
   actionDeleteRequest,
@@ -91,6 +92,11 @@ export type ReqRow = {
   reason: string | null
   detail: Record<string, string> | null
   user: { name: string | null; email: string }
+  // 多段階承認（申請者の部署に承認経路がある場合のみ設定される）
+  approvalDone?:  number | null // 消化済みステップ数
+  approvalTotal?: number | null // 総ステップ数
+  canApprove?: boolean          // 現在ステップの担当承認者 or ADMIN
+  canForce?: boolean            // 飛び越し承認可（ADMIN・残り2ステップ以上）
 }
 
 type EditState = {
@@ -232,8 +238,18 @@ export function RequestsTable({
     })
   }
 
+  function handleForceApprove(r: ReqRow) {
+    const who = r.user.name ?? r.user.email
+    if (!window.confirm(`${who} の申請を飛び越し承認しますか？\n（未消化の承認ステップをスキップして承認を確定します）`)) return
+    startTransition(async () => {
+      await actionForceApproveRequest(r.id)
+    })
+  }
+
   const Row = ({ r, showApproveActions }: { r: ReqRow; showApproveActions: boolean }) => {
     const status = STATUS_LABEL[r.status] ?? STATUS_LABEL.PENDING
+    // 多段階承認の進捗（審査中 1/2 のように表示）
+    const progress = r.status === "PENDING" && r.approvalTotal ? ` ${r.approvalDone}/${r.approvalTotal}` : ""
     return (
       <tr className="border-b border-gray-50 last:border-0 hover:bg-gray-50">
         <td className="px-4 py-2.5 text-gray-800 font-medium">{r.user.name ?? r.user.email}</td>
@@ -244,12 +260,16 @@ export function RequestsTable({
         <td className="px-3 py-2.5 text-gray-500 text-xs min-w-[160px]">{r.reason ?? ""}</td>
         <td className="px-3 py-2.5 text-center">
           <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${status.className}`}>
-            {status.label}
+            {status.label}{progress}
           </span>
         </td>
         <td className="px-3 py-2.5 w-[120px]">
           <div className="flex gap-1.5">
             {showApproveActions ? (
+              r.canApprove === false ? (
+                // 他ステップの承認者担当分（自分は操作不可）
+                <span className="text-xs text-gray-400 whitespace-nowrap">他の承認者待ち</span>
+              ) : (
               <>
                 <form action={actionApproveRequest.bind(null, r.id)}>
                   <button type="submit" className="px-2.5 py-1 rounded text-xs font-medium bg-green-600 hover:bg-green-700 text-white transition-colors whitespace-nowrap">
@@ -261,7 +281,19 @@ export function RequestsTable({
                     却下
                   </button>
                 </form>
+                {r.canForce && (
+                  <button
+                    type="button"
+                    onClick={() => handleForceApprove(r)}
+                    disabled={isPending}
+                    title="未消化の承認ステップをスキップして承認を確定（ADMIN専用）"
+                    className="px-2.5 py-1 rounded text-xs font-medium bg-white border border-green-400 hover:bg-green-50 text-green-700 transition-colors whitespace-nowrap disabled:opacity-50"
+                  >
+                    飛越承認
+                  </button>
+                )}
               </>
+              )
             ) : (
               <>
                 <button
