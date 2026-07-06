@@ -74,6 +74,7 @@
 ## 変更履歴
 
 ### 2026-07-06
+- **VPSデプロイ完了** — 本日分すべて本番反映済み（migration `add_approval_route` 適用確認済み）。障害対応: pm2 管理外の野良 next-server（6/17起動）がポート3000を占有し旧ビルドを配信していたのを除去・`pm2 save`。詳細 `docs/DEPLOY_CHECKLIST.md` §5。多段階承認は経路未登録＝従来動作のまま、実地確認後に経路登録して運用開始予定
 - **バグ修正: 打刻丸めTZズレ** — `applyRounding` の基準日算出が `getUTCDate()` 先行で JST 0:00〜8:59 の打刻（=UTC前日）時に1日ズレ、朝の丸め（定時前丸め・前後14分丸め）が全滅していた。+9h→日付部品→−9h 方式に修正（`lib/attendance.ts`）。境界値7ケース検証済
 - **締め期間の共通化・統一** — `lib/closing.ts` 新設（`getClosingPeriod`/`getDefaultClosingMonth`/`listClosingPeriodDates`）。暦月だった `/admin/requests`（申請承認）と `/api/admin/export-xlsx` を締め期間単位に統一
 - **Excel出力改善** — ①対象者を role 基準（ADMIN/APPROVER除外）→部署基準（管理者/管理職のみ除外）に変更し一覧・承認画面と統一。②有給使用合計（日/時間）をヘッダに追加。③日次有給日数の半日判定 truthy バグ修正（全日 "full" が 0.5 と誤カウントされていた）

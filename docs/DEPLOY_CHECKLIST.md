@@ -1,7 +1,7 @@
 # デプロイ前チェックリスト
 
 VPS（<https://kintai.iwaki-i.online>）反映前に必ず全項目を確認する。
-※ デプロイ実体（deploy.sh 等）は VPS 上にあり本リポジトリ未収録。手順が実態と異なる場合はこのファイルを実態に合わせて更新すること。
+※ デプロイ実体は VPS の `~/deploy.sh`（本リポジトリ未収録）。接続情報・運用メモは `.resource/.secret/.for-human.md` 参照。
 
 ## 1. ローカル検証（コミット前）
 
@@ -20,11 +20,12 @@ VPS（<https://kintai.iwaki-i.online>）反映前に必ず全項目を確認す�
 
 ## 3. VPS 反映
 
-- [ ] git pull（VPS 側）
-- [ ] `npm ci`（依存変更があった場合）
-- [ ] `npx prisma migrate deploy`（migration がある場合。**実行前に DB バックアップ**）
-- [ ] `npm run build`
-- [ ] pm2 restart（プロセス名は VPS の pm2 list で確認）
+- [ ] git push 済み（VPS は origin から pull する）
+- [ ] migration がある場合: **実行前に DB バックアップ** `pg_dump -h 127.0.0.1 -U ippcdb db_kintai > ~/backup_$(date +%Y%m%d).sql`
+- [ ] `ssh -i "C:\Users\kumag\.ssh\kagoya\kagoya.key" ubuntu@133.18.123.23` でログインし `bash ~/deploy.sh` を実行
+      （git pull → npm ci → prisma generate → migrate deploy → build → pm2 restart を一括実行）
+- [ ] 注意: pm2 のプロセス名は `kintai`・**ubuntu ユーザーで操作**（`sudo pm2` は root 側の別リストを見てしまう）
+- [ ] ログ確認: `pm2 logs kintai --lines 50` にエラーがない
 
 ## 4. 反映後スモーク確認（本番画面）
 
@@ -34,7 +35,15 @@ VPS（<https://kintai.iwaki-i.online>）反映前に必ず全項目を確認す�
 - [ ] 管理者: 勤務状況一覧・申請承認・Excel出力が開ける
 - [ ] 今回変更した機能の動作を実データで1件確認（例: 丸め変更なら翌朝の実打刻で確認）
 
-## 5. ロールバック方針
+## 5. トラブルシュート（実例）
+
+- **デプロイしたのに旧画面のまま / CSSが崩れる / pm2 restart が効かない**（2026-07-06 発生）
+  - 原因: pm2 管理外の野良 `next start` がポート3000を占有し旧ビルドを配信、pm2 側は EADDRINUSE で起動失敗ループ
+  - 確認: `ss -ltnp | grep 3000`（PIDを見る）+ `pm2 logs kintai --lines 20`（EADDRINUSE が出ていないか）
+  - 処置: 野良プロセスを `kill <PID>` → `pm2 restart kintai` → `pm2 save`
+- pm2 に kintai が見えない → `sudo pm2` を使っていないか確認（root側の別リストを見てしまう。**ubuntu ユーザーで操作**）
+
+## 6. ロールバック方針
 
 - 反映後に不具合発見 → git revert して再デプロイ（migration を伴う場合は要個別判断・DB バックアップから復旧）
 - 計算式変更で誤集計が保存された場合 → 修正後に `POST /api/admin/recalculate` で再計算（丸めは再適用されない点に注意）
