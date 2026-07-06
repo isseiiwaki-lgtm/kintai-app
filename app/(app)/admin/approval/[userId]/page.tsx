@@ -5,6 +5,7 @@ import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes } from "@/lib/attendance"
 import { calcLegalBreak } from "@/config/attendance.config"
+import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 type Params      = Promise<{ userId: string }>
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -38,19 +39,11 @@ export default async function UserApprovalPage({
   const setting    = await prisma.setting.findUnique({ where: { id: 1 } })
   const closingDay = setting?.closingDay ?? 25
 
-  const todayDate    = now.getUTCDate()
-  const defaultYear  = todayDate > closingDay
-    ? (now.getUTCMonth() === 11 ? now.getUTCFullYear() + 1 : now.getUTCFullYear())
-    : now.getUTCFullYear()
-  const defaultMonth = todayDate > closingDay
-    ? (now.getUTCMonth() + 2 > 12 ? 1 : now.getUTCMonth() + 2)
-    : now.getUTCMonth() + 1
+  const def   = getDefaultClosingMonth(closingDay)
+  const year  = Number(params.year  ?? def.year)
+  const month = Number(params.month ?? def.month)
 
-  const year  = Number(params.year  ?? defaultYear)
-  const month = Number(params.month ?? defaultMonth)
-
-  const firstDay = new Date(Date.UTC(year, month - 2, closingDay + 1))
-  const lastDay  = new Date(Date.UTC(year, month - 1, closingDay))
+  const { firstDay, lastDay } = getClosingPeriod(year, month, closingDay)
 
   const prevMonth = month === 1 ? 12 : month - 1
   const prevYear  = month === 1 ? year - 1 : year
@@ -151,6 +144,7 @@ export default async function UserApprovalPage({
       earlyLeaveMinutes: metrics.earlyLeaveMinutes,
       nightMinutes,
       goOutMins,
+      note:        r.note,
       status:      r.status,
       displayStatus: getDisplayStatus(r.status, needsReview),
       isAbsent:    r.isAbsent,

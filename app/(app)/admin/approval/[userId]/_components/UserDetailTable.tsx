@@ -19,6 +19,7 @@ type Rec = {
   earlyLeaveMinutes: number
   nightMinutes:      number
   goOutMins:         number | null   // null = 外出中
+  note:          string | null   // 当日コメント（本人が打刻画面で入力）
   status:        string
   displayStatus: { label: string; className: string }
   isAbsent:      boolean
@@ -126,6 +127,7 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
               <th className="text-center px-3 py-3 font-medium">深夜</th>
               <th className="text-center px-3 py-3 font-medium">遅刻</th>
               <th className="text-center px-3 py-3 font-medium">早退</th>
+              <th className="text-left px-3 py-3 font-medium">備考</th>
               <th className="text-center px-3 py-3 font-medium">状態</th>
               <th className="px-3 py-3 font-medium w-[72px]"></th>
             </tr>
@@ -163,6 +165,11 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                   </td>
                   <td className={`px-3 py-2.5 text-center font-mono text-xs ${rec.earlyLeaveMinutes > 0 ? "text-amber-600 font-medium" : "text-gray-300"}`}>
                     {rec.earlyLeaveMinutes > 0 ? fmtMin(rec.earlyLeaveMinutes) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-left text-xs text-gray-500 max-w-[160px]">
+                    {rec.note
+                      ? <span className="block truncate" title={rec.note}>{rec.note}</span>
+                      : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-2.5 text-center">
                     {rec.isAbsent ? (

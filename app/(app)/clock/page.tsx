@@ -20,6 +20,7 @@ export default async function ClockPage() {
         clockIn: true, clockOut: true,
         goOutAt: true, returnAt: true,
         breakStart: true, breakEnd: true,
+        note: true,
       },
     }),
     prisma.user.findUnique({

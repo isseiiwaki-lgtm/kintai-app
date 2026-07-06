@@ -9,6 +9,7 @@ import {
   actionReturn,
   actionBreakStart,
   actionBreakEnd,
+  actionSaveNote,
 } from "@/app/(app)/clock/actions"
 
 type ClockRecord = {
@@ -18,6 +19,7 @@ type ClockRecord = {
   returnAt:   Date | null
   breakStart: Date | null
   breakEnd:   Date | null
+  note?:      string | null
 }
 
 type Props = {
@@ -81,6 +83,7 @@ export function ClockButtons({ record, employmentType }: Props) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [now, setNow] = useState<Date | null>(null)
+  const [note, setNote] = useState(record?.note ?? "")
 
   useEffect(() => {
     setNow(new Date())
@@ -186,6 +189,33 @@ export function ClockButtons({ record, employmentType }: Props) {
         {isPending && (
           <p className="text-center text-xs text-gray-400 mt-2">処理中...</p>
         )}
+      </div>
+
+      {/* 当日コメント（申請にならない当日事情の連絡用。管理者が承認画面で確認する） */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-1">当日コメント</h2>
+        <p className="text-xs text-gray-400 mb-2">申請するほどではない当日の事情を管理者へ伝えられます（例: 健康診断のため午後から出勤）</p>
+        <textarea
+          value={note}
+          onChange={e => setNote(e.target.value)}
+          maxLength={200}
+          rows={2}
+          placeholder="未入力"
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-400 resize-none"
+        />
+        <div className="flex items-center justify-end gap-2 mt-1.5">
+          {note === (record?.note ?? "") && (record?.note ?? "") !== "" && (
+            <span className="text-xs text-green-600">保存済み</span>
+          )}
+          <button
+            type="button"
+            disabled={isPending || note === (record?.note ?? "")}
+            onClick={() => run(() => actionSaveNote(note))}
+            className="px-4 py-1.5 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-100 disabled:text-gray-300 transition-colors"
+          >
+            保存
+          </button>
+        </div>
       </div>
     </div>
   )

@@ -151,3 +151,16 @@ export async function actionBreakEnd() {
   })
   revalidatePath("/clock")
 }
+
+/** 当日コメント保存（申請にならない当日事情の連絡用。出勤打刻前でも保存できるよう upsert） */
+export async function actionSaveNote(note: string) {
+  const userId = await getUserId()
+  const today = todayJST()
+  const trimmed = note.trim().slice(0, 200)
+  await prisma.attendanceRecord.upsert({
+    where: { userId_date: { userId, date: today } },
+    create: { userId, date: today, note: trimmed || null },
+    update: { note: trimmed || null },
+  })
+  revalidatePath("/clock")
+}
