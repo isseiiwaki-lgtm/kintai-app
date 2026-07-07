@@ -36,15 +36,17 @@ export async function actionClockIn() {
       select: { id: true },
     }),
   ])
-  const clockIn = applyRounding(new Date(), user?.workStartTime ?? null, {
+  // 生打刻（丸め前の実時刻）は証跡として常に保存する
+  const rawClockIn = new Date()
+  const clockIn = applyRounding(rawClockIn, user?.workStartTime ?? null, {
     roundEarly: earlyStartReq ? false : (setting?.roundEarlyClockIn ?? false),
     // 早出申請がある日は roundNear も無効（定時前打刻を定時に吸収しないため）
     roundNear:  earlyStartReq ? false : (setting?.roundNearClockTime ?? false),
   })
   await prisma.attendanceRecord.upsert({
     where: { userId_date: { userId, date: today } },
-    create: { userId, date: today, clockIn },
-    update: { clockIn },
+    create: { userId, date: today, clockIn, rawClockIn },
+    update: { clockIn, rawClockIn },
   })
   revalidatePath("/clock")
   revalidatePath("/")
@@ -73,7 +75,9 @@ export async function actionClockOut() {
     }),
   ])
   if (!record?.clockIn) throw new Error("出勤打刻がありません")
-  const now = applyRounding(new Date(), user?.workEndTime ?? null, {
+  // 生打刻（丸め前の実時刻）は証跡として常に保存する
+  const rawClockOut = new Date()
+  const now = applyRounding(rawClockOut, user?.workEndTime ?? null, {
     roundEarly: false,
     // 残業申請がある日は roundNear を無効（定時付近の打刻を定時に吸収しないため）
     roundNear:  overtimeReq ? false : (setting?.roundNearClockTime ?? false),
@@ -106,7 +110,7 @@ export async function actionClockOut() {
 
   await prisma.attendanceRecord.update({
     where: { userId_date: { userId, date: today } },
-    data: { clockOut: now, workingMinutes, overtimeMinutes },
+    data: { clockOut: now, rawClockOut, workingMinutes, overtimeMinutes },
   })
   revalidatePath("/clock")
   revalidatePath("/")

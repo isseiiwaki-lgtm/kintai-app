@@ -10,6 +10,8 @@ type Rec = {
   dateLabel: string        // "4/1（月）"
   clockIn:    string | null
   clockOut:   string | null
+  rawClockIn:  string | null   // 生打刻（丸め前）。丸めと差がある日のみ併記表示
+  rawClockOut: string | null
   breakStart: string | null
   breakEnd:   string | null
   goOutAt:    string | null
@@ -145,8 +147,18 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                   }`}
                 >
                   <td className="px-4 py-2.5 text-gray-700">{rec.dateLabel}</td>
-                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{rec.clockIn ?? "—"}</td>
-                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{rec.clockOut ?? "—"}</td>
+                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">
+                    {rec.clockIn ?? "—"}
+                    {rec.rawClockIn && rec.rawClockIn !== rec.clockIn && (
+                      <span className="block text-[10px] text-gray-400 leading-tight">実 {rec.rawClockIn}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">
+                    {rec.clockOut ?? "—"}
+                    {rec.rawClockOut && rec.rawClockOut !== rec.clockOut && (
+                      <span className="block text-[10px] text-gray-400 leading-tight">実 {rec.rawClockOut}</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 text-center font-mono text-gray-500 text-xs">
                     {rec.goOutMins === null ? "外出中" : rec.goOutMins > 0 ? fmtMin(rec.goOutMins) : "—"}
                   </td>

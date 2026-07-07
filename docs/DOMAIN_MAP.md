@@ -21,6 +21,7 @@
   - `roundEarlyClockIn`: 定時前打刻→定時扱い。**出勤のみ**
   - `roundNearClockTime`: 定時±14分→定時きっかり。出勤・退勤両方
   - 実体は `lib/attendance.ts` `applyRounding()`。roundEarly→roundNear の順で評価
+  - **生打刻**: 丸め前の実時刻を `rawClockIn/rawClockOut` に打刻時のみ常時保存（証跡用・手入力や修正申請では書かれない）。`originalClockIn/Out`（修正前値）とは別概念。表示は差がある日のみ /records・承認詳細に併記、Excel 非出力
 - **締め日**: `Setting.closingDay`（既定25）。締め期間 = 前月(closingDay+1)日〜当月closingDay日。
   計算は `lib/closing.ts` の共通関数を使う。**新規に日付範囲を書くとき暦月ベタ書き禁止**
 - **残業の二重基準**: 打刻時保存値=法定8h(480分)超過分。承認・表示時=所定時間超過分。「残業計算を直す」は両方の確認要

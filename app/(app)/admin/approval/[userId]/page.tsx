@@ -135,6 +135,8 @@ export default async function UserApprovalPage({
       dateLabel:   `${dm}/${dd}（${WEEKDAY[dow]}）`,
       clockIn:     formatHHMM(r.clockIn),
       clockOut:    formatHHMM(r.clockOut),
+      rawClockIn:  formatHHMM(r.rawClockIn),
+      rawClockOut: formatHHMM(r.rawClockOut),
       breakStart:  formatHHMM(r.breakStart),
       breakEnd:    formatHHMM(r.breakEnd),
       goOutAt:     formatHHMM(r.goOutAt),

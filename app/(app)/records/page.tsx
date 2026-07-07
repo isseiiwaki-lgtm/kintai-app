@@ -30,6 +30,14 @@ function fmtDur(min: number | null | undefined): string {
   return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`
 }
 
+/** 生打刻（丸め前）が記録時刻と異なる場合のみ小さく併記する */
+function RawTime({ recorded, raw }: { recorded: Date | null | undefined; raw: Date | null | undefined }) {
+  if (!recorded || !raw) return null
+  const label = formatTime(raw)
+  if (label === formatTime(recorded)) return null
+  return <span className="block text-[10px] text-gray-400 leading-tight">実 {label}</span>
+}
+
 const WEEKDAY = ["日", "月", "火", "水", "木", "金", "土"]
 
 export default async function RecordsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -261,9 +269,11 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   </td>
                   <td className={`px-2 py-2 text-center font-mono text-xs ${needsReview && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
                     {formatTime(rec?.clockIn)}
+                    <RawTime recorded={rec?.clockIn} raw={rec?.rawClockIn} />
                   </td>
                   <td className={`px-2 py-2 text-center font-mono text-xs ${needsReview && !rec?.clockOut && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
                     {formatTime(rec?.clockOut)}
+                    <RawTime recorded={rec?.clockOut} raw={rec?.rawClockOut} />
                   </td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-700">{fmtDur(rec?.workingMinutes)}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-500">{data ? fmtDur(data.breakMins) : "--"}</td>
@@ -345,11 +355,17 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   <div className="grid grid-cols-3 gap-2 text-center text-xs mb-1.5">
                     <div>
                       <p className="text-gray-400">出勤</p>
-                      <p className={`font-mono ${needsReview && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-800"}`}>{formatTime(rec.clockIn)}</p>
+                      <p className={`font-mono ${needsReview && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-800"}`}>
+                        {formatTime(rec.clockIn)}
+                        <RawTime recorded={rec.clockIn} raw={rec.rawClockIn} />
+                      </p>
                     </div>
                     <div>
                       <p className="text-gray-400">退勤</p>
-                      <p className={`font-mono ${needsReview && !rec.clockOut && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-800"}`}>{formatTime(rec.clockOut)}</p>
+                      <p className={`font-mono ${needsReview && !rec.clockOut && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-800"}`}>
+                        {formatTime(rec.clockOut)}
+                        <RawTime recorded={rec.clockOut} raw={rec.rawClockOut} />
+                      </p>
                     </div>
                     <div>
                       <p className="text-gray-400">労働</p>

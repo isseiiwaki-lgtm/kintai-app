@@ -137,6 +137,9 @@ model AttendanceRecord {
   // 原打刻（初回のみ保存・以降不変）
   originalClockIn      DateTime?
   originalClockOut     DateTime?
+  // 生打刻（丸め適用前の実打刻時刻。打刻時に常に保存。手入力・修正では変更しない）
+  rawClockIn           DateTime?
+  rawClockOut          DateTime?
   // 承認/締め時に計算・確定する集計値
   lateMinutes          Int?      // 遅刻分
   earlyLeaveMinutes    Int?      // 早退分
