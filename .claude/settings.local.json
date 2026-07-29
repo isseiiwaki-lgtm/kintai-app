@@ -14,7 +14,18 @@
       "Bash(xargs grep *)",
       "Bash(python3 *)",
       "Bash(pip install *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "PowerShell(npm run *)",
+      "PowerShell(npx prisma migrate diff --from-schema-datamodel \"$env:LOCALAPPDATA\\\\Temp\\\\claude\\\\D--dev-260325------\\\\0593a32f-7dc9-4b0d-a6fb-71afe7b209b0\\\\scratchpad\\\\schema_old.prisma\" --to-schema-datamodel prisma\\\\schema.prisma --script)",
+      "PowerShell(npx prisma migrate diff --from-schema \"$env:LOCALAPPDATA\\\\Temp\\\\claude\\\\D--dev-260325------\\\\0593a32f-7dc9-4b0d-a6fb-71afe7b209b0\\\\scratchpad\\\\schema_old.prisma\" --to-schema prisma\\\\schema.prisma --script)",
+      "PowerShell(npx prisma generate)",
+      "PowerShell(npx prisma migrate deploy)",
+      "PowerShell(npx tsx \"$env:LOCALAPPDATA\\\\Temp\\\\claude\\\\D--dev-260325------\\\\0593a32f-7dc9-4b0d-a6fb-71afe7b209b0\\\\scratchpad\\\\verify_migration.ts\")",
+      "PowerShell(Copy-Item *)",
+      "PowerShell(git push *)",
+      "PowerShell(foreach \\($p in \"/\", \"/admin/requests\", \"/api/auth/session\"\\) { try { $r = Invoke-WebRequest -Uri \"https://kintai.iwaki-i.online$p\" -Method Get -UseBasicParsing -TimeoutSec 15 -MaximumRedirection 5; \"$p -> HTTP $\\($r.StatusCode\\)\" } catch { \"$p -> ERROR: $\\($_.Exception.Message\\)\" } })",
+      "Bash(ssh *)",
+      "PowerShell(git *)"
     ]
   }
 }

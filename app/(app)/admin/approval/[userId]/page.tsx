@@ -3,9 +3,9 @@ import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
-import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes } from "@/lib/attendance"
-import { calcLegalBreak } from "@/config/attendance.config"
-import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
+import { ProxyPunchForm } from "./_components/ProxyPunchForm"
+import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
+import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
 type Params      = Promise<{ userId: string }>
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -81,20 +81,7 @@ export default async function UserApprovalPage({
   )
 
   // 所定勤務時間（分）: workStartTime/workEndTime から算出。未設定時は employmentType で fallback
-  function parseHHMM(s: string | null | undefined): number | null {
-    if (!s) return null
-    const [h, m] = s.split(":").map(Number)
-    return h * 60 + m
-  }
-  const startMins = parseHHMM(user.workStartTime)
-  const endMins   = parseHHMM(user.workEndTime)
-  const scheduledMinutes = (() => {
-    if (startMins !== null && endMins !== null && endMins > startMins) {
-      const raw = endMins - startMins
-      return raw - calcLegalBreak(raw)
-    }
-    return user.employmentType === "full" ? 480 : 0
-  })()
+  const scheduledMinutes = calcScheduledMinutes(user.workStartTime, user.workEndTime, user.employmentType)
 
   // レコードを日付キーでマップ
   const recordMap = new Map(
@@ -105,6 +92,24 @@ export default async function UserApprovalPage({
   )
 
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+
+  // 代理打刻の対象候補: 締め期間内・本日以前で、出勤も退勤も打刻がない日
+  // （欠勤・有給・締め済の日は対象外。当日コメントだけ残った日は候補に含める）
+  const missingDates = listClosingPeriodDates(firstDay, lastDay)
+    .filter((d) => d.getTime() <= todayUTC.getTime())
+    .filter((d) => {
+      const r = recordMap.get(`${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`)
+      if (!r) return true
+      return !r.clockIn && !r.clockOut && !r.isAbsent && !r.paidLeaveMinutes && r.status !== "LOCKED"
+    })
+    .map((d) => {
+      const dm = d.getUTCMonth() + 1
+      const dd = d.getUTCDate()
+      return {
+        iso:   `${d.getUTCFullYear()}-${String(dm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`,
+        label: `${dm}/${dd}（${WEEKDAY[d.getUTCDay()]}）`,
+      }
+    })
 
   // 集計期間の全日程を生成（レコードある日のみ表示）
   const tableRows = records.map((r) => {
@@ -182,6 +187,8 @@ export default async function UserApprovalPage({
           <Link href={nextLink} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">▶</Link>
         </div>
       </div>
+
+      <ProxyPunchForm userId={userId} missingDates={missingDates} />
 
       <UserDetailTable
         records={tableRows}

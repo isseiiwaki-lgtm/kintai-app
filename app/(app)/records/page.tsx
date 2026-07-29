@@ -1,8 +1,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes } from "@/lib/attendance"
-import { calcLegalBreak } from "@/config/attendance.config"
+import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -99,15 +98,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 
-  const startMins     = parseHHMM(user?.workStartTime)
-  const endMins       = parseHHMM(user?.workEndTime)
-  const scheduledMins = (() => {
-    if (startMins !== null && endMins !== null && endMins > startMins) {
-      const raw = endMins - startMins
-      return raw - calcLegalBreak(raw)
-    }
-    return user?.employmentType === "full" ? 480 : 0
-  })()
+  const scheduledMins = calcScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType)
 
   type Rec = typeof records[number]
 

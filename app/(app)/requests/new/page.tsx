@@ -53,6 +53,8 @@ export default function NewRequestPage() {
   const searchParams = useSearchParams()
   const [type, setType]       = useState<RequestType>("OVERTIME")
   const [pending, setPending] = useState(false)
+  const [showAllOvertimeTimes,   setShowAllOvertimeTimes]   = useState(false)
+  const [showAllEarlyStartTimes, setShowAllEarlyStartTimes] = useState(false)
 
   // URL params からプリセット（/records の修正依頼リンク用）
   const presetDate      = searchParams.get("date")  ?? ""
@@ -150,10 +152,18 @@ export default function NewRequestPage() {
             <label className="block text-xs font-medium text-gray-600 mb-1">残業終了時刻</label>
             <select name="endTime" required defaultValue="" className={selectClass}>
               <option value="" disabled>-- 時刻を選択 --</option>
-              {buildTimeOptions(13, 23).map((o) => (
+              {(showAllOvertimeTimes ? ALL_TIME_OPTIONS : buildTimeOptions(13, 23)).map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+            <label className="flex items-center gap-1.5 mt-1.5 text-xs text-gray-500">
+              <input
+                type="checkbox"
+                checked={showAllOvertimeTimes}
+                onChange={(e) => setShowAllOvertimeTimes(e.target.checked)}
+              />
+              すべての時間を表示（午前のみ出勤等の例外用）
+            </label>
           </div>
         )}
 
@@ -163,10 +173,18 @@ export default function NewRequestPage() {
             <label className="block text-xs font-medium text-gray-600 mb-1">早出開始時刻</label>
             <select name="startTime" required defaultValue="" className={selectClass}>
               <option value="" disabled>-- 時刻を選択 --</option>
-              {buildTimeOptions(5, 12).map((o) => (
+              {(showAllEarlyStartTimes ? ALL_TIME_OPTIONS : buildTimeOptions(5, 12)).map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+            <label className="flex items-center gap-1.5 mt-1.5 text-xs text-gray-500">
+              <input
+                type="checkbox"
+                checked={showAllEarlyStartTimes}
+                onChange={(e) => setShowAllEarlyStartTimes(e.target.checked)}
+              />
+              すべての時間を表示
+            </label>
           </div>
         )}
 

@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
-import { calcMetrics, formatHHMMfromDate } from "@/lib/attendance"
+import { calcMetrics, formatHHMMfromDate, calcScheduledMinutes, calcWorkingMinutes } from "@/lib/attendance"
 import { calcLegalBreak } from "@/config/attendance.config"
 
 async function checkRole() {
@@ -131,6 +131,129 @@ export async function actionAdminUpdateRecord(
 
   revalidatePath("/admin/approval")
   revalidatePath("/admin/attendance")
+}
+
+export type ProxyPunchResult = { ok: true } | { ok: false; error: string }
+
+/**
+ * 管理者による代理打刻（出退勤いずれの打刻もなかった日に、後日レコードを作成する）
+ *
+ * - 対象は打刻ゼロの日のみ。既に出勤/退勤がある日・締め済（LOCKED）の日は拒否し、表の編集モーダルへ誘導する
+ * - 生打刻（rawClockIn/rawClockOut）は書かない。実際の打刻があった日にしか残さない証跡のため（DOMAIN_MAP 参照）
+ * - 休日出勤フラグが立つ日は遅刻・早退を 0 とする（所定時刻起算の機械計算で架空の遅刻が出るのを防ぐ）
+ * - 保存後の状態は「承認済」（既存の管理者直接編集と同じ扱い）
+ */
+export async function actionAdminCreateRecord(
+  userId: string,
+  dateISO: string,
+  formData: FormData,
+): Promise<ProxyPunchResult> {
+  const changedById = await checkRole()
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateISO)) return { ok: false, error: "対象日が不正です" }
+
+  const user = await prisma.user.findUnique({
+    where:  { id: userId },
+    select: { workStartTime: true, workEndTime: true, employmentType: true },
+  })
+  if (!user) return { ok: false, error: "対象ユーザーが見つかりません" }
+
+  // date は「JST の暦日の UTC 深夜0時」で保存する（打刻・申請承認と同じ基準）
+  const date = new Date(`${dateISO}T00:00:00.000Z`)
+
+  const existing = await prisma.attendanceRecord.findUnique({
+    where: { userId_date: { userId, date } },
+  })
+  if (existing) {
+    if (existing.status === "LOCKED") {
+      return { ok: false, error: "締め済みの日のため代理打刻できません" }
+    }
+    if (existing.clockIn || existing.clockOut) {
+      return { ok: false, error: "既に打刻がある日です。表の編集から修正してください" }
+    }
+  }
+
+  // 入力された時刻のみを拾う（未入力は書かない）
+  const timeFields = ["clockIn", "clockOut", "breakStart", "breakEnd", "goOutAt", "returnAt"] as const
+  const values: Partial<Record<(typeof timeFields)[number], Date>> = {}
+  const logs: { fieldName: string; newValue: string }[] = []
+
+  for (const name of timeFields) {
+    const v = formData.get(name) as string | null
+    if (!v) continue
+    values[name] = toUTC(dateISO, v)
+    logs.push({ fieldName: name, newValue: v })
+  }
+
+  const clockIn = values.clockIn ?? null
+  if (!clockIn) return { ok: false, error: "出勤時刻は必須です" }
+
+  const clockOut = values.clockOut ?? null
+  if (clockOut && clockOut.getTime() <= clockIn.getTime()) {
+    return { ok: false, error: "退勤時刻は出勤時刻より後にしてください" }
+  }
+
+  const goOutAt    = values.goOutAt    ?? null
+  const returnAt   = values.returnAt   ?? null
+  const breakStart = values.breakStart ?? null
+  const breakEnd   = values.breakEnd   ?? null
+
+  // workingMinutes（既存の管理者編集と同じ規則。part は実休憩打刻、full は法定休憩を控除）
+  const workingMinutes = calcWorkingMinutes({
+    clockIn, clockOut, goOutAt, returnAt, breakStart, breakEnd,
+    employmentType: user.employmentType,
+  })
+
+  const scheduledMins = calcScheduledMinutes(user.workStartTime, user.workEndTime, user.employmentType)
+  const metrics = calcMetrics({
+    clockIn,
+    clockOut,
+    workingMinutes,
+    workStartTime: user.workStartTime,
+    workEndTime:   user.workEndTime,
+    scheduledMinutes: scheduledMins,
+  })
+
+  // 休日出勤: 所定時刻を持たない日なので遅刻・早退は計上しない
+  const isHolidayWork    = formData.get("isHolidayWork") === "on"
+  const lateMinutes      = isHolidayWork ? 0 : metrics.lateMinutes
+  const earlyLeaveMinutes = isHolidayWork ? 0 : metrics.earlyLeaveMinutes
+
+  const data = {
+    clockIn,
+    clockOut,
+    breakStart,
+    breakEnd,
+    goOutAt,
+    returnAt,
+    workingMinutes,
+    lateMinutes,
+    earlyLeaveMinutes,
+    overtimeMinutes: metrics.overtimeMinutes,
+    status: "APPROVED" as const,
+  }
+
+  // 作成後の id を ChangeLog に使うため、対話型トランザクションを使う
+  await prisma.$transaction(async (tx) => {
+    const record = existing
+      ? await tx.attendanceRecord.update({ where: { id: existing.id }, data })
+      : await tx.attendanceRecord.create({ data: { userId, date, ...data } })
+
+    await tx.attendanceChangeLog.createMany({
+      data: logs.map((log) => ({
+        recordId:  record.id,
+        changedById,
+        fieldName: log.fieldName,
+        oldValue:  null,
+        newValue:  log.newValue,
+      })),
+    })
+  })
+
+  revalidatePath("/admin/approval")
+  revalidatePath("/admin/attendance")
+  revalidatePath("/records")
+  return { ok: true }
 }
 
 // 月一括承認（OPEN → APPROVED、各レコードの集計値を計算して保存）

@@ -144,17 +144,16 @@ export async function GET(req: NextRequest) {
     const sheetName = (user.name ?? user.email ?? user.id).slice(0, 31)
     const sheet = workbook.addWorksheet(sheetName)
 
-    // 有給使用合計（締め期間内・承認済。全日=1日/480分、半日=0.5日/240分 ※現状8hベース固定）
+    // 有給使用合計（締め期間内・承認済）。日数は半日=0.5固定、時間はAttendanceRecordの保存値（本人所定時間ベース）を合算
     let paidDaysTotal = 0
-    let paidMinutesTotal = 0
     for (const r of user.requests) {
       if (r.type !== "LEAVE") continue
       const det = r.detail as Record<string, unknown> | null
       if (det?.leaveType !== "paid") continue
       const half = det?.halfDay === "am" || det?.halfDay === "pm"
-      paidDaysTotal    += half ? 0.5 : 1
-      paidMinutesTotal += half ? 240 : 480
+      paidDaysTotal += half ? 0.5 : 1
     }
+    const paidMinutesTotal = user.attendanceRecords.reduce((sum, r) => sum + (r.paidLeaveMinutes ?? 0), 0)
 
     // --- 情報ヘッダー（2行）---
     sheet.mergeCells("A1:AG1")

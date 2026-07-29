@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
-import { formatHHMMfromDate, applyRounding } from "@/lib/attendance"
+import { formatHHMMfromDate, applyRounding, calcScheduledMinutes } from "@/lib/attendance"
 import { calcLegalBreak } from "@/config/attendance.config"
 import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
 
@@ -61,11 +61,11 @@ async function applyRequestEffects(
     revalidatePath("/records")
   }
 
-  // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存
+  // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存（本人所定時間ベース。半休は所定時間の半分を四捨五入）
   if (req.type === "LEAVE" && detail?.leaveType === "paid") {
-    const scheduledMins = 480 // 所定勤務時間（将来的にユーザー設定から取得）
+    const scheduledMins = calcScheduledMinutes(req.user.workStartTime, req.user.workEndTime, req.user.employmentType)
     const halfDay = detail?.halfDay
-    const paidMins = halfDay === "am" || halfDay === "pm" ? scheduledMins / 2 : scheduledMins
+    const paidMins = halfDay === "am" || halfDay === "pm" ? Math.round(scheduledMins / 2) : scheduledMins
     await prisma.attendanceRecord.upsert({
       where:  { userId_date: { userId: req.userId, date: req.targetDate } },
       update: { paidLeaveMinutes: paidMins },
@@ -146,8 +146,20 @@ async function applyRequestEffects(
           }),
         ])
       } else {
-        await prisma.attendanceRecord.create({
-          data: { userId: req.userId, date: req.targetDate, [field]: correctedAt },
+        // 打刻ゼロの日への修正申請: レコードを新設する。作成後の id を使うため対話型トランザクション
+        await prisma.$transaction(async (tx) => {
+          const created = await tx.attendanceRecord.create({
+            data: { userId: req.userId, date: req.targetDate, [field]: correctedAt },
+          })
+          await tx.attendanceChangeLog.create({
+            data: {
+              recordId:  created.id,
+              changedById,
+              fieldName: field,
+              oldValue:  null,
+              newValue:  detail.correctedTime,
+            },
+          })
         })
       }
       revalidatePath("/records")

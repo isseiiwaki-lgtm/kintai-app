@@ -3,6 +3,8 @@
  * 承認・締め時に AttendanceRecord へ保存する集計値を計算する
  */
 
+import { calcLegalBreak } from "@/config/attendance.config"
+
 function toJST(dt: Date): Date {
   return new Date(dt.getTime() + 9 * 60 * 60 * 1000)
 }
@@ -17,6 +19,56 @@ function parseHHMM(s: string | null | undefined): number | null {
   if (!s) return null
   const [h, m] = s.split(":").map(Number)
   return h * 60 + m
+}
+
+/** 本人所定勤務時間（分）。workStartTime/workEndTime 未設定時は雇用形態でfallback */
+export function calcScheduledMinutes(
+  workStartTime: string | null | undefined,
+  workEndTime:   string | null | undefined,
+  employmentType: string | null | undefined,
+): number {
+  const startMins = parseHHMM(workStartTime)
+  const endMins   = parseHHMM(workEndTime)
+  if (startMins !== null && endMins !== null && endMins > startMins) {
+    const raw = endMins - startMins
+    return raw - calcLegalBreak(raw)
+  }
+  return employmentType === "full" ? 480 : 0
+}
+
+/**
+ * 実働時間（分）を計算する。外出時間を除いた在席時間から休憩を控除する。
+ * part は実際の休憩打刻を、それ以外は法定休憩を控除する（既存の打刻・承認処理と同じ規則）。
+ * 出勤または退勤が欠けている場合は null（未確定）。
+ */
+export function calcWorkingMinutes({
+  clockIn,
+  clockOut,
+  goOutAt,
+  returnAt,
+  breakStart,
+  breakEnd,
+  employmentType,
+}: {
+  clockIn:    Date | null
+  clockOut:   Date | null
+  goOutAt:    Date | null
+  returnAt:   Date | null
+  breakStart: Date | null
+  breakEnd:   Date | null
+  employmentType: string | null | undefined
+}): number | null {
+  if (!clockIn || !clockOut) return null
+
+  const totalMs = clockOut.getTime() - clockIn.getTime()
+  const goOutMs = goOutAt && returnAt ? returnAt.getTime() - goOutAt.getTime() : 0
+  const rawMinutes = Math.floor((totalMs - goOutMs) / 60000)
+
+  if (employmentType === "part") {
+    const breakMs = breakStart && breakEnd ? breakEnd.getTime() - breakStart.getTime() : 0
+    return Math.max(0, rawMinutes - Math.floor(breakMs / 60000))
+  }
+  return Math.max(0, rawMinutes - calcLegalBreak(rawMinutes))
 }
 
 type CalcInput = {

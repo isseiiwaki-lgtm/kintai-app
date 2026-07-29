@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "勤怠管理",
   description: "社内勤怠管理システム",
+  colorScheme: "light", // OSダークモードでも常にライト表示に固定
 };
 
 export default function RootLayout({
