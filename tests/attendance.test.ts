@@ -13,50 +13,61 @@ function jst(y: number, mo: number, d: number, h: number, mi: number): Date {
 
 describe("applyRounding（打刻丸め）", () => {
   const START = "08:30"
+  const END   = "17:30"
+  // 出勤側・退勤側の設定プリセット
+  const IN_NEAR   = { roundEarly: false, roundNear: true,  kind: "in"  } as const
+  const IN_EARLY  = { roundEarly: true,  roundNear: false, kind: "in"  } as const
+  const OUT_NEAR  = { roundEarly: false, roundNear: true,  kind: "out" } as const
 
   it("定時前丸めON: 8:15 → 8:30", () => {
-    expect(applyRounding(jst(2026, 7, 6, 8, 15), START, { roundEarly: true, roundNear: false }))
+    expect(applyRounding(jst(2026, 7, 6, 8, 15), START, IN_EARLY))
       .toEqual(jst(2026, 7, 6, 8, 30))
   })
 
   it("TZ回帰: JST深夜 0:30 の打刻でも丸めが効く（UTC前日問題）", () => {
     // 過去バグ: getUTCDate() 先行で JST 0:00〜8:59 の基準日が1日ズレ丸め不発
-    expect(applyRounding(jst(2026, 7, 6, 0, 30), START, { roundEarly: true, roundNear: false }))
+    expect(applyRounding(jst(2026, 7, 6, 0, 30), START, IN_EARLY))
       .toEqual(jst(2026, 7, 6, 8, 30))
   })
 
-  it("前後丸めON: 定時後14分 8:44 → 8:30（境界内）", () => {
-    expect(applyRounding(jst(2026, 7, 6, 8, 44), START, { roundEarly: false, roundNear: true }))
+  it("出勤・近傍丸めON: 定時前14分 8:16 → 8:30（境界内）", () => {
+    expect(applyRounding(jst(2026, 7, 6, 8, 16), START, IN_NEAR))
       .toEqual(jst(2026, 7, 6, 8, 30))
   })
 
-  it("前後丸めON: 定時後15分 8:45 は丸めない（境界外）", () => {
-    expect(applyRounding(jst(2026, 7, 6, 8, 45), START, { roundEarly: false, roundNear: true }))
-      .toEqual(jst(2026, 7, 6, 8, 45))
-  })
-
-  it("前後丸めON: 定時前14分 8:16 → 8:30", () => {
-    expect(applyRounding(jst(2026, 7, 6, 8, 16), START, { roundEarly: false, roundNear: true }))
+  it("出勤・近傍丸めON: 定時ちょうど 8:30 は 8:30（境界）", () => {
+    expect(applyRounding(jst(2026, 7, 6, 8, 30), START, IN_NEAR))
       .toEqual(jst(2026, 7, 6, 8, 30))
   })
 
-  it("前後丸めのみON: 定時前15分 8:15 は丸めない（roundEarly が無い退勤側の挙動）", () => {
-    expect(applyRounding(jst(2026, 7, 6, 8, 15), START, { roundEarly: false, roundNear: true }))
+  it("出勤・近傍丸めON: 定時後14分 8:44 は丸めない（遅刻を消さない）", () => {
+    // 旧仕様は前後対称で 8:30 に丸めていた（遅刻が消える不具合）
+    expect(applyRounding(jst(2026, 7, 6, 8, 44), START, IN_NEAR))
+      .toEqual(jst(2026, 7, 6, 8, 44))
+  })
+
+  it("出勤・近傍丸めON: 定時前15分 8:15 は丸めない（境界外・roundEarly OFF時）", () => {
+    expect(applyRounding(jst(2026, 7, 6, 8, 15), START, IN_NEAR))
       .toEqual(jst(2026, 7, 6, 8, 15))
   })
 
-  it("退勤想定: 17:35 → 17:30（前後丸め）/ 17:45 は生時刻", () => {
-    const END = "17:30"
-    expect(applyRounding(jst(2026, 7, 6, 17, 35), END, { roundEarly: false, roundNear: true }))
+  it("退勤・近傍丸めON: 定時後14分 17:44 → 17:30 / 定時後15分 17:45 は生時刻", () => {
+    expect(applyRounding(jst(2026, 7, 6, 17, 44), END, OUT_NEAR))
       .toEqual(jst(2026, 7, 6, 17, 30))
-    expect(applyRounding(jst(2026, 7, 6, 17, 45), END, { roundEarly: false, roundNear: true }))
+    expect(applyRounding(jst(2026, 7, 6, 17, 45), END, OUT_NEAR))
       .toEqual(jst(2026, 7, 6, 17, 45))
+  })
+
+  it("退勤・近傍丸めON: 定時前 17:20 は丸めない（早退を消さない）", () => {
+    // 旧仕様は前後対称で 17:30 に丸めていた（早退が消える不具合）
+    expect(applyRounding(jst(2026, 7, 6, 17, 20), END, OUT_NEAR))
+      .toEqual(jst(2026, 7, 6, 17, 20))
   })
 
   it("両スイッチOFF・定時未設定は生時刻のまま", () => {
     const raw = jst(2026, 7, 6, 8, 10)
-    expect(applyRounding(raw, START, { roundEarly: false, roundNear: false })).toEqual(raw)
-    expect(applyRounding(raw, null, { roundEarly: true, roundNear: true })).toEqual(raw)
+    expect(applyRounding(raw, START, { roundEarly: false, roundNear: false, kind: "in" })).toEqual(raw)
+    expect(applyRounding(raw, null, { roundEarly: true, roundNear: true, kind: "in" })).toEqual(raw)
   })
 })
 

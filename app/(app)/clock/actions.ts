@@ -42,6 +42,7 @@ export async function actionClockIn() {
     roundEarly: earlyStartReq ? false : (setting?.roundEarlyClockIn ?? false),
     // 早出申請がある日は roundNear も無効（定時前打刻を定時に吸収しないため）
     roundNear:  earlyStartReq ? false : (setting?.roundNearClockTime ?? false),
+    kind: "in",
   })
   await prisma.attendanceRecord.upsert({
     where: { userId_date: { userId, date: today } },
@@ -81,6 +82,7 @@ export async function actionClockOut() {
     roundEarly: false,
     // 残業申請がある日は roundNear を無効（定時付近の打刻を定時に吸収しないため）
     roundNear:  overtimeReq ? false : (setting?.roundNearClockTime ?? false),
+    kind: "out",
   })
 
   // 外出中の時間を除いた在席時間（分）

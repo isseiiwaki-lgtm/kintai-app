@@ -212,13 +212,16 @@ export function hhmmToUTCDate(hhmm: string, todayUTC: Date): Date {
 
 /**
  * 打刻丸め: 設定に従い clockIn/clockOut を補正して返す
- * - roundEarly: 定時前打刻 → 定時扱い
- * - roundNear:  定時〜14分以内 → 定時きっかり
+ * - roundEarly: 定時前打刻 → 定時扱い（出勤のみ）
+ * - roundNear:  定時を超えて働いた側の14分以内 → 定時きっかり（方向限定）
+ *   - 出勤(kind="in"):  定時前14分以内のみ丸める。定時後（遅刻側）は丸めない
+ *   - 退勤(kind="out"): 定時後14分以内のみ丸める。定時前（早退側）は丸めない
+ *   遅刻・早退を丸めで消さないため、2026-08-19 に前後対称から方向限定へ変更
  */
 export function applyRounding(
   actual: Date,
   scheduled: string | null,
-  opts: { roundEarly: boolean; roundNear: boolean },
+  opts: { roundEarly: boolean; roundNear: boolean; kind: "in" | "out" },
 ): Date {
   if (!scheduled) return actual
   // JST の日付 0:00 を UTC で表した基準日を算出
@@ -233,7 +236,11 @@ export function applyRounding(
   const diffMin = Math.round((actual.getTime() - scheduledDate.getTime()) / 60000)
 
   if (opts.roundEarly && diffMin < 0) return scheduledDate
-  if (opts.roundNear  && Math.abs(diffMin) <= 14) return scheduledDate
+  if (opts.roundNear) {
+    // 出勤は定時前、退勤は定時後の14分以内だけを定時へ寄せる（遅刻・早退側は丸めない）
+    if (opts.kind === "in"  && diffMin < 0 && diffMin >= -14) return scheduledDate
+    if (opts.kind === "out" && diffMin > 0 && diffMin <=  14) return scheduledDate
+  }
   return actual
 }
 

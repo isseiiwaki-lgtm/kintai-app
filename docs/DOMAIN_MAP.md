@@ -19,8 +19,8 @@
 
 - **丸めスイッチ**（Setting、両方 default OFF）
   - `roundEarlyClockIn`: 定時前打刻→定時扱い。**出勤のみ**
-  - `roundNearClockTime`: 定時±14分→定時きっかり。出勤・退勤両方
-  - 実体は `lib/attendance.ts` `applyRounding()`。roundEarly→roundNear の順で評価
+  - `roundNearClockTime`: 定時14分以内の**早出・残業側のみ**定時きっかり（出勤=定時前14分、退勤=定時後14分）。**遅刻・早退側は丸めない**（2026-08-19〜。旧仕様は前後対称で遅刻が消えていた）
+  - 実体は `lib/attendance.ts` `applyRounding()`。roundEarly→roundNear の順で評価。`kind:"in"|"out"` 必須（呼び出し側が出退勤を明示）
   - **生打刻**: 丸め前の実時刻を `rawClockIn/rawClockOut` に打刻時のみ常時保存（証跡用・手入力や修正申請では書かれない）。`originalClockIn/Out`（修正前値）とは別概念。表示は差がある日のみ /records・承認詳細に併記、Excel 非出力
 - **代理打刻**: 出退勤いずれの打刻もなかった日は `AttendanceRecord` 行自体が存在せず、表にも `/records` にも出ない。管理者は `/admin/approval/[userId]` の代理打刻フォーム（`actionAdminCreateRecord`）で後日打刻する。**生打刻は書かない**・保存後は APPROVED・**休日出勤チェック時のみ遅刻/早退を0**（`calcMetrics` は休日を判定しないため）。既に打刻がある日・LOCKED の日は拒否＝表の編集モーダルの担当
 - **締め日**: `Setting.closingDay`（既定25）。締め期間 = 前月(closingDay+1)日〜当月closingDay日。

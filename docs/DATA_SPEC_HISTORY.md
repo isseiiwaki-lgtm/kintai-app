@@ -20,6 +20,16 @@ AIが調査・実装を行う際の補助ドキュメント。
 
 ## 履歴
 
+### 2026-08-19: 近傍丸め（roundNear）を方向限定化 — 遅刻・早退の丸め消失
+**変更内容**: `applyRounding()` の `roundNear` が前後対称（`|diff| <= 14`）だったため、遅刻側（出勤の定時後14分以内）と早退側（退勤の定時前14分以内）も定時へ丸められていた。`kind: "in" | "out"` を必須追加し、出勤=定時前のみ・退勤=定時後のみの丸めに変更。
+**影響カラム**: `AttendanceRecord.clockIn` / `clockOut`（保存値）、および派生する `workingMinutes` / `overtimeMinutes` / `lateMinutes` / `earlyLeaveMinutes`
+**既存データへの影響**: **あり（遡及未実施）**。設定 `roundNearClockTime` が ON の期間に打刻された日のうち、
+- 出勤が定時後1〜14分だった日 → `clockIn` が定時に丸められ**遅刻が消えている**
+- 退勤が定時前1〜14分だった日 → `clockOut` が定時に丸められ**早退が消えている**
+該当日は打刻経路であれば `rawClockIn` / `rawClockOut` に実時刻が残っているため復元可能（生打刻の保存開始は 2026-07-29 デプロイのコミット `2d5d01d` 以降。それ以前の日は復元不可）。承認済・LOCKED の日は `lateMinutes` / `earlyLeaveMinutes` が保存値として確定済みのため、単純な再計算では上書き是非の判断が要る。
+**移行状態**: 未（コード修正のみ本番反映。遡及補正は要判断）
+**補足**: 調査用 SQL は本ファイル末尾「遡及候補の抽出」を参照。代理打刻（`actionAdminCreateRecord`）・打刻修正申請・管理者編集モーダル経由の日は丸めを通らないため対象外。
+
 ### 2026-05-26: workingMinutes の NULL 問題と overtimeMinutes の修正
 
 **変更内容**:
@@ -112,3 +122,28 @@ WHERE "clockOut" IS NOT NULL AND "overtimeMinutes" IS NULL;
 SELECT COUNT(*) FROM "AttendanceRecord"
 WHERE "clockIn" IS NOT NULL AND "lateMinutes" IS NULL;
 ```
+
+### 遡及候補の抽出（2026-08-19 丸め方向限定化の影響日）
+
+出勤が丸めで遅刻を失った日（生打刻が定時後 1〜14 分）:
+```sql
+SELECT u.name, ar.date, ar."rawClockIn", ar."clockIn", ar.status
+FROM "AttendanceRecord" ar
+JOIN "User" u ON u.id = ar."userId"
+WHERE ar."rawClockIn" IS NOT NULL
+  AND ar."clockIn" IS NOT NULL
+  AND ar."rawClockIn" > ar."clockIn"
+ORDER BY ar.date DESC;
+```
+
+退勤が丸めで早退を失った日（生打刻が定時前 1〜14 分）:
+```sql
+SELECT u.name, ar.date, ar."rawClockOut", ar."clockOut", ar.status
+FROM "AttendanceRecord" ar
+JOIN "User" u ON u.id = ar."userId"
+WHERE ar."rawClockOut" IS NOT NULL
+  AND ar."clockOut" IS NOT NULL
+  AND ar."rawClockOut" < ar."clockOut"
+ORDER BY ar.date DESC;
+```
+※ 上記条件は「丸めで勤務時間が長くなる方向にズレた日」＝旧仕様で遅刻・早退が消えた日と一致する（早出丸め `roundEarly` は逆方向のズレになるため混入しない）。

@@ -7,9 +7,11 @@
 
 ## 1. 打刻丸め
 
-- 本体: `lib/attendance.ts` `applyRounding(actual, scheduled, {roundEarly, roundNear})`
-  - `roundEarly && diffMin < 0` → 定時を返す（定時前丸め）
-  - `roundNear && |diffMin| <= 14` → 定時を返す（前後14分丸め）
+- 本体: `lib/attendance.ts` `applyRounding(actual, scheduled, {roundEarly, roundNear, kind})`
+  - `roundEarly && diffMin < 0` → 定時を返す（定時前丸め・出勤のみ）
+  - `roundNear` は**方向限定**（2026-08-19〜）。`kind` 必須で呼び出し側が出退勤を明示する
+    - `kind:"in"`: `-14 <= diffMin < 0` → 定時（定時前のみ）。**定時後（遅刻側）は丸めない**
+    - `kind:"out"`: `0 < diffMin <= 14` → 定時（定時後のみ）。**定時前（早退側）は丸めない**
   - 評価順: roundEarly → roundNear
 - Setting キー: `roundEarlyClockIn` / `roundNearClockTime`（schema、default false）
 - 適用（`app/(app)/clock/actions.ts`）
@@ -19,6 +21,7 @@
   - 当日早出申請（OVERTIME + `detail.overtimeType=="earlyStart"`、PENDING/APPROVED）→ 出勤の丸め両方OFF・生時刻保存
   - 当日残業申請（OVERTIME + earlyStart以外）→ 退勤の roundNear OFF
 - 却下時の再丸め: `admin/requests/actions.ts`（申請却下で丸め再適用）
+- **過去バグ（2026-08-19修正済）**: `roundNear` が前後対称（`|diffMin| <= 14`）で、9:00始業の 9:09 出勤が 9:00 に丸められ遅刻が消えていた。退勤側も定時前14分以内が定時に丸められ早退が消えていた。方向限定へ変更
 - **過去バグ（2026-07-06修正済）**: todayUTC 算出が `getUTCDate()` 先行で JST 0:00〜8:59 打刻時に基準日が1日ズレ、朝の丸めが全滅していた。日付基準は「+9h→日付部品→-9h」で作ること
 
 ## 2. 打刻処理フロー（clock/actions.ts）

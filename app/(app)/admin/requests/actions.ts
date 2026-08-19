@@ -288,6 +288,7 @@ export async function actionRejectRequest(id: string) {
           const corrected = applyRounding(existing.clockIn, req.user.workStartTime, {
             roundEarly: setting.roundEarlyClockIn  ?? false,
             roundNear:  setting.roundNearClockTime ?? false,
+            kind: "in",
           })
           if (corrected.getTime() !== existing.clockIn.getTime()) {
             const updateData: Record<string, Date | number> = { clockIn: corrected }

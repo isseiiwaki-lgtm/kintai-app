@@ -121,8 +121,8 @@ export default async function SettingsPage() {
                 className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <div>
-                <p className="text-sm text-gray-700 font-medium">定時の前後14分以内 → 定時きっかり</p>
-                <p className="text-xs text-gray-400 mt-0.5">例: 9:00始業の人が 8:55 に出勤打刻 → 9:00 で記録。17:00終業の人が 17:10 に退勤打刻 → 17:00 で記録</p>
+                <p className="text-sm text-gray-700 font-medium">定時14分以内の早出・残業 → 定時きっかり</p>
+                <p className="text-xs text-gray-400 mt-0.5">例: 9:00始業の人が 8:55 に出勤打刻 → 9:00 で記録。17:00終業の人が 17:10 に退勤打刻 → 17:00 で記録。遅刻（9:09 出勤）・早退（16:50 退勤）は丸めず実時刻で記録します</p>
               </div>
             </label>
           </div>
