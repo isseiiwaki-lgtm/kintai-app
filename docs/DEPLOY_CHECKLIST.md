@@ -37,10 +37,12 @@ VPS（<https://kintai.iwaki-i.online>）反映前に必ず全項目を確認す�
 
 ## 5. トラブルシュート（実例）
 
-- **デプロイしたのに旧画面のまま / CSSが崩れる / pm2 restart が効かない**（2026-07-06 発生）
-  - 原因: pm2 管理外の野良 `next start` がポート3000を占有し旧ビルドを配信、pm2 側は EADDRINUSE で起動失敗ループ
-  - 確認: `ss -ltnp | grep 3000`（PIDを見る）+ `pm2 logs kintai --lines 20`（EADDRINUSE が出ていないか）
-  - 処置: 野良プロセスを `kill <PID>` → `pm2 restart kintai` → `pm2 save`
+- **デプロイしたのに旧画面のまま / CSSが崩れる / 一部ページだけ表示不能 / pm2 restart が効かない**（2026-07-06 発生・2026-09-28 再発）
+  - **根本原因**: pm2 管理外の **systemd ユニット `kintai.service`**（`/etc/systemd/system/kintai.service`・`enabled`・2026-06-17作成）が存在し、**VPS再起動のたびに自動起動してポート3000を先に占有**する。pm2側の`kintai`はEADDRINUSEで起動失敗ループに陥る。旧プロセスが稼働中に`npm run build`で`.next`を上書きすると、一部ページでモジュール解決に失敗し個別に表示不能になることがある（2026-09-28は`/admin/users`で発生）
+  - 2026-07-06時点ではプロセスを`kill`しただけで**systemdユニット自体を無効化していなかった**ため、9/28の再起動で再発した。**恒久対応は kill ではなくユニットの停止・無効化**
+  - 確認: `systemctl status kintai.service`（active になっていないか）/ `ss -ltnp | grep 3000`（PIDを見る）+ `pm2 logs kintai --lines 20`（EADDRINUSE が出ていないか）
+  - 恒久処置: `sudo systemctl stop kintai.service && sudo systemctl disable kintai.service` → `pm2 restart kintai` → `pm2 save`
+  - **再起動作業（サーバー再起動・障害復旧等）の前後は必ず `systemctl status kintai.service` で `disabled`/`inactive` のままか確認する**
 - pm2 に kintai が見えない → `sudo pm2` を使っていないか確認（root側の別リストを見てしまう。**ubuntu ユーザーで操作**）
 
 ## 6. ロールバック方針

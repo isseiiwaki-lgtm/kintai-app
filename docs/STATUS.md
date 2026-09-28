@@ -1,6 +1,6 @@
 # 実装状況 & タスク管理
 
-最終更新: 2026-09-28
+最終更新: 2026-09-28（障害対応記録あり）
 
 ---
 
@@ -65,6 +65,14 @@
 ---
 
 ## 変更履歴
+
+### 2026-09-28（障害）
+- **本番障害: `/admin/users` 等が表示不能。根本原因はpm2管理外の systemd ユニット `kintai.service` の再発** — 17:33 VPS再起動 → 有効化されたままだった `/etc/systemd/system/kintai.service`（`npm start` を直接実行）が自動起動しポート3000を占有 → pm2側の`kintai`がEADDRINUSEでクラッシュループ（15回失敗、`errored`）。17:49のデプロイで`npm run build`が実行され、**旧systemdプロセスが稼働中に`.next`ビルドを上書き** → 一部ページ（実際に発生したのは`/admin/users`）でモジュール解決に失敗し表示不能に
+  - **このユニットは2026-07-06の記録にある「pm2管理外の野良next-server（6/17起動）」と同一個体と判明**（ユニットファイルの更新日時が2026-06-17 16:26と一致）。当時はプロセスを`kill`しただけで自動起動の仕組み（systemdユニット・`enabled`状態）自体を無効化していなかったため、今回の再起動で再発。**前回対応は不完全だった**
+  - 対応: `systemctl stop kintai.service` → `systemctl disable kintai.service` → `pm2 restart kintai`（実行はSSH権限の都合でユーザー側で実施）
+  - ロールバック用にユニット内容を本記録に残す（`[Unit] Description=Kintai Next.js App / After=network.target` `[Service] Type=simple / User=ubuntu / WorkingDirectory=/home/ubuntu/kintai / ExecStart=/usr/bin/npm start / Restart=always / RestartSec=10 / Environment=NODE_ENV=production` `[Install] WantedBy=multi-user.target`）。復元する場合はこの内容で `/etc/systemd/system/kintai.service` を再作成し `systemctl enable --now kintai.service`
+  - `docs/DEPLOY_CHECKLIST.md` §5 に恒久対応として追記予定（再起動のたびに再発するため、無効化確認をチェックリスト化する）
+  - コード変更は無し（インフラ設定のみ）。今回の申請承認ソート順修正（下記）とは無関係
 
 ### 2026-09-28
 - **機能修正: 申請承認「処理済み」一覧の申請者順ソートを社員コード順へ** — `app/(app)/admin/requests/page.tsx`。鈴木さん要望（2026-09-16セッション item 7）。従来は `user.name` 漢字昇順（例: 9月分が「半沢→古田部」の順）だったのを、従業員コード数値昇順に変更（`export-xlsx` と同じ変換方式。文字列比較だと "10" が "2" より前に来る不具合を回避）。人ごと→対象日降順のグルーピングは維持（DB取得は対象日降順のまま・申請者順表示時のみ安定ソートでグループ化）。`〃`表示は `user.email` 一致判定のみに依存するためソートキー変更の影響なし。開発DB（トンネル接続）で実データ検証済み: 坂本さん(108)・古田部さん(240)・半沢さん(302) のコード順で坂本が先頭になることを確認。tsc・vitest(53件)・buildすべてPASS
