@@ -46,11 +46,9 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
         status:     { in: ["APPROVED", "REJECTED"] },
         targetDate: { gte: firstDay, lte: lastDay },
       },
-      // 申請者順（人ごと→対象日降順でグルーピング）/ 対象日順を切替
-      orderBy: sort === "user"
-        ? [{ user: { name: "asc" as const } }, { targetDate: "desc" as const }]
-        : [{ targetDate: "desc" as const }],
-      include: { user: { select: { name: true, email: true } } },
+      // 対象日降順で取得 → 申請者順表示時は下で従業員コード数値昇順に安定ソート（対象日降順は維持）
+      orderBy: [{ targetDate: "desc" as const }],
+      include: { user: { select: { name: true, email: true, employeeCode: true } } },
     }),
     prisma.approvalRoute.findMany({ select: { department: true, step: true, approverId: true } }),
   ])
@@ -88,6 +86,17 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
       canForce: isAdmin && route.length > 0 && progress.total - progress.done > 1, // 残り2ステップ以上で飛び越しに意味がある
     }
   })
+
+  // 申請者順: 従業員コード数値昇順で安定ソート（同一人は取得順＝対象日降順のまま維持）
+  // employeeCode は文字列型のため文字列比較だと "10" が "2" より前に来る → export-xlsx と同じ数値変換ソートに統一
+  if (sort === "user") {
+    processedRaw.sort((a, b) => {
+      const na = parseInt(a.user.employeeCode ?? "", 10)
+      const nb = parseInt(b.user.employeeCode ?? "", 10)
+      if (!isNaN(na) && !isNaN(nb)) return na - nb
+      return (a.user.employeeCode ?? "").localeCompare(b.user.employeeCode ?? "")
+    })
+  }
 
   const processed = processedRaw.map(r => ({
     id:         r.id,
