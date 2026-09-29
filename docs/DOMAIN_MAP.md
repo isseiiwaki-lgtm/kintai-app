@@ -21,6 +21,8 @@
   - `roundEarlyClockIn`: 定時前打刻→定時扱い。**出勤のみ**
   - `roundNearClockTime`: 定時14分以内の**早出・残業側のみ**定時きっかり（出勤=定時前14分、退勤=定時後14分）。**遅刻・早退側は丸めない**（2026-08-19〜。旧仕様は前後対称で遅刻が消えていた）
   - 実体は `lib/attendance.ts` `applyRounding()`。roundEarly→roundNear の順で評価。`kind:"in"|"out"` 必須（呼び出し側が出退勤を明示）
+  - **【予定・未実装】③全体の15分丸め（2026-09-29 合意）**: 3つ目の独立スイッチとして新設予定。①→②→③の順に評価。出勤は切り上げ・退勤は切り捨て。**15分の区切りは本人の定時を起点に刻む**（時計の:00/:15で刻むと、定時が区切り外の人に架空の早退・遅刻が出る）。③ON なら②も強制 ON。遡及しない（切替後の打刻にだけ効く）。詳細 `docs/SESSION_2026-09-16_admin-requests.md`
+  - **定時は15分刻みが前提**（就業規則・画面）。ただし CSV取り込みとサーバー側保存では未検証（検証追加予定）
   - **生打刻**: 丸め前の実時刻を `rawClockIn/rawClockOut` に打刻時のみ常時保存（証跡用・手入力や修正申請では書かれない）。`originalClockIn/Out`（修正前値）とは別概念。表示は差がある日のみ /records・承認詳細に併記、Excel 非出力
 - **代理打刻**: 出退勤いずれの打刻もなかった日は `AttendanceRecord` 行自体が存在せず、表にも `/records` にも出ない。管理者は `/admin/approval/[userId]` の代理打刻フォーム（`actionAdminCreateRecord`）で後日打刻する。**生打刻は書かない**・保存後は APPROVED・**休日出勤チェック時のみ遅刻/早退を0**（`calcMetrics` は休日を判定しないため）。既に打刻がある日・LOCKED の日は拒否＝表の編集モーダルの担当
 - **締め日**: `Setting.closingDay`（既定25）。締め期間 = 前月(closingDay+1)日〜当月closingDay日。
@@ -31,6 +33,7 @@
 - **申請タイプはUIとDBで別**: UI `EARLY_START`→DB `OVERTIME`+`detail.overtimeType="earlyStart"`、UI `LEAVE_PAID/LEAVE_SUB`→DB `LEAVE`+`leaveType="paid"/"substitute"`。DB enum だけ grep すると見落とす
 - **除外ユーザー基準**: 一覧/承認/Excel とも部署名 `department notIn ["管理者","管理職"]` に統一（2026-07-06〜）。Excel は加えて `employmentType in ["full","part"]`
 - **申請承認は部署により多段階**: `ApprovalRoute` に経路がある部署は step 順の承認が必要（最終 step 承認で APPROVED + 勤怠反映）。経路なし部署は一段階。判定は `lib/approval.ts`
+- **日付の保存規約（2026-09-29 確認）**: 「その日」を表す日付（勤怠記録の `date`・休日の `date`・締め期間）は**UTC 0時を日付の通し番号として保存**する。**人間は常に日本時間の日付で考えている**ので、入力（画面・CSV・シード）では「日本時間の日付 → UTC 0時」に変換して保存し、表示では日本時間に戻す。`new Date(y, m-1, d)`（サーバーのローカル＝JST 0時）で保存しない — 2026-09 の山の日ずれ（祝日シードだけ JST 0時保存・Excel は UTC 日付で照合）の原因。schema.prisma のコメント「00:00:00 JST」は実態と違う（修正予定）
 - **JST↔UTC**: DB は UTC 保存。日付基準を作るとき「+9hしてから日付部品を取り、-9h」する。`getUTCDate()` を先に呼ぶと JST 0:00〜8:59 で前日にズレる（過去に丸め全滅バグの根因）
 
 ## ファイルマップ（要点）
