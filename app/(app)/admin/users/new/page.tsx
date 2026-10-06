@@ -1,4 +1,5 @@
 import { actionCreateUser } from "../actions"
+import { ActionForm } from "../_components/ActionForm"
 
 // 15分刻みの時刻オプション
 function timeOptions(startH: number, endH: number) {
@@ -30,7 +31,7 @@ export default function NewUserPage() {
           会社のメールアドレスで事前登録しておくと、本人がそのアドレスの Google アカウントでログインした際に自動で紐づけされます。
         </p>
 
-        <form action={actionCreateUser as (fd: FormData) => Promise<void>} className="space-y-4">
+        <ActionForm action={actionCreateUser} className="space-y-4">
           {/* メールアドレス */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">
@@ -120,7 +121,7 @@ export default function NewUserPage() {
             className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors mt-2">
             登録
           </button>
-        </form>
+        </ActionForm>
       </div>
     </div>
   )

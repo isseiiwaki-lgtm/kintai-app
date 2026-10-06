@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma"
 import { notFound } from "next/navigation"
 import { actionUpdateUser } from "../../actions"
 import { DeleteUserButton } from "./DeleteUserButton"
+import { ActionForm } from "../../_components/ActionForm"
 
 type Params = Promise<{ id: string }>
 
@@ -50,7 +51,7 @@ export default async function UserEditPage({ params }: { params: Params }) {
           <p className="text-xs text-gray-400">Google: {user.email}</p>
         </div>
 
-        <form action={actionUpdateUser} className="space-y-4">
+        <ActionForm action={actionUpdateUser} className="space-y-4">
           <input type="hidden" name="id" value={user.id} />
 
           {/* 会社メール */}
@@ -182,7 +183,7 @@ export default async function UserEditPage({ params }: { params: Params }) {
             className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors mt-2">
             保存
           </button>
-        </form>
+        </ActionForm>
 
         <div className="mt-6 pt-5 border-t border-gray-100">
           <DeleteUserButton userId={user.id} />

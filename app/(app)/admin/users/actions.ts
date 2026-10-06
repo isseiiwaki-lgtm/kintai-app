@@ -3,6 +3,12 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
+import {
+  resolveLoginEmailOnCompanyEmailSave,
+  validateWorkTime,
+  detectEmployeeCodeConflicts,
+  employeeCodeInUseMessage,
+} from "@/lib/user-validation"
 
 // ── CSV パーサー ──────────────────────────────────────────
 function parseCsvLine(line: string): string[] {
@@ -186,7 +192,7 @@ async function checkAdmin() {
   if (session?.user?.role !== "ADMIN") throw new Error("Forbidden")
 }
 
-export async function actionUpdateUser(formData: FormData) {
+export async function actionUpdateUser(formData: FormData): Promise<{ error: string } | void> {
   await checkAdmin()
 
   const id             = formData.get("id")             as string
@@ -210,9 +216,29 @@ export async function actionUpdateUser(formData: FormData) {
   const workFri        = formData.get("workFri")  === "on"
   const workSat        = formData.get("workSat")  === "on"
 
+  // 会社メールを保存するとき、ログイン用 email が仮アドレス（複製ユーザー）なら会社メールに置き換える
+  const current = await prisma.user.findUnique({ where: { id }, select: { email: true } })
+  if (!current) return { error: "ユーザーが見つかりません" }
+  const newLoginEmail = resolveLoginEmailOnCompanyEmailSave(current.email, companyEmail)
+  if (companyEmail) {
+    // 会社メール・ログイン用メールとも UNIQUE。他人と衝突する場合は例外にせずエラーを返す
+    const taken = await prisma.user.findFirst({
+      where: {
+        id: { not: id },
+        OR: [
+          { companyEmail },
+          ...(newLoginEmail ? [{ email: newLoginEmail }] : []),
+        ],
+      },
+      select: { name: true, email: true },
+    })
+    if (taken) return { error: `この会社メールはすでに他のユーザーで使われています（${taken.name ?? taken.email}）` }
+  }
+
   await prisma.user.update({
     where: { id },
     data: {
+      ...(newLoginEmail ? { email: newLoginEmail } : {}),
       name:           name           || null,
       companyEmail:   companyEmail   || null,
       employeeCode:   employeeCode   || null,

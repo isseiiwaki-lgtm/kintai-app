@@ -14,13 +14,15 @@ export type LinkState = {
 export async function actionFindByCompanyEmail(companyEmail: string) {
   const user = await prisma.user.findFirst({
     where: { OR: [{ email: companyEmail }, { companyEmail }] },
-    select: { id: true, name: true, department: true, email: true, companyEmail: true },
+    select: {
+      id: true, name: true, department: true,
+      // 紐づけ済みかどうかは Account（Google 連携）の実在で判定する（メールの形で推測しない）
+      _count: { select: { accounts: true } },
+    },
   })
   if (!user) return null
-  // 既にリンク済み（email が gmail など）の場合は除外
-  if (user.email && !user.email.includes("@iwaki-i.com") && !user.email.startsWith("__pending__")) {
-    return null
-  }
+  // 既に Google アカウントと紐づけ済みの場合は除外
+  if (user._count.accounts > 0) return null
   return { id: user.id, name: user.name, department: user.department }
 }
 
