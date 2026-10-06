@@ -117,8 +117,9 @@ export async function actionAdminUpdateRecord(
     workEndTime,
     scheduledMinutes: scheduledMins,
   })
-  data.lateMinutes       = metrics.lateMinutes
-  data.earlyLeaveMinutes = metrics.earlyLeaveMinutes
+  // 休日出勤の日は所定時刻を持たないため、遅刻・早退は0のまま保つ（代理打刻で立てた印）
+  data.lateMinutes       = current.isHolidayWork ? 0 : metrics.lateMinutes
+  data.earlyLeaveMinutes = current.isHolidayWork ? 0 : metrics.earlyLeaveMinutes
   data.overtimeMinutes   = metrics.overtimeMinutes
 
   await prisma.$transaction([
@@ -231,6 +232,7 @@ export async function actionAdminCreateRecord(
     lateMinutes,
     earlyLeaveMinutes,
     overtimeMinutes: metrics.overtimeMinutes,
+    isHolidayWork,
     status: "APPROVED" as const,
   }
 

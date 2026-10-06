@@ -147,8 +147,9 @@ export default async function UserApprovalPage({
       goOutAt:     formatHHMM(r.goOutAt),
       returnAt:    formatHHMM(r.returnAt),
       workingMinutes:    r.workingMinutes,
-      lateMinutes:       metrics.lateMinutes,
-      earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+      // 休日出勤の日は遅刻・早退を0で表示（代理打刻で入れた値と承認処理の保存値に合わせる）
+      lateMinutes:       r.isHolidayWork ? 0 : metrics.lateMinutes,
+      earlyLeaveMinutes: r.isHolidayWork ? 0 : metrics.earlyLeaveMinutes,
       nightMinutes,
       goOutMins,
       note:        r.note,

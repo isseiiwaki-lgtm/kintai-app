@@ -27,6 +27,7 @@ enum RequestType {
   CORRECTION  // 打刻修正申請
   COMMENT     // テキストのみの連絡
   OTHER
+  BREAK       // 休憩申請（60分超・押し忘れ用）
 }
 
 enum RequestStatus {
@@ -69,6 +70,7 @@ model User {
   workThu          Boolean   @default(true)
   workFri          Boolean   @default(true)
   workSat          Boolean   @default(false)
+  breakMinutes     Int?      // 本人の所定休憩（分・任意。空なら会社設定から求める）
   createdAt        DateTime  @default(now())
 
   attendanceRecords AttendanceRecord[]
@@ -145,6 +147,8 @@ model AttendanceRecord {
   earlyLeaveMinutes    Int?      // 早退分
   overtimeMinutes      Int?      // 残業分
   paidLeaveMinutes     Int?      // 有給取得時間（分）
+  breakMinutes         Int?      // その日の休憩の分数（休憩ボタン・休憩申請の承認で入る）
+  isHolidayWork        Boolean   @default(false) // 休日出勤の印（代理打刻の休日出勤チェック。承認し直しても遅刻・早退を0に保つ）
   createdAt            DateTime  @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -230,6 +234,8 @@ model Setting {
   break2Minutes       Int      @default(60)    // 60分
   roundEarlyClockIn  Boolean  @default(false) // 定時前打刻→定時扱い
   roundNearClockTime Boolean  @default(false) // 定時±14分以内→定時きっかり
+  roundQuarterHour   Boolean  @default(false) // ③15分丸め（出勤切り上げ・退勤切り捨て。本人の定時起点）
+  capOvertimeByRequest Boolean @default(false) // ④残業の申請上限（退勤の記録時刻を最後の承認済み残業申請の終了、無ければ定時で頭打ち）
   updatedAt           DateTime @updatedAt
 }
 

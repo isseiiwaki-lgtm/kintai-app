@@ -48,6 +48,23 @@ describe("approveRecordsWithMetrics", () => {
     expect(byId.c).toMatchObject({ status: "APPROVED", overtimeMinutes: 60 })
   })
 
+  it("休日出勤の印がある日は承認し直しても遅刻・早退を0のまま保つ（休日 9:20〜14:00）", async () => {
+    mocks.findUnique.mockResolvedValue({ workStartTime: "09:00", workEndTime: "18:00", employmentType: "full" })
+    mocks.findMany.mockResolvedValue([
+      // 印あり：再計算なら遅刻20・早退240になる日
+      { id: "h", clockIn: jst(9, 20), clockOut: jst(14, 0), workingMinutes: 280, isHolidayWork: true },
+      // 印なし：従来どおり計算
+      { id: "n", clockIn: jst(9, 20), clockOut: jst(14, 0), workingMinutes: 280, isHolidayWork: false },
+    ])
+    await approveRecordsWithMetrics("u1", new Date(Date.UTC(2026, 9, 1)), new Date(Date.UTC(2026, 9, 31)))
+
+    const byId = Object.fromEntries(
+      mocks.update.mock.calls.map(([arg]) => [arg.where.id, arg.data]),
+    )
+    expect(byId.h).toMatchObject({ status: "APPROVED", lateMinutes: 0, earlyLeaveMinutes: 0 })
+    expect(byId.n).toMatchObject({ lateMinutes: 20, earlyLeaveMinutes: 240 })
+  })
+
   it("対象は OPEN / SUBMITTED のみ（承認詳細の一括承認と同じ）", async () => {
     mocks.findUnique.mockResolvedValue({ workStartTime: "09:00", workEndTime: "18:00", employmentType: "full" })
     mocks.findMany.mockResolvedValue([])

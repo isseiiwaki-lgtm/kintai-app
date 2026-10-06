@@ -34,12 +34,14 @@ export async function approveRecordsWithMetrics(userId: string, firstDay: Date, 
         workEndTime:      user.workEndTime,
         scheduledMinutes: scheduledMins,
       })
+      // 休日出勤の印がある日は所定時刻を持たないため、遅刻・早退は0のまま保つ
+      // （差し戻し・締め解除の後に承認し直しても、代理打刻で入れた0を上書きしない）
       return prisma.attendanceRecord.update({
         where: { id: r.id },
         data: {
           status: "APPROVED",
-          lateMinutes:       metrics.lateMinutes,
-          earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+          lateMinutes:       r.isHolidayWork ? 0 : metrics.lateMinutes,
+          earlyLeaveMinutes: r.isHolidayWork ? 0 : metrics.earlyLeaveMinutes,
           overtimeMinutes:   metrics.overtimeMinutes,
         },
       })
