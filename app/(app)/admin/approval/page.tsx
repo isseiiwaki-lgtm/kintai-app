@@ -105,6 +105,7 @@ export default async function ApprovalPage({ searchParams }: { searchParams: Sea
                 month={month}
                 hasOpen={r.open > 0}
                 hasApproved={r.approved > 0}
+                hasLocked={r.locked > 0}
                 isAdmin={isAdmin}
                 allLocked={allLocked}
               />

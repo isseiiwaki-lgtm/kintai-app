@@ -12,6 +12,7 @@ const FIELD_LABEL: Record<string, string> = {
   returnAt:   "戻り",
   breakStart: "休憩開始",
   breakEnd:   "休憩終了",
+  status:     "状態（締め解除）",
 }
 
 function toJST(dt: Date) {

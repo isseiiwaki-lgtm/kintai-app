@@ -4,6 +4,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { approveRecordsWithMetrics } from "@/lib/approve-records"
+import { unlockRecords } from "@/lib/unlock-records"
 
 async function checkRole() {
   const session = await auth()
@@ -54,4 +55,15 @@ export async function actionLockMonth(userId: string, year: number, month: numbe
   })
   revalidatePath("/admin/approval")
   revalidatePath("/admin/attendance")
+}
+
+// LOCKED → APPROVED（締め解除、ADMIN のみ）。誰がいつ解除したかを変更履歴に残す
+export async function actionUnlockMonth(userId: string, year: number, month: number) {
+  const session = await auth()
+  if (session?.user?.role !== "ADMIN") throw new Error("Forbidden: ADMIN only")
+  const { firstDay, lastDay } = await getPeriod(year, month)
+  await unlockRecords(userId, firstDay, lastDay, session.user.id!)
+  revalidatePath("/admin/approval")
+  revalidatePath("/admin/attendance")
+  revalidatePath("/admin/changelog")
 }
