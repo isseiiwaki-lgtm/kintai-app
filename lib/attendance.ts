@@ -305,6 +305,35 @@ export function buildLateEarlyStatusMap(
 }
 
 /**
+ * 遅刻・早退（分）: 保存値があればそれを、無ければ記録時刻から計算する。
+ * 画面（/records・承認詳細）と Excel で同じ結果にするための共通関数。
+ * 承認前の日は保存値が無いので、表示時に calcMetrics で計算する。
+ */
+export function resolveLateEarlyMinutes(
+  rec: {
+    clockIn: Date | null
+    clockOut: Date | null
+    workingMinutes: number | null
+    lateMinutes: number | null
+    earlyLeaveMinutes: number | null
+  },
+  user: { workStartTime: string | null; workEndTime: string | null; employmentType: string | null },
+): { lateMinutes: number; earlyLeaveMinutes: number } {
+  const metrics = calcMetrics({
+    clockIn: rec.clockIn,
+    clockOut: rec.clockOut,
+    workingMinutes: rec.workingMinutes,
+    workStartTime: user.workStartTime,
+    workEndTime: user.workEndTime,
+    scheduledMinutes: calcScheduledMinutes(user.workStartTime, user.workEndTime, user.employmentType),
+  })
+  return {
+    lateMinutes: rec.lateMinutes ?? metrics.lateMinutes,
+    earlyLeaveMinutes: rec.earlyLeaveMinutes ?? metrics.earlyLeaveMinutes,
+  }
+}
+
+/**
  * DBステータス + 要確認判定 → 表示用ラベル・クラス
  * reviewPending: 要確認の理由のうち遅刻早退申請が審査中のものがある（resolveEmployeeReview の pending）。
  * 従業員向け画面だけが渡す（管理者向けは渡さない）。

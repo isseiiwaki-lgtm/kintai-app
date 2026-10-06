@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { calcLegalBreak } from "@/config/attendance.config"
+import { resolveLateEarlyMinutes } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedTime } from "@/lib/export-format"
 import ExcelJS from "exceljs"
@@ -82,6 +83,7 @@ export async function GET(req: NextRequest) {
     select: {
       id: true, name: true, email: true,
       department: true, employeeCode: true, employmentType: true, salaryCode: true,
+      workStartTime: true, workEndTime: true,
       attendanceRecords: {
         where: { date: { gte: firstDay, lte: lastDay } },
         orderBy: { date: "asc" },
@@ -241,7 +243,11 @@ export async function GET(req: NextRequest) {
 
       const overtime   = rec?.overtimeMinutes ?? Math.max(0, workingMinutes - 480)
       const regular    = Math.max(0, workingMinutes - overtime)
-      const lateEarly  = (rec?.lateMinutes ?? 0) + (rec?.earlyLeaveMinutes ?? 0)
+      // 遅刻・早退: 保存値が無い日（承認前）は画面と同じく記録時刻から計算する
+      const lateEarlyMins = rec
+        ? resolveLateEarlyMinutes(rec, user)
+        : { lateMinutes: 0, earlyLeaveMinutes: 0 }
+      const lateEarly  = lateEarlyMins.lateMinutes + lateEarlyMins.earlyLeaveMinutes
 
       // 休暇申請の分類
       let paidLeaveDays = "", paidLeaveTime = ""
