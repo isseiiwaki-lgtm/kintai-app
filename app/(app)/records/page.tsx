@@ -1,7 +1,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcNeedsReview, getDisplayStatus, buildLateEarlyStatusMap, calcMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
+import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, calcMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -86,21 +86,12 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
     }
   }
 
-  // 日付文字列 → 遅刻・早退申請が申請中 or 承認済みか（最新のみ）
-  const absenceActiveSet = new Set<string>()
-  for (const req of absenceRequests) {
-    const jst = toJST(req.targetDate)
-    const key = `${jst.getUTCFullYear()}-${jst.getUTCMonth() + 1}-${jst.getUTCDate()}`
-    if (!absenceActiveSet.has(key) && (req.status === "PENDING" || req.status === "APPROVED")) {
-      absenceActiveSet.add(key)
-    }
-  }
-
-  // 日付文字列 → 遅刻早退申請（欠勤を除く）の最新状態。従業員向けの「要確認」抑制に使う
-  const lateEarlyMap = buildLateEarlyStatusMap(absenceRequests, (d) => {
+  // 日付文字列 → 遅刻申請・早退申請それぞれの最新状態（欠勤を除く）。要確認の理由ごとの打ち消しに使う
+  const dateKey = (d: Date) => {
     const jst = toJST(d)
     return `${jst.getUTCFullYear()}-${jst.getUTCMonth() + 1}-${jst.getUTCDate()}`
-  })
+  }
+  const lateEarlyMap = buildLateEarlyStatusMap(absenceRequests, dateKey)
 
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 
@@ -110,10 +101,17 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
   // 各レコードの表示用計算値を返す
   function buildRowData(rec: Rec) {
-    const needsReview = rec.status === "OPEN" ? calcNeedsReview({
-      clockIn: rec.clockIn, clockOut: rec.clockOut, date: rec.date, today: todayUTC,
-      workStartTime: user?.workStartTime ?? null, workEndTime: user?.workEndTime ?? null,
-    }) : false
+    // 要確認の理由（遅刻・早退・退勤漏れ）を、遅刻早退申請の種別ごとに打ち消す。ホーム・修正依頼ボタンと同じ判定
+    const review = rec.status === "OPEN"
+      ? resolveEmployeeReview(
+          calcReviewReasons({
+            clockIn: rec.clockIn, clockOut: rec.clockOut, date: rec.date, today: todayUTC,
+            workStartTime: user?.workStartTime ?? null, workEndTime: user?.workEndTime ?? null,
+          }),
+          lateEarlyMap.get(dateKey(rec.date)),
+        )
+      : { needsReview: false, pending: false }
+    const needsReview = review.needsReview
 
     // 中抜け（分）
     const goOutMins = rec.goOutAt && rec.returnAt
@@ -146,7 +144,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
     const earlyLeave = rec.earlyLeaveMinutes  ?? metrics.earlyLeaveMinutes
     const night      = calcNightMinutes(rec.clockIn, rec.clockOut)
 
-    return { needsReview, goOutMins, breakMins, overtime, late, earlyLeave, night }
+    return { needsReview, reviewPending: review.pending, goOutMins, breakMins, overtime, late, earlyLeave, night }
   }
 
   // 月次サマリー
@@ -248,13 +246,10 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
               const isWeekend = dow === 0 || dow === 6
               const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
               const data    = rec ? buildRowData(rec) : null
-              const lateEarlyStatus = lateEarlyMap.get(`${dy}-${dm}-${d}`) ?? null
-              // 遅刻早退申請が承認済みなら要確認を消す（却下は要確認のまま）
-              const needsReview = (data?.needsReview ?? false) && lateEarlyStatus !== "APPROVED"
+              const needsReview = data?.needsReview ?? false
               const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
-              const hasAbsenceRequest = absenceActiveSet.has(`${dy}-${dm}-${d}`)
-              // 修正依頼リンクの表示条件: 要確認 かつ CORRECTION申請中でない かつ 遅刻・早退申請（申請中/承認済）がない
-              const showCorrection = needsReview && correctionStatus !== "PENDING" && !hasAbsenceRequest
+              // 修正依頼リンクの表示条件: 要確認（遅刻早退申請で打ち消されていない理由が残る）かつ CORRECTION申請中でない
+              const showCorrection = needsReview && correctionStatus !== "PENDING"
 
               return (
                 <tr
@@ -287,7 +282,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                     ) : rec ? (
                       (() => {
-                        const s = getDisplayStatus(rec.status, needsReview, correctionStatus, lateEarlyStatus)
+                        const s = getDisplayStatus(rec.status, needsReview, correctionStatus, data?.reviewPending)
                         return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${s.className}`}>{s.label}</span>
                       })()
                     ) : null}
@@ -318,13 +313,10 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
           if (!rec?.clockIn && !rec?.isAbsent) return null
           const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
           const data    = rec ? buildRowData(rec) : null
-          const lateEarlyStatus = lateEarlyMap.get(`${dy}-${dm}-${d}`) ?? null
-          // 遅刻早退申請が承認済みなら要確認を消す（却下は要確認のまま）
-          const needsReview = (data?.needsReview ?? false) && lateEarlyStatus !== "APPROVED"
+          const needsReview = data?.needsReview ?? false
           const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
-          const hasAbsenceRequest = absenceActiveSet.has(`${dy}-${dm}-${d}`)
-          // 修正依頼ボタンの表示条件: 要確認 かつ CORRECTION申請中でない かつ 遅刻・早退申請（申請中/承認済）がない
-          const showCorrection = needsReview && correctionStatus !== "PENDING" && !hasAbsenceRequest
+          // 修正依頼ボタンの表示条件: 要確認（遅刻早退申請で打ち消されていない理由が残る）かつ CORRECTION申請中でない
+          const showCorrection = needsReview && correctionStatus !== "PENDING"
 
           return (
             <div key={dateStr} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
@@ -345,7 +337,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                     <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                   ) : (
                     (() => {
-                      const s = getDisplayStatus(rec.status, needsReview, correctionStatus, lateEarlyStatus)
+                      const s = getDisplayStatus(rec.status, needsReview, correctionStatus, data?.reviewPending)
                       return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${s.className}`}>{s.label}</span>
                     })()
                   )}

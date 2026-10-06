@@ -153,20 +153,17 @@ export function calcNightMinutes(clockIn: Date | null, clockOut: Date | null): n
   return Math.max(0, night)
 }
 
+/** 要確認の理由（遅刻・早退・退勤漏れ）。calcNeedsReview の判定条件を理由ごとに分解したもの */
+export type ReviewReasons = { late: boolean; early: boolean; missingOut: boolean }
+
 /**
- * 「要確認」判定
- * OPEN レコードに対して表示ラベルを 打刻済 / 要確認 で分類する。
- * - 遅刻（clockIn > workStartTime + 1分）→ 要確認（今日も対象）
- * - 退勤なし（昨日以前）→ 要確認
- * - 早退（clockOut < workEndTime - 1分）→ 要確認（昨日以前）
- *
- * 判定順序:
- *   ① 遅刻チェック（今日含む）
- *   ② 今日以降は以降のチェック不要（退勤未打刻は問題なし）
- *   ③ 昨日以前で退勤なし
- *   ④ 早退チェック
+ * 「要確認」の理由を返す（条件は calcNeedsReview と同一）
+ * - late: 遅刻（clockIn > workStartTime + 1分）。今日も対象
+ * - missingOut: 昨日以前で退勤なし
+ * - early: 昨日以前で早退（clockOut < workEndTime - 1分）
+ * 今日以降の退勤未打刻・早退は問題なし。打刻なしは理由なし。
  */
-export function calcNeedsReview({
+export function calcReviewReasons({
   clockIn,
   clockOut,
   date,
@@ -180,28 +177,68 @@ export function calcNeedsReview({
   today:         Date          // 今日の日付（UTC 00:00）
   workStartTime: string | null // "09:00"
   workEndTime:   string | null // "17:30"
-}): boolean {
-  if (!clockIn) return false
+}): ReviewReasons {
+  const reasons: ReviewReasons = { late: false, early: false, missingOut: false }
+  if (!clockIn) return reasons
 
-  // ① 遅刻: 今日も含めて判定（先に評価）
+  // 遅刻: 今日も含めて判定
   if (workStartTime) {
     const startMins = parseHHMM(workStartTime)
-    if (startMins !== null && hhmm(clockIn) > startMins + 1) return true
+    if (startMins !== null && hhmm(clockIn) > startMins + 1) reasons.late = true
   }
 
-  // ② 今日以降: 退勤未打刻・早退は問題なし
-  if (date >= today) return false
+  // 今日以降: 退勤未打刻・早退は問題なし
+  if (date >= today) return reasons
 
-  // ③ 昨日以前で退勤打刻なし
-  if (!clockOut) return true
+  // 昨日以前で退勤打刻なし
+  if (!clockOut) {
+    reasons.missingOut = true
+    return reasons
+  }
 
-  // ④ 早退: clockOut < workEndTime - 1分
-  if (workEndTime && clockOut) {
+  // 早退: clockOut < workEndTime - 1分
+  if (workEndTime) {
     const endMins = parseHHMM(workEndTime)
-    if (endMins !== null && hhmm(clockOut) < endMins - 1) return true
+    if (endMins !== null && hhmm(clockOut) < endMins - 1) reasons.early = true
   }
 
-  return false
+  return reasons
+}
+
+/**
+ * 「要確認」判定（理由のどれか1つでもあれば true）
+ * 管理者向け画面（承認詳細・勤務状況一覧）で使う。申請状態は考慮しない。
+ */
+export function calcNeedsReview(args: Parameters<typeof calcReviewReasons>[0]): boolean {
+  const r = calcReviewReasons(args)
+  return r.late || r.early || r.missingOut
+}
+
+type RequestStatus = "PENDING" | "APPROVED" | "REJECTED"
+/** 遅刻申請・早退申請それぞれの最新状態 */
+export type LateEarlyTypeStatus = { late?: RequestStatus; early?: RequestStatus }
+
+/**
+ * 従業員向けの要確認判定（理由ごとに遅刻早退申請で打ち消す）
+ * - 遅刻申請の承認は遅刻だけ、早退申請の承認は早退だけを打ち消す。退勤漏れは申請では消えない
+ * - 審査中の申請は、その理由について「申請中」扱い（pending）
+ * - 却下・申請なしは理由が残る（needsReview）
+ * ホームの件数・/records のステータスと修正依頼ボタンはすべてこの結果を使う
+ */
+export function resolveEmployeeReview(
+  reasons: ReviewReasons,
+  typeStatus?: LateEarlyTypeStatus | null,
+): { needsReview: boolean; pending: boolean } {
+  let needsReview = reasons.missingOut
+  let pending = false
+  const judge = (on: boolean, st?: RequestStatus) => {
+    if (!on || st === "APPROVED") return
+    if (st === "PENDING") pending = true
+    else needsReview = true
+  }
+  judge(reasons.late, typeStatus?.late)
+  judge(reasons.early, typeStatus?.early)
+  return { needsReview, pending }
 }
 
 /** HH:MM 文字列を当日の UTC Date に変換（打刻丸め用） */
@@ -245,31 +282,38 @@ export function applyRounding(
 }
 
 /**
- * 遅刻早退申請（ABSENCE・欠勤 absent を除く）の「日付キー → 最新状態」マップを作る。
- * requests は createdAt 降順（先頭が最新）で渡すこと。keyOf は targetDate → 日付キーの変換。
+ * 遅刻早退申請（ABSENCE）から「日付キー → 遅刻申請/早退申請それぞれの最新状態」マップを作る。
+ * 欠勤（absent）は対象外。requests は createdAt 降順（先頭が最新）で渡すこと。
+ * keyOf は targetDate → 日付キーの変換。
  */
 export function buildLateEarlyStatusMap(
   requests: { targetDate: Date; status: string; detail?: unknown }[],
   keyOf: (d: Date) => string,
-): Map<string, "PENDING" | "APPROVED" | "REJECTED"> {
-  const map = new Map<string, "PENDING" | "APPROVED" | "REJECTED">()
+): Map<string, LateEarlyTypeStatus> {
+  const map = new Map<string, LateEarlyTypeStatus>()
   for (const req of requests) {
     const detail = req.detail as { absenceType?: string } | null | undefined
-    if (detail?.absenceType === "absent") continue
+    const t = detail?.absenceType
+    if (t !== "late" && t !== "early") continue
     if (req.status !== "PENDING" && req.status !== "APPROVED" && req.status !== "REJECTED") continue
     const key = keyOf(req.targetDate)
-    if (!map.has(key)) map.set(key, req.status)
+    const cur = map.get(key) ?? {}
+    if (!cur[t]) cur[t] = req.status
+    map.set(key, cur)
   }
   return map
 }
 
-/** DBステータス + 要確認判定 → 表示用ラベル・クラス */
+/**
+ * DBステータス + 要確認判定 → 表示用ラベル・クラス
+ * reviewPending: 要確認の理由のうち遅刻早退申請が審査中のものがある（resolveEmployeeReview の pending）。
+ * 従業員向け画面だけが渡す（管理者向けは渡さない）。
+ */
 export function getDisplayStatus(
   status: string,
   needsReview: boolean,
   correctionStatus?: "PENDING" | "APPROVED" | "REJECTED" | null,
-  // 遅刻早退申請（ABSENCE・欠勤除く）の最新状態。従業員向け画面だけが渡す（管理者向けは渡さない）
-  lateEarlyStatus?: "PENDING" | "APPROVED" | "REJECTED" | null,
+  reviewPending?: boolean,
 ): { label: string; className: string } {
   if (status === "LOCKED")    return { label: "締め済", className: "bg-purple-100 text-purple-700" }
   if (status === "APPROVED") {
@@ -281,9 +325,10 @@ export function getDisplayStatus(
   // OPEN
   // 申請中（CORRECTION申請が審査中）
   if (correctionStatus === "PENDING") return { label: "申請中", className: "bg-blue-100 text-blue-600" }
-  // 遅刻早退申請が審査中（打刻修正申請の判定が優先）。承認済みは呼び出し側が needsReview を false にして渡す
-  if (lateEarlyStatus === "PENDING") return { label: "申請中", className: "bg-blue-100 text-blue-600" }
+  // 申請で解消されていない理由が残っていれば要確認（審査中の理由があっても対応が必要なものを優先）
   if (needsReview) return { label: "要確認", className: "bg-red-100 text-red-600" }
+  // 残る理由がすべて審査中の遅刻早退申請 → 申請中
+  if (reviewPending) return { label: "申請中", className: "bg-blue-100 text-blue-600" }
   return { label: "打刻済", className: "bg-gray-100 text-gray-500" }
 }
 

@@ -2,7 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { QuickClockButton } from "./clock/QuickClockButton"
-import { calcNeedsReview, buildLateEarlyStatusMap } from "@/lib/attendance"
+import { calcReviewReasons, resolveEmployeeReview, buildLateEarlyStatusMap } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 /** UTC の Date を JST の同じ日付の 00:00:00 UTC に変換 */
@@ -90,22 +90,22 @@ export default async function DashboardPage() {
       .map(r => r.targetDate.toISOString())
   )
 
-  // 遅刻早退申請（審査中・承認済み。欠勤除く）がある日。要確認から除く
-  // 最新の申請が却下の日は含めない（要確認のまま）
-  const lateEarlyDates = new Set(
-    [...buildLateEarlyStatusMap(lateEarlyRequests, (d) => d.toISOString())].filter(([, st]) => st !== "REJECTED").map(([k]) => k)
-  )
+  // 遅刻早退申請（欠勤除く）の日付キー → 遅刻/早退それぞれの最新状態
+  const lateEarlyMap = buildLateEarlyStatusMap(lateEarlyRequests, (d) => d.toISOString())
 
-  // 要確認カウント: 昨日以前 OPEN レコードで要確認条件に該当 かつ 審査中の修正申請・遅刻早退申請がない日
+  // 要確認カウント: 昨日以前 OPEN レコードで、審査中の修正申請がなく、
+  // 遅刻・早退申請で打ち消されていない理由（遅刻・早退・退勤漏れ）が残る日。/records と同じ判定
   const openCount = monthRecords.filter((r) =>
     r.status === "OPEN" &&
     !pendingCorrectionDates.has(r.date.toISOString()) &&
-    !lateEarlyDates.has(r.date.toISOString()) &&
-    calcNeedsReview({
-      clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today,
-      workStartTime: userInfo?.workStartTime ?? null,
-      workEndTime: userInfo?.workEndTime ?? null,
-    })
+    resolveEmployeeReview(
+      calcReviewReasons({
+        clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today,
+        workStartTime: userInfo?.workStartTime ?? null,
+        workEndTime: userInfo?.workEndTime ?? null,
+      }),
+      lateEarlyMap.get(r.date.toISOString()),
+    ).needsReview
   ).length
 
   const dateLabel = today.toLocaleDateString("ja-JP", {
