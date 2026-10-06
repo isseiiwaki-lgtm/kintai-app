@@ -244,11 +244,32 @@ export function applyRounding(
   return actual
 }
 
+/**
+ * 遅刻早退申請（ABSENCE・欠勤 absent を除く）の「日付キー → 最新状態」マップを作る。
+ * requests は createdAt 降順（先頭が最新）で渡すこと。keyOf は targetDate → 日付キーの変換。
+ */
+export function buildLateEarlyStatusMap(
+  requests: { targetDate: Date; status: string; detail?: unknown }[],
+  keyOf: (d: Date) => string,
+): Map<string, "PENDING" | "APPROVED" | "REJECTED"> {
+  const map = new Map<string, "PENDING" | "APPROVED" | "REJECTED">()
+  for (const req of requests) {
+    const detail = req.detail as { absenceType?: string } | null | undefined
+    if (detail?.absenceType === "absent") continue
+    if (req.status !== "PENDING" && req.status !== "APPROVED" && req.status !== "REJECTED") continue
+    const key = keyOf(req.targetDate)
+    if (!map.has(key)) map.set(key, req.status)
+  }
+  return map
+}
+
 /** DBステータス + 要確認判定 → 表示用ラベル・クラス */
 export function getDisplayStatus(
   status: string,
   needsReview: boolean,
   correctionStatus?: "PENDING" | "APPROVED" | "REJECTED" | null,
+  // 遅刻早退申請（ABSENCE・欠勤除く）の最新状態。従業員向け画面だけが渡す（管理者向けは渡さない）
+  lateEarlyStatus?: "PENDING" | "APPROVED" | "REJECTED" | null,
 ): { label: string; className: string } {
   if (status === "LOCKED")    return { label: "締め済", className: "bg-purple-100 text-purple-700" }
   if (status === "APPROVED") {
@@ -260,6 +281,8 @@ export function getDisplayStatus(
   // OPEN
   // 申請中（CORRECTION申請が審査中）
   if (correctionStatus === "PENDING") return { label: "申請中", className: "bg-blue-100 text-blue-600" }
+  // 遅刻早退申請が審査中（打刻修正申請の判定が優先）。承認済みは呼び出し側が needsReview を false にして渡す
+  if (lateEarlyStatus === "PENDING") return { label: "申請中", className: "bg-blue-100 text-blue-600" }
   if (needsReview) return { label: "要確認", className: "bg-red-100 text-red-600" }
   return { label: "打刻済", className: "bg-gray-100 text-gray-500" }
 }

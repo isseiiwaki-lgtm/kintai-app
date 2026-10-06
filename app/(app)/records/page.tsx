@@ -1,7 +1,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
+import { calcNeedsReview, getDisplayStatus, buildLateEarlyStatusMap, calcMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -71,7 +71,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
     // 遅刻・早退申請（PENDING/APPROVED の場合は修正依頼ボタンを抑制）
     prisma.request.findMany({
       where: { userId, type: "ABSENCE", targetDate: { gte: firstDay, lte: lastDay } },
-      select: { targetDate: true, status: true },
+      select: { targetDate: true, status: true, detail: true },
       orderBy: { createdAt: "desc" },
     }),
   ])
@@ -95,6 +95,12 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
       absenceActiveSet.add(key)
     }
   }
+
+  // 日付文字列 → 遅刻早退申請（欠勤を除く）の最新状態。従業員向けの「要確認」抑制に使う
+  const lateEarlyMap = buildLateEarlyStatusMap(absenceRequests, (d) => {
+    const jst = toJST(d)
+    return `${jst.getUTCFullYear()}-${jst.getUTCMonth() + 1}-${jst.getUTCDate()}`
+  })
 
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 
@@ -242,7 +248,9 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
               const isWeekend = dow === 0 || dow === 6
               const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
               const data    = rec ? buildRowData(rec) : null
-              const { needsReview = false } = data ?? {}
+              const lateEarlyStatus = lateEarlyMap.get(`${dy}-${dm}-${d}`) ?? null
+              // 遅刻早退申請が承認済みなら要確認を消す（却下は要確認のまま）
+              const needsReview = (data?.needsReview ?? false) && lateEarlyStatus !== "APPROVED"
               const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
               const hasAbsenceRequest = absenceActiveSet.has(`${dy}-${dm}-${d}`)
               // 修正依頼リンクの表示条件: 要確認 かつ CORRECTION申請中でない かつ 遅刻・早退申請（申請中/承認済）がない
@@ -279,7 +287,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                     ) : rec ? (
                       (() => {
-                        const s = getDisplayStatus(rec.status, needsReview, correctionStatus)
+                        const s = getDisplayStatus(rec.status, needsReview, correctionStatus, lateEarlyStatus)
                         return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${s.className}`}>{s.label}</span>
                       })()
                     ) : null}
@@ -310,7 +318,9 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
           if (!rec?.clockIn && !rec?.isAbsent) return null
           const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
           const data    = rec ? buildRowData(rec) : null
-          const { needsReview = false } = data ?? {}
+          const lateEarlyStatus = lateEarlyMap.get(`${dy}-${dm}-${d}`) ?? null
+          // 遅刻早退申請が承認済みなら要確認を消す（却下は要確認のまま）
+          const needsReview = (data?.needsReview ?? false) && lateEarlyStatus !== "APPROVED"
           const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
           const hasAbsenceRequest = absenceActiveSet.has(`${dy}-${dm}-${d}`)
           // 修正依頼ボタンの表示条件: 要確認 かつ CORRECTION申請中でない かつ 遅刻・早退申請（申請中/承認済）がない
@@ -335,7 +345,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                     <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                   ) : (
                     (() => {
-                      const s = getDisplayStatus(rec.status, needsReview, correctionStatus)
+                      const s = getDisplayStatus(rec.status, needsReview, correctionStatus, lateEarlyStatus)
                       return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${s.className}`}>{s.label}</span>
                     })()
                   )}

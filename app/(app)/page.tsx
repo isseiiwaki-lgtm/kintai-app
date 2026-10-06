@@ -2,7 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { QuickClockButton } from "./clock/QuickClockButton"
-import { calcNeedsReview } from "@/lib/attendance"
+import { calcNeedsReview, buildLateEarlyStatusMap } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 /** UTC の Date を JST の同じ日付の 00:00:00 UTC に変換 */
@@ -35,7 +35,7 @@ export default async function DashboardPage() {
   const { year: periodYear, month: periodMonth } = getDefaultClosingMonth(closingDay)
   const { firstDay, lastDay } = getClosingPeriod(periodYear, periodMonth, closingDay)
 
-  const [userInfo, todayRecord, monthRecords, pendingRequests, rejectedRequests, missedClockOut] = await Promise.all([
+  const [userInfo, todayRecord, monthRecords, lateEarlyRequests, pendingRequests, rejectedRequests, missedClockOut] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: { name: true, employeeCode: true, workStartTime: true, workEndTime: true },
@@ -46,6 +46,12 @@ export default async function DashboardPage() {
     prisma.attendanceRecord.findMany({
       where: { userId, date: { gte: firstDay, lte: lastDay }, clockIn: { not: null } },
       select: { workingMinutes: true, clockIn: true, clockOut: true, status: true, date: true },
+    }),
+    // 遅刻早退申請（欠勤は除く）。要確認件数から除く
+    prisma.request.findMany({
+      where: { userId, type: "ABSENCE", targetDate: { gte: firstDay, lte: lastDay } },
+      select: { targetDate: true, status: true, detail: true },
+      orderBy: { createdAt: "desc" },
     }),
     // 審査中の申請
     prisma.request.findMany({
@@ -84,10 +90,17 @@ export default async function DashboardPage() {
       .map(r => r.targetDate.toISOString())
   )
 
-  // 要確認カウント: 昨日以前 OPEN レコードで要確認条件に該当 かつ 審査中の修正申請がない日
+  // 遅刻早退申請（審査中・承認済み。欠勤除く）がある日。要確認から除く
+  // 最新の申請が却下の日は含めない（要確認のまま）
+  const lateEarlyDates = new Set(
+    [...buildLateEarlyStatusMap(lateEarlyRequests, (d) => d.toISOString())].filter(([, st]) => st !== "REJECTED").map(([k]) => k)
+  )
+
+  // 要確認カウント: 昨日以前 OPEN レコードで要確認条件に該当 かつ 審査中の修正申請・遅刻早退申請がない日
   const openCount = monthRecords.filter((r) =>
     r.status === "OPEN" &&
     !pendingCorrectionDates.has(r.date.toISOString()) &&
+    !lateEarlyDates.has(r.date.toISOString()) &&
     calcNeedsReview({
       clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today,
       workStartTime: userInfo?.workStartTime ?? null,
