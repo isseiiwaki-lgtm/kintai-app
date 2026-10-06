@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react"
 import { useSearchParams } from "next/navigation"
-import { actionFindByCompanyEmail, actionLinkAccount, type LinkState } from "./actions"
+import { actionFindByCompanyEmail, actionLinkAccount } from "./actions"
+import type { LinkState } from "@/lib/link-state"
 
 type Step = "input" | "confirm" | "done"
 
@@ -17,8 +18,8 @@ export function LinkContent() {
   const rawState = params.get("state") ?? ""
   let state: LinkState | null = null
   try {
-    // params.get() は %xx デコード済み・+ → スペース変換なし（base64 標準で安全）
-    state = JSON.parse(Buffer.from(rawState, "base64").toString())
+    // 署名付き文字列 `<本体>.<署名>` の本体だけ表示用にデコードする（検証はサーバー側）
+    state = JSON.parse(Buffer.from(rawState.split(".")[0], "base64url").toString())
   } catch {
     // state が不正
   }
@@ -38,20 +39,33 @@ export function LinkContent() {
     e.preventDefault()
     setError("")
     startTransition(async () => {
-      const result = await actionFindByCompanyEmail(companyEmail.trim().toLowerCase())
-      if (!result) {
-        setError("このメールアドレスは登録されていません")
-        return
+      try {
+        // サーバーへは受け取った署名付き文字列をそのまま渡す
+        const result = await actionFindByCompanyEmail(rawState, companyEmail.trim().toLowerCase())
+        if (!result) {
+          setError("このメールアドレスは登録されていません")
+          return
+        }
+        setFound(result)
+        setStep("confirm")
+      } catch {
+        setError("リンクの有効期限が切れました。もう一度ログインしてください")
       }
-      setFound(result)
-      setStep("confirm")
     })
   }
 
   function handleConfirm() {
     if (!state) return
     startTransition(async () => {
-      await actionLinkAccount(state!, companyEmail.trim().toLowerCase())
+      try {
+        await actionLinkAccount(rawState, companyEmail.trim().toLowerCase())
+      } catch {
+        // 本番ではサーバーアクションの例外メッセージが伏せられるため固定文言にする
+        setStep("input")
+        setFound(null)
+        setError("リンクの有効期限が切れました。もう一度ログインしてください")
+        return
+      }
       setStep("done")
       // 登録完了後はログインページへ（OAuth cookie 競合を避けるため再起動はしない）
       setTimeout(() => {

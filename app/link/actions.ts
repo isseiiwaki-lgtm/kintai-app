@@ -1,17 +1,21 @@
 "use server"
 
 import { prisma } from "@/lib/prisma"
+import { verifyLinkState, type LinkState } from "@/lib/link-state"
 
-export type LinkState = {
-  pendingUserId:    string
-  googleEmail:      string
-  providerAccountId: string
-  name:             string
-  image:            string
+const EXPIRED_MESSAGE = "リンクの有効期限が切れました。もう一度ログインしてください"
+
+/** 署名付き state を検証して中身を返す。不正・期限切れは例外 */
+function requireLinkState(signedState: string): LinkState {
+  const state = verifyLinkState(signedState, process.env.AUTH_SECRET ?? "")
+  if (!state) throw new Error(EXPIRED_MESSAGE)
+  return state
 }
 
 /** 会社メールでユーザー検索（確認画面用）*/
-export async function actionFindByCompanyEmail(companyEmail: string) {
+export async function actionFindByCompanyEmail(signedState: string, companyEmail: string) {
+  // 署名・期限の検証（失敗時は例外）
+  requireLinkState(signedState)
   const user = await prisma.user.findFirst({
     where: { OR: [{ email: companyEmail }, { companyEmail }] },
     select: {
@@ -27,7 +31,10 @@ export async function actionFindByCompanyEmail(companyEmail: string) {
 }
 
 /** Google アカウントを従業員情報にリンク */
-export async function actionLinkAccount(state: LinkState, companyEmail: string) {
+export async function actionLinkAccount(signedState: string, companyEmail: string) {
+  // 署名・期限の検証（以降は検証済みの state のみ使う）
+  const state = requireLinkState(signedState)
+
   // 事前登録ユーザーを取得
   const preRegistered = await prisma.user.findFirst({
     where: { OR: [{ email: companyEmail }, { companyEmail }] },
@@ -36,9 +43,12 @@ export async function actionLinkAccount(state: LinkState, companyEmail: string) 
       department: true, employeeCode: true, jobTitle: true,
       workStartTime: true, workEndTime: true, hireDate: true,
       salaryCode: true, isActive: true,
+      _count: { select: { accounts: true } },
     },
   })
   if (!preRegistered) throw new Error("ユーザーが見つかりません")
+  // 既に Google 連携済みの社員には紐づけさせない（検索側の判定に頼らない）
+  if (preRegistered._count.accounts > 0) throw new Error("このユーザーは既に紐づけ済みです")
 
   if (state.pendingUserId) {
     // --- パターン A: pending ユーザーが存在する（旧フロー） ---

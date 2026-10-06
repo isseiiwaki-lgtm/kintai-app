@@ -4,6 +4,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter"
 import { prisma } from "@/lib/prisma"
 import { authConfig } from "./auth.config"
 import type { Role } from "@prisma/client"
+import { signLinkState } from "@/lib/link-state"
 
 const PENDING_PREFIX = "__pending__"
 
@@ -66,12 +67,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         where: { email: `${PENDING_PREFIX}${googleEmail}` },
       })
       if (pendingUser) {
-        const state = Buffer.from(JSON.stringify({
+        // サーバーだけが知る鍵で署名（改ざん・偽造・期限切れはサーバーアクション側で拒否）
+        const state = signLinkState({
           pendingUserId:     pendingUser.id,
           googleEmail,
           providerAccountId: account.providerAccountId,
           name, image,
-        })).toString("base64")
+        }, process.env.AUTH_SECRET ?? "")
         return `/link?state=${encodeURIComponent(state)}`
       }
 
@@ -88,12 +90,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (directMatch) return true
 
       // 4. 完全未登録（初回サインイン、createUser はまだ呼ばれていない）→ /link へ
-      const state = Buffer.from(JSON.stringify({
+      const state = signLinkState({
         pendingUserId:     "",
         googleEmail,
         providerAccountId: account.providerAccountId,
         name, image,
-      })).toString("base64")
+      }, process.env.AUTH_SECRET ?? "")
       return `/link?state=${encodeURIComponent(state)}`
     },
   },
