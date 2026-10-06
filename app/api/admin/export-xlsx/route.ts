@@ -8,19 +8,8 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { calcLegalBreak } from "@/config/attendance.config"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
+import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedTime } from "@/lib/export-format"
 import ExcelJS from "exceljs"
-
-// JST変換
-function toJST(dt: Date) {
-  return new Date(dt.getTime() + 9 * 60 * 60 * 1000)
-}
-
-// HH:MM形式（打刻時刻表示用）
-function fmtTime(dt: Date | null | undefined): string {
-  if (!dt) return ""
-  const j = toJST(dt)
-  return `${String(j.getUTCHours()).padStart(2, "0")}:${String(j.getUTCMinutes()).padStart(2, "0")}`
-}
 
 // 分 → H:MM 形式（0以下は空欄）
 function fmtMin(min: number | null | undefined): string {
@@ -273,12 +262,12 @@ export async function GET(req: NextRequest) {
       const absent = rec?.isAbsent ? "1" : ""
 
       const rowData = [
-        `${dayDate.getUTCMonth() + 1}/${dayDate.getUTCDate()}`, // 日付
+        fmtDateWithWeekday(dayDate),             // 日付（11/5(水) 形式）
         rec ? (STATUS_LABEL[rec.status] ?? rec.status) : "", // 承認
         rec?.clockIn ? "○" : "",                // 勤務
         holidayName,                             // 休日
         "",                                      // 振替日
-        fmtMin(rawMinutes),                      // 勤務時間
+        fmtWorkRange(rec?.clockIn, rec?.clockOut), // 勤務時間（記録時刻の時間帯 09:00-15:00）
         fmtMin(regular),                         // 時間内
         fmtMin(breakMinutes),                    // 休憩時間
         fmtMin(goOutMinutes),                    // 中抜け時間
@@ -292,10 +281,10 @@ export async function GET(req: NextRequest) {
         subLeave,                                // 振休
         fmtMin(lateEarly),                       // 遅刻／早退
         absent,                                  // 欠勤
-        fmtTime(rec?.clockIn),                   // 出勤
-        fmtTime(rec?.clockOut),                  // 退勤
-        fmtTime(rec?.originalClockIn),           // 変更出勤
-        fmtTime(rec?.originalClockOut),          // 変更退勤
+        fmtRawPunch(rec?.rawClockIn),            // 出勤（実打刻。無い日は空欄）
+        fmtRawPunch(rec?.rawClockOut),           // 退勤（実打刻。無い日は空欄）
+        fmtChangedTime(rec?.clockIn, rec?.originalClockIn),   // 変更出勤（修正後の記録時刻。修正した日のみ）
+        fmtChangedTime(rec?.clockOut, rec?.originalClockOut), // 変更退勤（修正後の記録時刻。修正した日のみ）
       ]
 
       const row = sheet.addRow(rowData)
