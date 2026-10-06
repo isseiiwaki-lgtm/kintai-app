@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { calcMetrics, formatHHMMfromDate, calcScheduledMinutes, calcWorkingMinutes } from "@/lib/attendance"
 import { calcLegalBreak } from "@/config/attendance.config"
+import { approveRecordsWithMetrics } from "@/lib/approve-records"
 
 async function checkRole() {
   const session = await auth()
@@ -260,57 +261,8 @@ export async function actionAdminCreateRecord(
 export async function actionBulkApprove(userId: string, firstDay: string, lastDay: string) {
   await checkRole()
 
-  const [records, user] = await Promise.all([
-    prisma.attendanceRecord.findMany({
-      where: {
-        userId,
-        date:   { gte: new Date(firstDay), lte: new Date(lastDay) },
-        status: { in: ["OPEN", "SUBMITTED"] },
-      },
-    }),
-    prisma.user.findUnique({
-      where: { id: userId },
-      select: { workStartTime: true, workEndTime: true, employmentType: true },
-    }),
-  ])
-  if (!user) return
-
-  const parseHHMM = (s: string | null) => {
-    if (!s) return null
-    const [h, m] = s.split(":").map(Number)
-    return h * 60 + m
-  }
-  const sMin = parseHHMM(user.workStartTime)
-  const eMin = parseHHMM(user.workEndTime)
-  const scheduledMins = (() => {
-    if (sMin !== null && eMin !== null && eMin > sMin) {
-      const raw = eMin - sMin
-      return raw - calcLegalBreak(raw)
-    }
-    return user.employmentType === "full" ? 480 : 0
-  })()
-
-  await prisma.$transaction(
-    records.map((r) => {
-      const metrics = calcMetrics({
-        clockIn:          r.clockIn,
-        clockOut:         r.clockOut,
-        workingMinutes:   r.workingMinutes,
-        workStartTime:    user.workStartTime,
-        workEndTime:      user.workEndTime,
-        scheduledMinutes: scheduledMins,
-      })
-      return prisma.attendanceRecord.update({
-        where: { id: r.id },
-        data: {
-          status: "APPROVED",
-          lateMinutes:       metrics.lateMinutes,
-          earlyLeaveMinutes: metrics.earlyLeaveMinutes,
-          overtimeMinutes:   metrics.overtimeMinutes,
-        },
-      })
-    })
-  )
+  // 承認 + 遅刻・早退・残業の分数保存（一覧画面の承認と共通）
+  await approveRecordsWithMetrics(userId, new Date(firstDay), new Date(lastDay))
 
   revalidatePath("/admin/approval")
   revalidatePath("/admin/attendance")

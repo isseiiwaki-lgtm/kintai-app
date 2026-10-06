@@ -3,6 +3,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
+import { approveRecordsWithMetrics } from "@/lib/approve-records"
 
 async function checkRole() {
   const session = await auth()
@@ -20,14 +21,11 @@ async function getPeriod(year: number, month: number) {
   }
 }
 
-// OPEN → APPROVED（月次一括承認）
+// OPEN/SUBMITTED → APPROVED（月次一括承認）。遅刻・早退・残業の分数も保存する（承認詳細の一括承認と同じ）
 export async function actionApproveMonth(userId: string, year: number, month: number) {
   await checkRole()
   const { firstDay, lastDay } = await getPeriod(year, month)
-  await prisma.attendanceRecord.updateMany({
-    where: { userId, date: { gte: firstDay, lte: lastDay }, status: "OPEN" },
-    data:  { status: "APPROVED" },
-  })
+  await approveRecordsWithMetrics(userId, firstDay, lastDay)
   revalidatePath("/admin/approval")
   revalidatePath("/admin/attendance")
 }
