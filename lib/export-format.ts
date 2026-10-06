@@ -30,15 +30,34 @@ export function fmtRawPunch(raw: Date | null | undefined): string {
 }
 
 /**
- * 変更出勤・変更退勤欄 → 修正後の記録時刻。修正した日（originalClockIn/Out がある側）だけ出す。
- * original は「修正前の記録時刻」なので出力には使わず、修正の有無の判定にだけ使う。
+ * 変更出勤・変更退勤欄（旧Excel の意味）。
+ * 「手を入れた日」＝その日の変更履歴（AttendanceChangeLog）に clockIn / clockOut の変更がある日。
+ * - 手を入れた日は出勤・退勤の両方を出す。直した側は直した時刻（記録時刻 clockIn/clockOut）、
+ *   直していない側は実打刻（rawClockIn/Out）。実打刻が無ければ記録時刻
+ * - 手を入れていない日、および値が無い欄は `-`（変更欄だけ。他の欄の空欄表記は変えない）
+ * - 遅刻・早退申請の承認だけの日は変更履歴が無いので対象外
+ * changedFields は変更履歴の fieldName 一覧（clockIn / clockOut 以外は無視する）。
  */
-export function fmtChangedTime(
-  current: Date | null | undefined,
-  original: Date | null | undefined,
-): string {
-  if (!original) return ""
-  return formatHHMMfromDate(current) ?? ""
+export function fmtChangedPair(
+  rec: {
+    clockIn: Date | null | undefined
+    clockOut: Date | null | undefined
+    rawClockIn: Date | null | undefined
+    rawClockOut: Date | null | undefined
+  } | null | undefined,
+  changedFields: readonly string[],
+): { changedIn: string; changedOut: string } {
+  const none = { changedIn: "-", changedOut: "-" }
+  if (!rec) return none
+  const touchedIn = changedFields.includes("clockIn")
+  const touchedOut = changedFields.includes("clockOut")
+  if (!touchedIn && !touchedOut) return none
+  const inVal = touchedIn ? rec.clockIn : (rec.rawClockIn ?? rec.clockIn)
+  const outVal = touchedOut ? rec.clockOut : (rec.rawClockOut ?? rec.clockOut)
+  return {
+    changedIn: formatHHMMfromDate(inVal) ?? "-",
+    changedOut: formatHHMMfromDate(outVal) ?? "-",
+  }
 }
 
 /** 分 → H:MM。fmtLateEarly 用 */

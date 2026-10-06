@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma"
 import { calcLegalBreak } from "@/config/attendance.config"
 import { resolveLateEarlyMinutes } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
-import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedTime, fmtLateEarly } from "@/lib/export-format"
+import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly } from "@/lib/export-format"
 import ExcelJS from "exceljs"
 
 // 分 → H:MM 形式（0以下は空欄）
@@ -87,6 +87,8 @@ export async function GET(req: NextRequest) {
       attendanceRecords: {
         where: { date: { gte: firstDay, lte: lastDay } },
         orderBy: { date: "asc" },
+        // 変更出勤・変更退勤の「手を入れた日」判定用（変更履歴の項目名だけ）
+        include: { changeLogs: { select: { fieldName: true } } },
       },
       requests: {
         where: {
@@ -267,6 +269,9 @@ export async function GET(req: NextRequest) {
 
       const absent = rec?.isAbsent ? "1" : ""
 
+      // 変更出勤・変更退勤: 変更履歴に出退勤の修正がある日だけ。直した側は記録時刻、直していない側は実打刻
+      const changed = fmtChangedPair(rec, (rec?.changeLogs ?? []).map((l) => l.fieldName))
+
       const rowData = [
         fmtDateWithWeekday(dayDate),             // 日付（11/5(水) 形式）
         rec ? (STATUS_LABEL[rec.status] ?? rec.status) : "", // 承認
@@ -289,8 +294,8 @@ export async function GET(req: NextRequest) {
         absent,                                  // 欠勤
         fmtRawPunch(rec?.rawClockIn),            // 出勤（実打刻。無い日は空欄）
         fmtRawPunch(rec?.rawClockOut),           // 退勤（実打刻。無い日は空欄）
-        fmtChangedTime(rec?.clockIn, rec?.originalClockIn),   // 変更出勤（修正後の記録時刻。修正した日のみ）
-        fmtChangedTime(rec?.clockOut, rec?.originalClockOut), // 変更退勤（修正後の記録時刻。修正した日のみ）
+        changed.changedIn,                       // 変更出勤（手を入れた日のみ。無い欄は -）
+        changed.changedOut,                      // 変更退勤（手を入れた日のみ。無い欄は -）
       ]
 
       const row = sheet.addRow(rowData)
