@@ -40,3 +40,23 @@ export function fmtChangedTime(
   if (!original) return ""
   return formatHHMMfromDate(current) ?? ""
 }
+
+/** 分 → H:MM。fmtLateEarly 用 */
+function minToHMM(min: number): string {
+  return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`
+}
+
+/**
+ * 遅刻／早退欄 → 旧Excel と同じ表記。`遅 0:30` / `早 2:00`、両方ある日は `遅 0:30 早 1:00`。
+ * 0分（または無し）の側は出さない。両方 0 なら空欄。
+ * この欄は文字を含む備考欄のような扱い（Excel 上で集計に使えない）。
+ */
+export function fmtLateEarly(
+  lateMinutes: number | null | undefined,
+  earlyLeaveMinutes: number | null | undefined,
+): string {
+  const parts: string[] = []
+  if (lateMinutes && lateMinutes > 0) parts.push(`遅 ${minToHMM(lateMinutes)}`)
+  if (earlyLeaveMinutes && earlyLeaveMinutes > 0) parts.push(`早 ${minToHMM(earlyLeaveMinutes)}`)
+  return parts.join(" ")
+}

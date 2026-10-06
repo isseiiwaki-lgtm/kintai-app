@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma"
 import { calcLegalBreak } from "@/config/attendance.config"
 import { resolveLateEarlyMinutes } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
-import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedTime } from "@/lib/export-format"
+import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedTime, fmtLateEarly } from "@/lib/export-format"
 import ExcelJS from "exceljs"
 
 // 分 → H:MM 形式（0以下は空欄）
@@ -45,7 +45,7 @@ const COL_WIDTHS = [
   14, 14, 16, 16,     // 法定休日4列
   14, 16, 14, 16,     // 休日出勤4列
   8,  8, 10, 10,  6,  // 有給日・有給時間・特別有給・特別無給・振休
-  8,  6,  7,  7,  8,  8, // 遅刻早退〜変更退勤
+  14, 6,  7,  7,  8,  8, // 遅刻早退〜変更退勤
 ]
 
 export async function GET(req: NextRequest) {
@@ -247,7 +247,7 @@ export async function GET(req: NextRequest) {
       const lateEarlyMins = rec
         ? resolveLateEarlyMinutes(rec, user)
         : { lateMinutes: 0, earlyLeaveMinutes: 0 }
-      const lateEarly  = lateEarlyMins.lateMinutes + lateEarlyMins.earlyLeaveMinutes
+      const lateEarly  = fmtLateEarly(lateEarlyMins.lateMinutes, lateEarlyMins.earlyLeaveMinutes) // 遅 0:30 / 早 2:00（文字列・集計不可）
 
       // 休暇申請の分類
       let paidLeaveDays = "", paidLeaveTime = ""
@@ -285,7 +285,7 @@ export async function GET(req: NextRequest) {
         paidLeaveDays, paidLeaveTime,            // 有給日・時間
         specialPaid, specialUnpaid,              // 特別休暇
         subLeave,                                // 振休
-        fmtMin(lateEarly),                       // 遅刻／早退
+        lateEarly,                               // 遅刻／早退（遅 0:30 早 1:00 形式）
         absent,                                  // 欠勤
         fmtRawPunch(rec?.rawClockIn),            // 出勤（実打刻。無い日は空欄）
         fmtRawPunch(rec?.rawClockOut),           // 退勤（実打刻。無い日は空欄）

@@ -3,7 +3,7 @@
  * 具体例: docs/IMPLEMENTATION_PLAN_2026-10.md 作業F
  */
 import { describe, it, expect } from "vitest"
-import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedTime } from "../lib/export-format"
+import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedTime, fmtLateEarly } from "../lib/export-format"
 
 /** JST の時刻を UTC Date に変換 */
 function jst(y: number, mo: number, d: number, h: number, mi: number): Date {
@@ -49,5 +49,24 @@ describe("Excel の出勤・退勤・勤務時間・変更列", () => {
   })
   it("JST 0:00〜8:59（UTC では前日）も日本時間で出る", () => {
     expect(fmtRawPunch(jst(2026, 10, 5, 0, 30))).toBe("00:30")
+  })
+})
+
+describe("遅刻／早退欄", () => {
+  it("遅刻だけ → 遅 0:30", () => {
+    expect(fmtLateEarly(30, 0)).toBe("遅 0:30")
+  })
+  it("早退だけ → 早 2:00", () => {
+    expect(fmtLateEarly(0, 120)).toBe("早 2:00")
+  })
+  it("両方 → 遅 0:30 早 1:00", () => {
+    expect(fmtLateEarly(30, 60)).toBe("遅 0:30 早 1:00")
+  })
+  it("0分・無しは出さない", () => {
+    expect(fmtLateEarly(0, 0)).toBe("")
+    expect(fmtLateEarly(null, undefined)).toBe("")
+  })
+  it("1時間以上・分は2桁", () => {
+    expect(fmtLateEarly(65, 5)).toBe("遅 1:05 早 0:05")
   })
 })
