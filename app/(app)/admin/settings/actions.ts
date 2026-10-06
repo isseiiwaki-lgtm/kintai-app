@@ -19,11 +19,13 @@ export async function actionSaveSetting(formData: FormData) {
   const break2Minutes      = Number(formData.get("break2Minutes"))
   const roundEarlyClockIn  = formData.get("roundEarlyClockIn") === "true"
   const roundNearClockTime = formData.get("roundNearClockTime") === "true"
+  const roundQuarterHour   = formData.get("roundQuarterHour") === "true"
+  const capOvertimeByRequest = formData.get("capOvertimeByRequest") === "true"
 
   await prisma.setting.upsert({
     where:  { id: 1 },
-    update: { closingDay, break1Threshold, break1Minutes, break2Threshold, break2Minutes, roundEarlyClockIn, roundNearClockTime },
-    create: { id: 1, closingDay, break1Threshold, break1Minutes, break2Threshold, break2Minutes, roundEarlyClockIn, roundNearClockTime },
+    update: { closingDay, break1Threshold, break1Minutes, break2Threshold, break2Minutes, roundEarlyClockIn, roundNearClockTime, roundQuarterHour, capOvertimeByRequest },
+    create: { id: 1, closingDay, break1Threshold, break1Minutes, break2Threshold, break2Minutes, roundEarlyClockIn, roundNearClockTime, roundQuarterHour, capOvertimeByRequest },
   })
 
   revalidatePath("/admin/settings")

@@ -3,7 +3,8 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
-import { formatHHMMfromDate, applyRounding, calcScheduledMinutes } from "@/lib/attendance"
+import { formatHHMMfromDate, computeRecordedClockIn, calcScheduledMinutes } from "@/lib/attendance"
+import { recomputeClockOutForDay } from "@/lib/clock-out-cap"
 import { calcLegalBreak } from "@/config/attendance.config"
 import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
 
@@ -58,6 +59,12 @@ async function applyRequestEffects(
         scheduledEndTime:   req.user.workEndTime,
       },
     })
+    revalidatePath("/records")
+  }
+
+  // 残業承認時（早出申請を除く）: ④ON なら、退勤後に承認された申請の上限を退勤の記録時刻へ反映して計算し直す
+  if (req.type === "OVERTIME" && detail?.overtimeType !== "earlyStart") {
+    await recomputeClockOutForDay(req.userId, req.targetDate)
     revalidatePath("/records")
   }
 
@@ -280,15 +287,15 @@ export async function actionRejectRequest(id: string) {
     const detail = req.detail as Record<string, string> | null
     if (detail?.overtimeType === "earlyStart") {
       const setting = await prisma.setting.findUnique({ where: { id: 1 } })
-      if (setting?.roundEarlyClockIn || setting?.roundNearClockTime) {
+      if (setting?.roundEarlyClockIn || setting?.roundNearClockTime || setting?.roundQuarterHour) {
         const existing = await prisma.attendanceRecord.findUnique({
           where: { userId_date: { userId: req.userId, date: req.targetDate } },
         })
         if (existing?.clockIn) {
-          const corrected = applyRounding(existing.clockIn, req.user.workStartTime, {
-            roundEarly: setting.roundEarlyClockIn  ?? false,
-            roundNear:  setting.roundNearClockTime ?? false,
-            kind: "in",
+          const corrected = computeRecordedClockIn(existing.clockIn, {
+            workStartTime: req.user.workStartTime,
+            setting,
+            hasEarlyStartRequest: false,
           })
           if (corrected.getTime() !== existing.clockIn.getTime()) {
             const updateData: Record<string, Date | number> = { clockIn: corrected }
@@ -349,6 +356,8 @@ export async function actionUpdateRequest(id: string, formData: FormData) {
       break
   }
 
+  const before = await prisma.request.findUnique({ where: { id } })
+
   await prisma.request.update({
     where: { id },
     data: {
@@ -358,6 +367,16 @@ export async function actionUpdateRequest(id: string, formData: FormData) {
       detail,
     },
   })
+
+  // 承認済みの残業申請の終了時刻・日付・種別を直したら、④の上限が変わるので退勤の記録時刻を計算し直す
+  if (before?.status === "APPROVED" && (before.type === "OVERTIME" || type === "OVERTIME")) {
+    await recomputeClockOutForDay(before.userId, before.targetDate)
+    const newDate = new Date(targetDate)
+    if (newDate.getTime() !== before.targetDate.getTime()) {
+      await recomputeClockOutForDay(before.userId, newDate)
+    }
+    revalidatePath("/records")
+  }
   revalidatePath("/admin/requests")
   revalidatePath("/requests")
 }
@@ -389,6 +408,15 @@ export async function actionDeleteRequest(id: string) {
   }
 
   await prisma.request.delete({ where: { id } })
+
+  // 承認済みの残業申請（早出申請を除く）を削除したら、④の上限が外れるので退勤の記録時刻を計算し直す
+  if (req?.status === "APPROVED" && req.type === "OVERTIME") {
+    const d = req.detail as { overtimeType?: string } | null
+    if (d?.overtimeType !== "earlyStart") {
+      await recomputeClockOutForDay(req.userId, req.targetDate)
+      revalidatePath("/records")
+    }
+  }
   revalidatePath("/admin/requests")
   revalidatePath("/requests")
 }

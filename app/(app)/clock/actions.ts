@@ -2,8 +2,14 @@
 
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
-import { calcLegalBreak } from "@/config/attendance.config"
-import { applyRounding } from "@/lib/attendance"
+import {
+  calcWorkingMinutes,
+  computeRecordedClockIn,
+  computeRecordedClockOut,
+  hasOvertimeRequest,
+  pickOvertimeCapEnd,
+} from "@/lib/attendance"
+import { fetchDayOvertimeRequests } from "@/lib/clock-out-cap"
 import { revalidatePath } from "next/cache"
 
 function todayJST(): Date {
@@ -38,11 +44,11 @@ export async function actionClockIn() {
   ])
   // 生打刻（丸め前の実時刻）は証跡として常に保存する
   const rawClockIn = new Date()
-  const clockIn = applyRounding(rawClockIn, user?.workStartTime ?? null, {
-    roundEarly: earlyStartReq ? false : (setting?.roundEarlyClockIn ?? false),
-    // 早出申請がある日は roundNear も無効（定時前打刻を定時に吸収しないため）
-    roundNear:  earlyStartReq ? false : (setting?.roundNearClockTime ?? false),
-    kind: "in",
+  // ①→②→③の順に丸める。早出申請がある日は①②を無効にする（定時前打刻を定時に吸収しないため）が、③は効かせる
+  const clockIn = computeRecordedClockIn(rawClockIn, {
+    workStartTime: user?.workStartTime ?? null,
+    setting,
+    hasEarlyStartRequest: !!earlyStartReq,
   })
   await prisma.attendanceRecord.upsert({
     where: { userId_date: { userId, date: today } },
@@ -57,55 +63,35 @@ export async function actionClockOut() {
   const userId = await getUserId()
   const today = todayJST()
 
-  const [record, user, setting, overtimeReq] = await Promise.all([
+  const [record, user, setting, overtimeRequests] = await Promise.all([
     prisma.attendanceRecord.findUnique({
       where: { userId_date: { userId, date: today } },
     }),
     prisma.user.findUnique({ where: { id: userId }, select: { employmentType: true, workEndTime: true } }),
     prisma.setting.findUnique({ where: { id: 1 } }),
-    // 当日に残業申請（申請中 or 承認済）があれば roundNear を無効にする
-    prisma.request.findFirst({
-      where: {
-        userId,
-        targetDate: today,
-        type:   "OVERTIME",
-        status: { in: ["PENDING", "APPROVED"] },
-        detail: { path: ["overtimeType"], not: "earlyStart" },
-      },
-      select: { id: true },
-    }),
+    // 当日の残業申請（申請中 or 承認済）。②の無効化（申請中を含む）と④の上限（承認済みのみ）に使う
+    fetchDayOvertimeRequests(userId, today),
   ])
   if (!record?.clockIn) throw new Error("出勤打刻がありません")
   // 生打刻（丸め前の実時刻）は証跡として常に保存する
   const rawClockOut = new Date()
-  const now = applyRounding(rawClockOut, user?.workEndTime ?? null, {
-    roundEarly: false,
-    // 残業申請がある日は roundNear を無効（定時付近の打刻を定時に吸収しないため）
-    roundNear:  overtimeReq ? false : (setting?.roundNearClockTime ?? false),
-    kind: "out",
+  // 記録時刻 ＝ ①→②→③を適用し、④ON なら min(③まで適用した退勤, 上限)。実打刻は rawClockOut にそのまま残す
+  // 残業申請がある日は②を無効（③は効かせる）。上限は承認済み残業申請のうち最後に出した申請の終了時刻、無ければ定時
+  const now = computeRecordedClockOut(rawClockOut, {
+    workEndTime: user?.workEndTime ?? null,
+    clockIn: record.clockIn,
+    setting,
+    hasOvertimeRequest: hasOvertimeRequest(overtimeRequests),
+    capEndTime: pickOvertimeCapEnd(overtimeRequests),
   })
 
-  // 外出中の時間を除いた在席時間（分）
-  const totalMs = now.getTime() - record.clockIn.getTime()
-  const goOutMs =
-    record.goOutAt && record.returnAt
-      ? record.returnAt.getTime() - record.goOutAt.getTime()
-      : 0
-  const rawMinutes = Math.floor((totalMs - goOutMs) / 60000)
-
-  let workingMinutes: number
-  if (user?.employmentType === "part") {
-    // パート: 手動休憩を差し引き
-    const breakMs =
-      record.breakStart && record.breakEnd
-        ? record.breakEnd.getTime() - record.breakStart.getTime()
-        : 0
-    workingMinutes = Math.max(0, rawMinutes - Math.floor(breakMs / 60000))
-  } else {
-    // フルタイム: 法定休憩を自動差し引き
-    const legalBreak = calcLegalBreak(rawMinutes)
-    workingMinutes = Math.max(0, rawMinutes - legalBreak)
-  }
+  // 外出中の時間を除いた在席時間から休憩を控除（パートは休憩打刻、フルタイムは法定休憩）
+  const workingMinutes = calcWorkingMinutes({
+    clockIn: record.clockIn, clockOut: now,
+    goOutAt: record.goOutAt, returnAt: record.returnAt,
+    breakStart: record.breakStart, breakEnd: record.breakEnd,
+    employmentType: user?.employmentType,
+  }) ?? 0
 
   // 法定残業: 1日8時間(480分)超の分（パート・フルタイム共通）
   const overtimeMinutes = Math.max(0, workingMinutes - 480)

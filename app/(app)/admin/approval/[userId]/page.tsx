@@ -4,7 +4,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { ProxyPunchForm } from "./_components/ProxyPunchForm"
-import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
+import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
 type Params      = Promise<{ userId: string }>
@@ -52,7 +52,7 @@ export default async function UserApprovalPage({
   const prevLink  = `/admin/approval/${userId}?year=${prevYear}&month=${prevMonth}`
   const nextLink  = `/admin/approval/${userId}?year=${nextYear}&month=${nextMonth}`
 
-  const [user, records, requests] = await Promise.all([
+  const [user, records, requests, overtimeRequests] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -68,7 +68,21 @@ export default async function UserApprovalPage({
       where: { userId, targetDate: { gte: firstDay, lte: lastDay } },
       select: { id: true, targetDate: true },
     }),
+    // 残業申請（申請中・承認済）。④の上限（申請終了）と「申請なし」の目印に使う
+    prisma.request.findMany({
+      where: {
+        userId, type: "OVERTIME", status: { in: ["PENDING", "APPROVED"] },
+        targetDate: { gte: firstDay, lte: lastDay },
+      },
+      select: { targetDate: true, type: true, status: true, createdAt: true, detail: true },
+    }),
   ])
+  const capEnabled = setting?.capOvertimeByRequest ?? false
+  const overtimeReqByDate = new Map<string, typeof overtimeRequests>()
+  for (const q of overtimeRequests) {
+    const k = q.targetDate.toISOString()
+    overtimeReqByDate.set(k, [...(overtimeReqByDate.get(k) ?? []), q])
+  }
 
   if (!user) notFound()
 
@@ -130,6 +144,13 @@ export default async function UserApprovalPage({
       scheduledMinutes,
     })
     const nightMinutes = calcNightMinutes(r.clockIn, r.clockOut)
+    // ④（残業の申請上限）: 実打刻・申請終了・記録時刻の3つを管理者に見せる。一般社員の画面には出さない
+    const dayOvertimeReqs = overtimeReqByDate.get(r.date.toISOString()) ?? []
+    const requestEndTime = capEnabled ? pickOvertimeCapEnd(dayOvertimeReqs) : null
+    const noOvertimeRequest = needsOvertimeRequestNotice({
+      rawClockOut: r.rawClockOut, workEndTime: user.workEndTime,
+      hasOvertimeRequest: hasOvertimeRequest(dayOvertimeReqs), capEnabled,
+    })
     const goOutMins =
       r.goOutAt && r.returnAt
         ? Math.round((r.returnAt.getTime() - r.goOutAt.getTime()) / 60000)
@@ -142,6 +163,8 @@ export default async function UserApprovalPage({
       clockOut:    formatHHMM(r.clockOut),
       rawClockIn:  formatHHMM(r.rawClockIn),
       rawClockOut: formatHHMM(r.rawClockOut),
+      requestEndTime,
+      noOvertimeRequest,
       breakStart:  formatHHMM(r.breakStart),
       breakEnd:    formatHHMM(r.breakEnd),
       goOutAt:     formatHHMM(r.goOutAt),

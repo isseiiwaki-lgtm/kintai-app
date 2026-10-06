@@ -1,7 +1,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcNeedsReview } from "@/lib/attendance"
+import { calcNeedsReview, hasOvertimeRequest, needsOvertimeRequestNotice } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -50,10 +50,27 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
       workStartTime: true, workEndTime: true,
       attendanceRecords: {
         where: { date: { gte: firstDay, lte: lastDay } },
-        select: { workingMinutes: true, clockIn: true, clockOut: true, date: true, status: true },
+        select: { workingMinutes: true, clockIn: true, clockOut: true, rawClockOut: true, date: true, status: true },
       },
     },
   })
+
+  // ④ON のとき: 残業申請が無いのに実打刻が定時を15分以上過ぎた日の数を出すため、期間内の残業申請（申請中・承認済）を取得
+  const capEnabled = setting?.capOvertimeByRequest ?? false
+  const overtimeRequests = capEnabled
+    ? await prisma.request.findMany({
+        where: {
+          type: "OVERTIME", status: { in: ["PENDING", "APPROVED"] },
+          targetDate: { gte: firstDay, lte: lastDay },
+        },
+        select: { userId: true, targetDate: true, type: true, status: true, createdAt: true, detail: true },
+      })
+    : []
+  const overtimeReqMap = new Map<string, typeof overtimeRequests>()
+  for (const q of overtimeRequests) {
+    const k = `${q.userId}|${q.targetDate.toISOString()}`
+    overtimeReqMap.set(k, [...(overtimeReqMap.get(k) ?? []), q])
+  }
 
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 
@@ -75,8 +92,9 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     overtimeMin: number
     unapprovedDays: number
     approvedDays: number
+    noOvertimeRequestDays: number
   }
-  type Rec = { clockIn: Date | null; clockOut: Date | null; date: Date; workingMinutes: number | null; status: string }
+  type Rec = { clockIn: Date | null; clockOut: Date | null; rawClockOut: Date | null; date: Date; workingMinutes: number | null; status: string }
   const rows: Row[] = users.map((u: typeof users[number]) => {
     const recs = u.attendanceRecords as Rec[]
     const startM = parseHHMM(u.workStartTime)
@@ -96,13 +114,22 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
       }) || r.status === "SUBMITTED"
     ).length
     const approvedDays      = recs.filter((r) => r.status === "APPROVED" || r.status === "LOCKED").length
+    // 残業申請が無いのに実打刻が定時を15分以上過ぎた日（④ON のみ。通知は飛ばさず、件数の目印だけ）
+    const noOvertimeRequestDays = recs.filter((r) =>
+      needsOvertimeRequestNotice({
+        rawClockOut: r.rawClockOut,
+        workEndTime: u.workEndTime,
+        hasOvertimeRequest: hasOvertimeRequest(overtimeReqMap.get(`${u.id}|${r.date.toISOString()}`) ?? []),
+        capEnabled,
+      })
+    ).length
     return {
       id: u.id,
       name: u.name ?? u.email ?? "?",
       dept: u.department ?? "—",
       empType: u.employmentType,
       workDays, totalMin, scheduledTotalMin, overtimeMin,
-      unapprovedDays, approvedDays,
+      unapprovedDays, approvedDays, noOvertimeRequestDays,
     }
   })
 
@@ -153,6 +180,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
               <th className="text-center px-3 py-3 font-medium">所定</th>
               <th className="text-center px-3 py-3 font-medium">残業</th>
               <th className="text-center px-3 py-3 font-medium">未承認</th>
+              {capEnabled && <th className="text-center px-3 py-3 font-medium" title="残業申請が無いのに、実打刻が定時を15分以上過ぎた日数">申請なし超過</th>}
               <th className="text-center px-3 py-3 font-medium">承認済</th>
             </tr>
           </thead>
@@ -182,6 +210,11 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
                 <td className="px-3 py-2.5 text-center">
                   {r.unapprovedDays > 0 ? <span className="text-amber-600 font-medium">{r.unapprovedDays}日</span> : <span className="text-gray-300">—</span>}
                 </td>
+                {capEnabled && (
+                  <td className="px-3 py-2.5 text-center">
+                    {r.noOvertimeRequestDays > 0 ? <span className="text-gray-600">{r.noOvertimeRequestDays}日</span> : <span className="text-gray-300">—</span>}
+                  </td>
+                )}
                 <td className="px-3 py-2.5 text-center">
                   {r.approvedDays > 0 ? <span className="text-green-600 font-medium">{r.approvedDays}日</span> : <span className="text-gray-300">—</span>}
                 </td>

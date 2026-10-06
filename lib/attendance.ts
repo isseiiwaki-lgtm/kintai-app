@@ -254,11 +254,17 @@ export function hhmmToUTCDate(hhmm: string, todayUTC: Date): Date {
  *   - 出勤(kind="in"):  定時前14分以内のみ丸める。定時後（遅刻側）は丸めない
  *   - 退勤(kind="out"): 定時後14分以内のみ丸める。定時前（早退側）は丸めない
  *   遅刻・早退を丸めで消さないため、2026-08-19 に前後対称から方向限定へ変更
+ * - roundQuarter: ③全体の15分丸め（出勤は切り上げ・退勤は切り捨て）。①②の結果に対して最後に適用する
+ *   **15分の区切りは本人の定時を起点に刻む**（出勤は始業時刻から、退勤は終業時刻から15分ずつ）。
+ *   時計の :00/:15/:30/:45 で刻むと、定時が区切りに乗らない人で定時を越えて丸まり、架空の早退・遅刻が出るため。
+ *   例: 終業 17:40 の人が 17:43 に退勤 → 17:40（時計刻みだと 17:30 になり早退10分が生まれてしまう）
+ *   ③ONなら②も効いているものとして扱う（呼び出し側が roundNear に ② または ③ を渡す）。
+ *   早出・残業申請がある日も③は効かせる（①②だけ呼び出し側が無効にする）
  */
 export function applyRounding(
   actual: Date,
   scheduled: string | null,
-  opts: { roundEarly: boolean; roundNear: boolean; kind: "in" | "out" },
+  opts: { roundEarly: boolean; roundNear: boolean; roundQuarter?: boolean; kind: "in" | "out" },
 ): Date {
   if (!scheduled) return actual
   // JST の日付 0:00 を UTC で表した基準日を算出
@@ -272,13 +278,138 @@ export function applyRounding(
   const scheduledDate = hhmmToUTCDate(scheduled, todayUTC)
   const diffMin = Math.round((actual.getTime() - scheduledDate.getTime()) / 60000)
 
-  if (opts.roundEarly && diffMin < 0) return scheduledDate
-  if (opts.roundNear) {
+  // ①→②の順に評価（どちらかが当たれば定時きっかりになる）
+  let result = actual
+  if (opts.roundEarly && diffMin < 0) {
+    result = scheduledDate
+  } else if (opts.roundNear) {
     // 出勤は定時前、退勤は定時後の14分以内だけを定時へ寄せる（遅刻・早退側は丸めない）
-    if (opts.kind === "in"  && diffMin < 0 && diffMin >= -14) return scheduledDate
-    if (opts.kind === "out" && diffMin > 0 && diffMin <=  14) return scheduledDate
+    if (opts.kind === "in"  && diffMin < 0 && diffMin >= -14) result = scheduledDate
+    if (opts.kind === "out" && diffMin > 0 && diffMin <=  14) result = scheduledDate
   }
-  return actual
+
+  // ③15分丸め: ①②の結果を、定時を起点にした15分の区切りへ寄せる
+  // 秒は落として分単位で数える（画面に出る HH:MM と同じ基準）
+  if (opts.roundQuarter) {
+    const minutesFromScheduled = Math.floor((result.getTime() - scheduledDate.getTime()) / 60000)
+    const steps = opts.kind === "in"
+      ? Math.ceil(minutesFromScheduled / 15)   // 出勤: 切り上げ（8:10 → 8:15、9:23 → 9:30）
+      : Math.floor(minutesFromScheduled / 15)  // 退勤: 切り捨て
+    return new Date(scheduledDate.getTime() + steps * 15 * 60000)
+  }
+  return result
+}
+
+type RoundingSetting = {
+  roundEarlyClockIn?:   boolean | null
+  roundNearClockTime?:  boolean | null
+  roundQuarterHour?:    boolean | null
+  capOvertimeByRequest?: boolean | null
+}
+
+/**
+ * 出勤の記録時刻を求める（打刻時・早出申請却下時の再丸めで共通）
+ * 早出申請（申請中・承認済）がある日は①②を無効にする。③は申請があっても効かせる
+ */
+export function computeRecordedClockIn(
+  raw: Date,
+  p: { workStartTime: string | null; setting: RoundingSetting | null | undefined; hasEarlyStartRequest: boolean },
+): Date {
+  const s = p.setting
+  return applyRounding(raw, p.workStartTime, {
+    roundEarly:   p.hasEarlyStartRequest ? false : (s?.roundEarlyClockIn ?? false),
+    // ③ONなら②も効いているものとして扱う（実効の② ＝ ② または ③）
+    roundNear:    p.hasEarlyStartRequest ? false : ((s?.roundNearClockTime ?? false) || (s?.roundQuarterHour ?? false)),
+    roundQuarter: s?.roundQuarterHour ?? false,
+    kind: "in",
+  })
+}
+
+/** 申請の最小形（残業申請の判定・上限の決定に使う） */
+export type OvertimeRequestLike = {
+  type:      string
+  status:    string
+  createdAt: Date
+  detail?:   unknown
+}
+
+function isNormalOvertime(r: OvertimeRequestLike): boolean {
+  if (r.type !== "OVERTIME") return false
+  const d = r.detail as { overtimeType?: string } | null | undefined
+  return d?.overtimeType !== "earlyStart"  // 早出申請は残業ではない
+}
+
+/** 残業申請（早出申請を除く）が申請中・承認済で存在するか。②の無効化と注意表示の判定に使う */
+export function hasOvertimeRequest(requests: OvertimeRequestLike[]): boolean {
+  return requests.some((r) => isNormalOvertime(r) && (r.status === "PENDING" || r.status === "APPROVED"))
+}
+
+/**
+ * ④の上限にする終了時刻（"HH:MM"）。承認済みの残業申請（早出申請を除く）のうち
+ * **最後に出した申請（createdAt が最新）**の終了時刻。無ければ null（＝定時が上限）
+ */
+export function pickOvertimeCapEnd(requests: OvertimeRequestLike[]): string | null {
+  const approved = requests
+    .filter((r) => isNormalOvertime(r) && r.status === "APPROVED")
+    .filter((r) => /^\d{1,2}:\d{2}$/.test(String((r.detail as { endTime?: string } | null)?.endTime ?? "")))
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+  if (approved.length === 0) return null
+  return (approved[0].detail as { endTime: string }).endTime
+}
+
+/**
+ * 退勤の記録時刻を求める（打刻時・残業申請の承認／削除後の計算し直しで共通）
+ * ①→②→③ を applyRounding で適用し、④ON なら min(③まで適用した退勤, 上限) にする。
+ * - 残業申請（申請中・承認済）がある日は②を無効にする（③は効かせる）
+ * - ④の上限 ＝ capEndTime（承認済み残業申請の終了）、無ければ定時
+ * - 上限が出勤時刻以前になる場合は上限を掛けない（勤務時間が負になるため）
+ * 実打刻（raw）は書き換えない。呼び出し側は raw を rawClockOut に保存する
+ */
+export function computeRecordedClockOut(
+  raw: Date,
+  p: {
+    workEndTime: string | null
+    clockIn: Date | null
+    setting: RoundingSetting | null | undefined
+    hasOvertimeRequest: boolean
+    capEndTime: string | null
+  },
+): Date {
+  const s = p.setting
+  const rounded = applyRounding(raw, p.workEndTime, {
+    roundEarly:   false,
+    roundNear:    p.hasOvertimeRequest ? false : ((s?.roundNearClockTime ?? false) || (s?.roundQuarterHour ?? false)),
+    roundQuarter: s?.roundQuarterHour ?? false,
+    kind: "out",
+  })
+  if (!s?.capOvertimeByRequest) return rounded
+
+  const capHHMM = p.capEndTime ?? p.workEndTime
+  if (!capHHMM) return rounded
+  const jst = toJST(rounded)
+  const dayStartUTC = Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), jst.getUTCDate()) - 9 * 60 * 60 * 1000
+  const cap = hhmmToUTCDate(capHHMM, new Date(dayStartUTC))
+  if (p.clockIn && cap.getTime() <= p.clockIn.getTime()) return rounded
+  return rounded.getTime() > cap.getTime() ? cap : rounded
+}
+
+/**
+ * 「残業申請が無いのに定時を15分以上過ぎて打刻した日」の注意表示の判定
+ * - 実打刻（rawClockOut）が定時＋15分以上、かつ残業申請（申請中・承認済、早出申請を除く）が無い
+ * - ④ONのときだけ（④OFFなら何も削らないので注意の対象にしない）
+ * - 定時から14分以内は②で定時に吸収されるいつもの運用なので対象外
+ * 要確認の状態・件数には入れない。本人向けは削った時間を出さない（内訳は管理者画面のみ）
+ */
+export function needsOvertimeRequestNotice(p: {
+  rawClockOut: Date | null
+  workEndTime: string | null
+  hasOvertimeRequest: boolean
+  capEnabled: boolean
+}): boolean {
+  if (!p.capEnabled || !p.rawClockOut || p.hasOvertimeRequest) return false
+  const endMins = parseHHMM(p.workEndTime)
+  if (endMins === null) return false
+  return hhmm(p.rawClockOut) >= endMins + 15
 }
 
 /**

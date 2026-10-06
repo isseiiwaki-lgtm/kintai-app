@@ -12,6 +12,8 @@ type Rec = {
   clockOut:   string | null
   rawClockIn:  string | null   // 生打刻（丸め前）。丸めと差がある日のみ併記表示
   rawClockOut: string | null
+  requestEndTime: string | null   // ④: 承認済み残業申請（最後に出した申請）の終了時刻。④OFF・申請なしは null
+  noOvertimeRequest: boolean      // ④ON で残業申請が無いのに実打刻が定時を15分以上過ぎた日の目印
   breakStart: string | null
   breakEnd:   string | null
   goOutAt:    string | null
@@ -157,6 +159,17 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                     {rec.clockOut ?? "—"}
                     {rec.rawClockOut && rec.rawClockOut !== rec.clockOut && (
                       <span className="block text-[10px] text-gray-400 leading-tight">実 {rec.rawClockOut}</span>
+                    )}
+                    {rec.requestEndTime && (
+                      <span className="block text-[10px] text-gray-400 leading-tight">申請終了 {rec.requestEndTime}</span>
+                    )}
+                    {rec.noOvertimeRequest && (
+                      <span
+                        className="block text-[10px] text-amber-600 leading-tight"
+                        title="残業申請が無いのに、実打刻が定時を15分以上過ぎています（退勤の記録は定時で頭打ち）"
+                      >
+                        申請なし
+                      </span>
                     )}
                   </td>
                   <td className="px-3 py-2.5 text-center font-mono text-gray-500 text-xs">

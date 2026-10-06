@@ -4,6 +4,8 @@ import Link from "next/link"
 import { QuickClockButton } from "./clock/QuickClockButton"
 import { calcReviewReasons, resolveEmployeeReview, buildLateEarlyStatusMap } from "@/lib/attendance"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
+import { OvertimeNotice } from "@/components/overtime-notice"
+import { shouldShowOvertimeNotice } from "@/lib/clock-out-cap"
 
 /** UTC の Date を JST の同じ日付の 00:00:00 UTC に変換 */
 function todayJST(): Date {
@@ -80,6 +82,9 @@ export default async function DashboardPage() {
     }),
   ])
 
+  // 当日だけの注意表示（残業申請が無いのに定時を15分以上過ぎて退勤した日）。要確認の件数には入れない
+  const showOvertimeNotice = await shouldShowOvertimeNotice(userId, today)
+
   const workDays     = monthRecords.length
   const totalMinutes = monthRecords.reduce((s: number, r: { workingMinutes: number | null }) => s + (r.workingMinutes ?? 0), 0)
 
@@ -137,6 +142,8 @@ export default async function DashboardPage() {
           <span className="text-sm font-medium text-gray-700">{userInfo.name ?? "—"}</span>
         </div>
       )}
+
+      {showOvertimeNotice && <OvertimeNotice />}
 
       {/* 今日の打刻カード */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
