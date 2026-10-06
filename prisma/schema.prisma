@@ -121,7 +121,7 @@ model VerificationToken {
 model AttendanceRecord {
   id             String           @id @default(cuid())
   userId         String
-  date           DateTime         // 日付のみ (00:00:00 JST)
+  date           DateTime         // 日付のみ (UTC 0時＝その日。人間は日本時間で読む。lib/date.ts 参照)
   clockIn        DateTime?
   clockOut       DateTime?
   breakStart     DateTime?  // パート: 休憩開始
@@ -236,7 +236,7 @@ model Setting {
 // 休日カレンダー（残業・休出判定の元データ）
 model Holiday {
   id        Int      @id @default(autoincrement())
-  date      DateTime @unique // 日付のみ (00:00:00 JST)
+  date      DateTime @unique // 日付のみ (UTC 0時＝その日。人間は日本時間で読む。lib/date.ts 参照)
   name      String           // 例: "元日"、"夏季休業"
   type      String   @default("NATIONAL") // NATIONAL / COMPANY / SUBSTITUTE
   createdAt DateTime @default(now())

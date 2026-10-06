@@ -3,6 +3,12 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { redirect } from "next/navigation"
+import {
+  resolveLoginEmailOnCompanyEmailSave,
+  validateWorkTime,
+  detectEmployeeCodeConflicts,
+  employeeCodeInUseMessage,
+} from "@/lib/user-validation"
 
 // ── CSV パーサー ──────────────────────────────────────────
 function parseCsvLine(line: string): string[] {
@@ -88,7 +94,7 @@ export async function actionImportUsers(formData: FormData): Promise<ImportResul
   // バリデーション
   const errors: ImportError[] = []
   const data: {
-    email: string; name: string | null; role: string; employmentType: string
+    row: number; email: string; name: string | null; role: string; employmentType: string
     department: string | null; employeeCode: string | null; jobTitle: string | null
     workStartTime: string | null; workEndTime: string | null
     hireDate: Date | null; salaryCode: string | null; isActive: boolean
@@ -117,8 +123,11 @@ export async function actionImportUsers(formData: FormData): Promise<ImportResul
 
     const startTime = iStart !== -1 ? (r[iStart] ?? "").trim() : ""
     const endTime   = iEnd   !== -1 ? (r[iEnd]   ?? "").trim() : ""
-    if (startTime && !/^\d{2}:\d{2}$/.test(startTime)) errors.push({ row, field: "出勤時刻", message: "HH:MM形式で入力してください" })
-    if (endTime   && !/^\d{2}:\d{2}$/.test(endTime))   errors.push({ row, field: "退勤時刻", message: "HH:MM形式で入力してください" })
+    // 形式（HH:MM）と15分刻み（分が 00/15/30/45）をサーバー側で検証
+    const startErr = validateWorkTime(startTime)
+    if (startErr) errors.push({ row, field: "出勤時刻", message: startErr })
+    const endErr = validateWorkTime(endTime)
+    if (endErr) errors.push({ row, field: "退勤時刻", message: endErr })
 
     const hireDateStr = iHire !== -1 ? (r[iHire] ?? "").trim() : ""
     let hireDate: Date | null = null
@@ -129,6 +138,7 @@ export async function actionImportUsers(formData: FormData): Promise<ImportResul
 
     if (errors.length === 0 || !errors.some((e) => e.row === row)) {
       data.push({
+        row,
         email,
         name:           iName !== -1 ? (r[iName] ?? "").trim() || null : null,
         role:           role!,
@@ -145,6 +155,21 @@ export async function actionImportUsers(formData: FormData): Promise<ImportResul
     }
   }
 
+  // employeeCode の UNIQUE 競合を事前検出する。
+  // 他人（インポート対象外）の番号を黙って消さず、行番号付きの取り込みエラーとして返す
+  const codes = data.map((d) => d.employeeCode).filter(Boolean) as string[]
+  if (codes.length > 0) {
+    const holders = await prisma.user.findMany({
+      where:  { employeeCode: { in: codes } },
+      select: { email: true, name: true, employeeCode: true },
+    })
+    const conflicts = detectEmployeeCodeConflicts(
+      data.map((d) => ({ row: d.row, email: d.email, employeeCode: d.employeeCode })),
+      holders,
+    )
+    for (const c of conflicts) errors.push({ row: c.row, field: "従業員コード", message: c.message })
+  }
+
   if (errors.length > 0) return { success: false, errors }
 
   // DB upsert（トランザクション）
@@ -154,18 +179,6 @@ export async function actionImportUsers(formData: FormData): Promise<ImportResul
     select: { email: true },
   })
   const existingEmails = new Set(existing.map((u: { email: string }) => u.email))
-
-  // employeeCode の UNIQUE 競合を事前解消（インポート対象外のユーザーに同コードがある場合クリア）
-  const codes = data.map((d) => d.employeeCode).filter(Boolean) as string[]
-  if (codes.length > 0) {
-    await prisma.user.updateMany({
-      where: {
-        employeeCode: { in: codes },
-        email: { notIn: data.map((d) => d.email) },
-      },
-      data: { employeeCode: null },
-    })
-  }
 
   await prisma.$transaction(
     data.map((d) => {
@@ -186,7 +199,7 @@ async function checkAdmin() {
   if (session?.user?.role !== "ADMIN") throw new Error("Forbidden")
 }
 
-export async function actionUpdateUser(formData: FormData) {
+export async function actionUpdateUser(formData: FormData): Promise<{ error: string } | void> {
   await checkAdmin()
 
   const id             = formData.get("id")             as string
@@ -210,9 +223,44 @@ export async function actionUpdateUser(formData: FormData) {
   const workFri        = formData.get("workFri")  === "on"
   const workSat        = formData.get("workSat")  === "on"
 
+  // 出勤・退勤時刻は15分刻み（画面のセレクト以外の経路でも守らせる）
+  const startErr = validateWorkTime(workStartTime)
+  if (startErr) return { error: `出勤時刻: ${startErr}` }
+  const endErr = validateWorkTime(workEndTime)
+  if (endErr) return { error: `退勤時刻: ${endErr}` }
+
+  // 社員番号は UNIQUE。他人と重複する場合は例外にせずエラーを返す
+  if (employeeCode) {
+    const holder = await prisma.user.findFirst({
+      where: { employeeCode, id: { not: id } },
+      select: { name: true, email: true },
+    })
+    if (holder) return { error: employeeCodeInUseMessage(holder.name, holder.email) }
+  }
+
+  // 会社メールを保存するとき、ログイン用 email が仮アドレス（複製ユーザー）なら会社メールに置き換える
+  const current = await prisma.user.findUnique({ where: { id }, select: { email: true } })
+  if (!current) return { error: "ユーザーが見つかりません" }
+  const newLoginEmail = resolveLoginEmailOnCompanyEmailSave(current.email, companyEmail)
+  if (companyEmail) {
+    // 会社メール・ログイン用メールとも UNIQUE。他人と衝突する場合は例外にせずエラーを返す
+    const taken = await prisma.user.findFirst({
+      where: {
+        id: { not: id },
+        OR: [
+          { companyEmail },
+          ...(newLoginEmail ? [{ email: newLoginEmail }] : []),
+        ],
+      },
+      select: { name: true, email: true },
+    })
+    if (taken) return { error: `この会社メールはすでに他のユーザーで使われています（${taken.name ?? taken.email}）` }
+  }
+
   await prisma.user.update({
     where: { id },
     data: {
+      ...(newLoginEmail ? { email: newLoginEmail } : {}),
       name:           name           || null,
       companyEmail:   companyEmail   || null,
       employeeCode:   employeeCode   || null,
@@ -267,6 +315,12 @@ export async function actionCreateUser(formData: FormData): Promise<{ error: str
   const workEndTime    = formData.get("workEndTime")     as string
 
   if (!email) return { error: "メールアドレスは必須です" }
+
+  // 出勤・退勤時刻は15分刻み
+  const startErr = validateWorkTime(workStartTime)
+  if (startErr) return { error: `出勤時刻: ${startErr}` }
+  const endErr = validateWorkTime(workEndTime)
+  if (endErr) return { error: `退勤時刻: ${endErr}` }
 
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) {
