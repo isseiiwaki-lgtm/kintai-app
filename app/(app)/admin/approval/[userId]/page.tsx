@@ -260,6 +260,7 @@ export default async function UserApprovalPage({
       status:      r.status,
       displayStatus: getDisplayStatus(r.status, needsReview),
       isAbsent:    r.isAbsent,
+      holidayWorkByProxy: r.holidayWorkByProxy,
       requestId:   requestMap.get(key) ?? null,
       scheduledMinutes,
       // 管理者の入力画面の選択肢（段6.5）：その日のスイッチ・定時・承認済みの申請

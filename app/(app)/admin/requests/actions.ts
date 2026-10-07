@@ -58,9 +58,56 @@ function prevBreakOf(detail: unknown): number | null {
   return Number.isFinite(n) && n >= 0 ? n : null
 }
 
+type BreakChainItem = { id: string; createdAt: Date; detail: unknown }
+type BreakDetail = { minutes?: string; prevBreakMinutes?: string; breakAppliedAt?: string }
+
+/** 休憩申請の適用順の値（承認・移動で記録へ入れた時刻。無い古い承認は申請の作成時刻） */
+function breakOrderKey(r: BreakChainItem): number {
+  const at = Date.parse((r.detail as BreakDetail | null)?.breakAppliedAt ?? "")
+  return Number.isFinite(at) ? at : (r.createdAt?.getTime?.() ?? 0)
+}
+
+/** 適用順（古い→新しい）。同時刻は申請の作成時刻、さらに id */
+function compareBreakChain(a: BreakChainItem, b: BreakChainItem): number {
+  return breakOrderKey(a) - breakOrderKey(b) ||
+    (a.createdAt?.getTime?.() ?? 0) - (b.createdAt?.getTime?.() ?? 0) ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+}
+
+/**
+ * その日の承認済みの休憩申請を適用順に並べた連鎖。各申請は「承認前の値（prev）→ 申請の分数」を記録に入れた1段。
+ * 承認・別の日からの移動で入れた順（detail.breakAppliedAt）が唯一の順序で、承認時の上書きも取り消しの戻し先もこの順に従う
+ * （打刻修正の変更履歴と同じ考え方：取り消す段が最後なら prev へ戻し、途中の段なら連鎖から外して次の段の prev を引き継ぐ）
+ */
+async function approvedBreakChain(userId: string, date: Date, excludeId: string): Promise<BreakChainItem[]> {
+  const reqs = await prisma.request.findMany({
+    where: { userId, type: "BREAK", status: "APPROVED", targetDate: date, id: { not: excludeId } },
+    select: { id: true, createdAt: true, detail: true },
+  }) as BreakChainItem[]
+  return [...reqs].sort(compareBreakChain)
+}
+
+/** self のすぐ後に適用され、self の入れた値を上書きした段（prev が self の分数と一致するもの）。無ければ null */
+async function linkedSuccessorOf(userId: string, date: Date, self: BreakChainItem) {
+  const selfMinutes = parseBreakRequestMinutes((self.detail as BreakDetail | null)?.minutes)
+  const chain = await approvedBreakChain(userId, date, self.id)
+  const next = chain.find((r) => compareBreakChain(r, self) > 0)
+  if (!next || selfMinutes === null || prevBreakOf(next.detail) !== selfMinutes) return null
+  return next
+}
+
+/** 連鎖の段の prev を書き換える（途中の段が外れた・分数が直ったとき、次の段が引き継ぐ） */
+async function setBreakPrev(r: BreakChainItem, prev: string) {
+  await prisma.request.update({
+    where: { id: r.id },
+    data: { detail: { ...((r.detail as Record<string, string> | null) ?? {}), prevBreakMinutes: prev } },
+  })
+}
+
 /**
  * 休憩申請の承認：その日の休憩の合計（上書き）として breakMinutes に入れ、勤務時間を計算し直す。
- * 上書きする前の値を申請の detail.prevBreakMinutes に残す（削除・修正で戻すため。打刻修正の取り消しと同じ考え方）
+ * 上書きする前の値を申請の detail.prevBreakMinutes に、入れた順を detail.breakAppliedAt に残す（削除・修正で戻すため。
+ * 打刻修正の取り消しと同じ考え方。順序は approvedBreakChain 参照）
  */
 async function applyApprovedBreak(
   req: { id: string; userId: string; targetDate: Date; detail: unknown },
@@ -68,6 +115,9 @@ async function applyApprovedBreak(
 ) {
   const rec = await prisma.attendanceRecord.findUnique({ where: { userId_date: { userId: req.userId, date: req.targetDate } } })
   const prev = rec?.breakMinutes ?? null
+  // 適用順は必ずその日の既存の段より後（同じミリ秒・時計のずれでも逆転させない）
+  const chain = await approvedBreakChain(req.userId, req.targetDate, req.id)
+  const appliedAt = Math.max(Date.now(), ...chain.map((r) => breakOrderKey(r) + 1))
   await prisma.attendanceRecord.upsert({
     where:  { userId_date: { userId: req.userId, date: req.targetDate } },
     update: { breakMinutes: minutes },
@@ -75,32 +125,36 @@ async function applyApprovedBreak(
   })
   await prisma.request.update({
     where: { id: req.id },
-    data: { detail: { ...((req.detail as Record<string, string> | null) ?? {}), minutes: String(minutes), prevBreakMinutes: prev === null ? "" : String(prev) } },
+    data: {
+      detail: {
+        ...((req.detail as Record<string, string> | null) ?? {}),
+        minutes: String(minutes), prevBreakMinutes: prev === null ? "" : String(prev), breakAppliedAt: new Date(appliedAt).toISOString(),
+      },
+    },
   })
   await recomputeDay(req.userId, req.targetDate)
   revalidatePath("/records")
 }
 
 /**
- * 承認済みの休憩申請（approvedMinutes 分・承認前の値 prev）を削除する・別の日や種別へ直すときの、その日の休憩分数の戻し方。
- * 記録の breakMinutes が、その申請が入れた値のままのときだけ戻す（あとで休憩ボタン・管理者の入力が入っていたら、それが優先なので触らない）。
- * 戻し先は、ほかに承認済みの休憩申請があれば最後に出した申請の分数、無ければ承認前の値。締め済みの日は呼ぶ前に拒否すること
+ * 承認済みの休憩申請 self を削除する・別の日や種別へ直すときの、その日の休憩分数の戻し方（連鎖から self を外す）。
+ * - 後の段が self の値を上書きしている（途中の段）：記録は触らず、後の段の prev を self の prev に付け替える
+ *   （A→B と承認して A を消しても、B を消せば A が入る前の値に戻る）
+ * - 最後の段：記録の breakMinutes が self の入れた値のままのときだけ self の prev へ戻す
+ *   （あとで休憩ボタン・管理者の入力が入っていたら、それが優先なので触らない。戻し先は self の直前の値）
+ * 締め済みの日は呼ぶ前に拒否すること
  */
-async function revertBreakOfRequest(userId: string, date: Date, excludeId: string, approvedMinutes: number | null, prev: number | null) {
+async function revertBreakOfRequest(userId: string, date: Date, self: BreakChainItem) {
+  const approvedMinutes = parseBreakRequestMinutes((self.detail as BreakDetail | null)?.minutes)
   if (approvedMinutes === null) return
+  const successor = await linkedSuccessorOf(userId, date, self)
+  if (successor) {
+    await setBreakPrev(successor, (self.detail as BreakDetail | null)?.prevBreakMinutes ?? "")
+    return
+  }
   const rec = await prisma.attendanceRecord.findUnique({ where: { userId_date: { userId, date } } })
   if (!rec || rec.breakMinutes !== approvedMinutes) return
-  const reqs = await prisma.request.findMany({
-    where: { userId, type: "BREAK", status: "APPROVED", targetDate: date, id: { not: excludeId } },
-    orderBy: { createdAt: "desc" },
-    select: { detail: true },
-  })
-  let next: number | null = prev
-  for (const r of reqs) {
-    const m = parseBreakRequestMinutes((r.detail as { minutes?: string } | null)?.minutes)
-    if (m !== null) { next = m; break }
-  }
-  await prisma.attendanceRecord.update({ where: { id: rec.id }, data: { breakMinutes: next } })
+  await prisma.attendanceRecord.update({ where: { id: rec.id }, data: { breakMinutes: prevBreakOf(self.detail) } })
   await recomputeDay(userId, date)
   revalidatePath("/records")
 }
@@ -558,6 +612,7 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
       // 承認時に残した「承認前の値」は引き継ぐ（日付・種別が変わるときは下で入れ直す）
       detail = { minutes: String(minutes) }
       if (before?.type === "BREAK" && beforeDetail.prevBreakMinutes !== undefined) detail.prevBreakMinutes = beforeDetail.prevBreakMinutes
+      if (before?.type === "BREAK" && beforeDetail.breakAppliedAt !== undefined) detail.breakAppliedAt = beforeDetail.breakAppliedAt
       break
     }
     case "HOLIDAY_WORK": {
@@ -646,7 +701,13 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
       // 同じ日の分数だけの修正：申請が入れた値のままなら新しい分数にする（承認前の値は引き継ぐ）
       const newMinutes = parseBreakRequestMinutes(detail.minutes)
       const rec = await prisma.attendanceRecord.findUnique({ where: { userId_date: { userId: before.userId, date: before.targetDate } } })
-      if (rec && newMinutes !== null && oldMinutes !== null && rec.breakMinutes === oldMinutes) {
+      const successor = newMinutes !== null && oldMinutes !== null
+        ? await linkedSuccessorOf(before.userId, before.targetDate, { id, createdAt: before.createdAt, detail: beforeDetail })
+        : null
+      if (successor) {
+        // あとの段が上書きしている：記録は動かさず、あとの段の prev を新しい分数へ付け替える
+        await setBreakPrev(successor, String(newMinutes))
+      } else if (rec && newMinutes !== null && oldMinutes !== null && rec.breakMinutes === oldMinutes) {
         await prisma.attendanceRecord.update({ where: { id: rec.id }, data: { breakMinutes: newMinutes } })
         await recomputeDay(before.userId, before.targetDate)
         revalidatePath("/records")
@@ -654,7 +715,7 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
     } else {
       // 日付・種別が変わった：元の日は承認前の値（ほかの承認済みの申請があればその分数）へ戻し、新しい日は承認と同じに入れる
       if (before.type === "BREAK") {
-        await revertBreakOfRequest(before.userId, before.targetDate, id, oldMinutes, prevBreakOf(beforeDetail))
+        await revertBreakOfRequest(before.userId, before.targetDate, { id, createdAt: before.createdAt, detail: beforeDetail })
       }
       if (type === "BREAK") {
         const newMinutes = parseBreakRequestMinutes(detail.minutes)
@@ -721,10 +782,7 @@ export async function actionDeleteRequest(id: string): Promise<ActionResult> {
   // 承認済みの休憩申請を削除したら、その日の休憩分数を承認前の値（ほかに承認済みの申請があればその分数）へ戻す。
   // 記録が申請の入れた値のままでなければ（あとの休憩ボタン・管理者の入力があれば）触らない
   if (req?.status === "APPROVED" && req.type === "BREAK") {
-    await revertBreakOfRequest(
-      req.userId, req.targetDate, req.id,
-      parseBreakRequestMinutes((req.detail as { minutes?: string } | null)?.minutes), prevBreakOf(req.detail),
-    )
+    await revertBreakOfRequest(req.userId, req.targetDate, { id: req.id, createdAt: req.createdAt, detail: req.detail })
   }
   // 承認済みの休日出勤申請を削除したら、休日出勤の印を外して（ほかに承認済みの申請が無ければ）打刻パイプラインで計算し直す
   if (req?.status === "APPROVED" && req.type === "HOLIDAY_WORK") {

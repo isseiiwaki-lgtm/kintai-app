@@ -46,7 +46,7 @@ export async function actionAdminUpdateRecord(
   if (current.status === "LOCKED") return { ok: false, error: "締め済みの日のため修正できません（締め解除してから修正してください）" }
 
   // 変更するフィールドのみ data に含める（空値は元値を維持）
-  const data: Record<string, Date | string | number | null> = { status: "APPROVED" }
+  const data: Record<string, Date | string | number | boolean | null> = { status: "APPROVED" }
   const logs: { fieldName: string; oldValue: string | null; newValue: string | null }[] = []
 
   for (const name of timeFields) {
@@ -86,6 +86,21 @@ export async function actionAdminUpdateRecord(
     if (current.breakMinutes !== minutes) {
       data.breakMinutes = minutes
       logs.push({ fieldName: "breakMinutes", oldValue: current.breakMinutes != null ? String(current.breakMinutes) : null, newValue: String(minutes) })
+    }
+  }
+
+  // 休日出勤（代理）の印：チェックの有無を送ってきたときだけ扱う（hidden の holidayWorkProxyField で「欄がある」を示す）。
+  // 印の出どころ holidayWorkByProxy を付け外しし、isHolidayWork ＝ 代理の印 OR 承認済みの休日出勤申請がある
+  // （代理の印を外しても、承認済みの申請があれば休日出勤のまま。代理打刻フォームのチェックと同じ意味）
+  if (formData.has("holidayWorkProxyField")) {
+    const wantProxy = formData.get("isHolidayWorkProxy") === "on"
+    if (wantProxy !== current.holidayWorkByProxy) {
+      const approvedCount = await prisma.request.count({
+        where: { userId: current.userId, type: "HOLIDAY_WORK", status: "APPROVED", targetDate: current.date },
+      })
+      data.holidayWorkByProxy = wantProxy
+      data.isHolidayWork = (wantProxy || approvedCount > 0)
+      logs.push({ fieldName: "holidayWorkByProxy", oldValue: current.holidayWorkByProxy ? "あり" : "なし", newValue: wantProxy ? "あり" : "なし" })
     }
   }
 

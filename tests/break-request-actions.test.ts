@@ -82,10 +82,10 @@ describe("休憩申請の承認・削除", () => {
     expect(mocks.recompute).toHaveBeenCalledWith("u1", DAY)
   })
 
-  it("削除：残りに承認済みの休憩申請があれば、その分数に戻す", async () => {
-    mocks.requestFind.mockResolvedValue(breakReq({ status: "APPROVED" }))
+  it("削除：最後の段は、残りに承認済みの休憩申請があっても自分の承認前の値へ戻す（連鎖の順。詳細は break-request-chain.test.ts）", async () => {
+    mocks.requestFind.mockResolvedValue(breakReq({ status: "APPROVED", detail: { minutes: "90", prevBreakMinutes: "30", breakAppliedAt: "2026-10-05T01:00:00.000Z" } }))
     mocks.recordFind.mockResolvedValue({ id: "r1", status: "OPEN", breakMinutes: 90 })
-    mocks.requestFindMany.mockResolvedValue([{ detail: { minutes: "30" } }])
+    mocks.requestFindMany.mockResolvedValue([{ id: "q0", createdAt: new Date(0), detail: { minutes: "30", prevBreakMinutes: "", breakAppliedAt: "2026-10-05T00:00:00.000Z" } }])
     await actionDeleteRequest("q1")
     expect(mocks.recordUpdate).toHaveBeenCalledWith({ where: { id: "r1" }, data: { breakMinutes: 30 } })
   })
@@ -95,14 +95,14 @@ describe("休憩申請の承認・削除", () => {
     mocks.recordFind.mockResolvedValue({ id: "r1", status: "OPEN", breakMinutes: 45 })
     await actionApproveRequest("q1")
     expect(mocks.requestUpdate).toHaveBeenCalledWith({
-      where: { id: "q1" }, data: { detail: { minutes: "90", prevBreakMinutes: "45" } },
+      where: { id: "q1" }, data: { detail: { minutes: "90", prevBreakMinutes: "45", breakAppliedAt: expect.any(String) } },
     })
     vi.clearAllMocks()
     mocks.requestFind.mockResolvedValue(breakReq())
     mocks.recordFind.mockResolvedValue({ id: "r1", status: "OPEN", breakMinutes: null })
     await actionApproveRequest("q1")
     expect(mocks.requestUpdate).toHaveBeenCalledWith({
-      where: { id: "q1" }, data: { detail: { minutes: "90", prevBreakMinutes: "" } },
+      where: { id: "q1" }, data: { detail: { minutes: "90", prevBreakMinutes: "", breakAppliedAt: expect.any(String) } },
     })
   })
 
@@ -155,7 +155,7 @@ describe("休憩申請の承認・削除", () => {
     expect(mocks.recordUpdate).toHaveBeenCalledWith({ where: { id: "r1" }, data: { breakMinutes: null } })
     expect(mocks.recordUpsert).toHaveBeenCalledWith(expect.objectContaining({ update: { breakMinutes: 60 } }))
     expect(mocks.requestUpdate).toHaveBeenLastCalledWith({
-      where: { id: "q1" }, data: { detail: { minutes: "60", prevBreakMinutes: "15" } },
+      where: { id: "q1" }, data: { detail: { minutes: "60", prevBreakMinutes: "15", breakAppliedAt: expect.any(String) } },
     })
   })
 

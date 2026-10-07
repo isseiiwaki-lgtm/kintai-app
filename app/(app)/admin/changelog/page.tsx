@@ -13,6 +13,7 @@ const FIELD_LABEL: Record<string, string> = {
   breakStart: "休憩開始",
   breakEnd:   "休憩終了",
   breakMinutes: "休憩（分）",
+  holidayWorkByProxy: "休日出勤（代理）",
   status:     "状態（締め解除）",
 }
 

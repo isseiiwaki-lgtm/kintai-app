@@ -36,6 +36,7 @@ type Rec = {
   status:        string
   displayStatus: { label: string; className: string }
   isAbsent:      boolean
+  holidayWorkByProxy: boolean  // 代理打刻・管理者の編集で付けた休日出勤の印（休日出勤申請とは別）
   requestId:  string | null
   scheduledMinutes: number  // 所定勤務時間（分）
   timeConstraint: AdminTimeConstraint  // 管理者の入力画面の選択肢を決める、その日のスイッチ・定時・申請の条件（段6.5）
@@ -292,6 +293,11 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                   ))}
                 </select>
               </div>
+              <label key={`proxy-${editRec.id}`} className="flex items-center gap-1.5 text-xs text-gray-600">
+                <input type="hidden" name="holidayWorkProxyField" value="1" />
+                <input type="checkbox" name="isHolidayWorkProxy" defaultChecked={editRec.holidayWorkByProxy} className="accent-blue-600" />
+                休日出勤（代理）
+              </label>
               <label className="flex items-center gap-1.5 text-xs text-gray-600">
                 <input type="checkbox" checked={unrestricted} onChange={(e) => setUnrestricted(e.target.checked)} className="accent-blue-600" />
                 制限なしで入力する（1分単位・全時間帯）
