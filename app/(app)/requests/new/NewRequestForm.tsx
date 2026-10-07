@@ -63,12 +63,15 @@ export function NewRequestForm({
   defaultStartTime,
   defaultEndTime,
   weekStartDay,
+  isPartTimer,
 }: {
   /** 休日出勤申請の予定時刻の初期値（本人の所定の定時。未設定なら空） */
   defaultStartTime: string
   defaultEndTime: string
   /** 週の起算日（会社設定。0=日曜〜6=土曜）。休む日が休日出勤と別の週かの判定に使う */
   weekStartDay: number
+  /** パートは休憩ボタンがあるので、早退申請で休憩を聞かない */
+  isPartTimer: boolean
 }) {
   const router       = useRouter()
   const searchParams = useSearchParams()
@@ -77,17 +80,26 @@ export function NewRequestForm({
   const [formError, setFormError] = useState<string | null>(null)
   const [showAllOvertimeTimes,   setShowAllOvertimeTimes]   = useState(false)
   const [showAllEarlyStartTimes, setShowAllEarlyStartTimes] = useState(false)
+  // 遅刻・早退申請：種別と、早退の休憩の申告（正社員のみ。取らなかった=0／取った=15分刻みの分数）
+  const [absenceKind, setAbsenceKind] = useState<"late" | "early">(searchParams.get("absenceType") === "early" ? "early" : "late")
+  const [tookBreak, setTookBreak]     = useState<"" | "no" | "yes">("")
+  const [breakMins, setBreakMins]     = useState("")
 
   // URL params からプリセット（/records の修正依頼リンク用）
   const presetDate      = searchParams.get("date")  ?? ""
   const presetField     = searchParams.get("field") ?? ""
   const correctionMode  = searchParams.get("mode") === "correction"
+  // 退勤直後の知らせから来たとき：種別（早退）・退勤時刻
+  const presetTime      = searchParams.get("time") ?? ""
+  const presetType      = searchParams.get("type") ?? ""
 
   useEffect(() => {
     if (correctionMode || presetField) {
       setType("CORRECTION") // 修正依頼モードのデフォルトは打刻修正申請
+    } else if (presetType === "ABSENCE") {
+      setType("ABSENCE") // 退勤直後の知らせからの早退申請
     }
-  }, [correctionMode, presetField])
+  }, [correctionMode, presetField, presetType])
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -106,6 +118,13 @@ export function NewRequestForm({
       } else if (workDate && !isSameWeek(restDate, workDate, weekStartDay)) {
         // 休む日が休日出勤と別の週：週の労働時間が40時間を超えると、時間外の割増賃金が発生する可能性がある
         if (!window.confirm("休む日が休日出勤の日と別の週です。\n週をまたぐと、休日出勤をした週の労働時間が週40時間を超え、時間外の割増賃金が発生する可能性があります。\nこのまま申請しますか？")) return
+      }
+    }
+    // 正社員の早退申請：休憩を取ったか（取った場合は分数）を必須で答える
+    if (fd.get("type") === "ABSENCE" && fd.get("absenceType") === "early" && !isPartTimer) {
+      if (tookBreak === "" || (tookBreak === "yes" && breakMins === "")) {
+        setFormError("休憩を取ったかどうか（取った場合は分数）を選んでください")
+        return
       }
     }
     setPending(true)
@@ -240,20 +259,53 @@ export function NewRequestForm({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">種別</label>
-              <select name="absenceType" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <select
+                name="absenceType" value={absenceKind}
+                onChange={(e) => setAbsenceKind(e.target.value as "late" | "early")}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
                 <option value="late">遅刻</option>
                 <option value="early">早退</option>
               </select>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">時刻</label>
-              <select name="time" required defaultValue="" className={selectClass}>
+              <select name="time" required defaultValue={presetTime} className={selectClass}>
                 <option value="" disabled>-- 選択 --</option>
                 {buildTimeOptions(6, 20).map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
             </div>
+          </div>
+        )}
+
+        {/* 早退（正社員のみ）：休憩を取りましたか。承認されると休憩申請と同じしくみでその日の休憩に入る */}
+        {type === "ABSENCE" && absenceKind === "early" && !isPartTimer && (
+          <div className="space-y-2">
+            <p className="block text-xs font-medium text-gray-600">その日、休憩を取りましたか（必須）</p>
+            <div className="flex flex-col gap-1.5 text-sm text-gray-700">
+              <label className="flex items-center gap-2">
+                <input type="radio" name="tookBreak" checked={tookBreak === "no"} onChange={() => { setTookBreak("no"); setBreakMins("") }} />
+                取らなかった
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" name="tookBreak" checked={tookBreak === "yes"} onChange={() => setTookBreak("yes")} />
+                取った
+              </label>
+            </div>
+            {tookBreak === "yes" && (
+              <select value={breakMins} onChange={(e) => setBreakMins(e.target.value)} required className={selectClass}>
+                <option value="" disabled>-- 休憩の合計（分）を選択 --</option>
+                {BREAK_MINUTE_OPTIONS.filter((m) => m > 0).map((m) => (
+                  <option key={m} value={m}>{m}分</option>
+                ))}
+              </select>
+            )}
+            <input type="hidden" name="breakMinutes" value={tookBreak === "no" ? "0" : tookBreak === "yes" ? breakMins : ""} />
+            <p className="text-xs text-gray-500">
+              早退した日は休憩を取ったかどうか退勤時刻から判断できないため、答えてもらいます。承認されると、その日の休憩の合計がこの値になります（承認までは定時から決めた休憩が引かれます）。
+            </p>
           </div>
         )}
 

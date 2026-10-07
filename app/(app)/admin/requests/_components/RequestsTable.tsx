@@ -65,7 +65,7 @@ function detailSummary(type: string, detail: Record<string, string> | null): str
       return d.minutes != null ? `休憩 ${d.minutes}分` : ""
     case "ABSENCE":
       if (d.absenceType === "absent") return "欠勤（全日）"
-      return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
+      return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}${d.absenceType === "early" && d.breakMinutes != null ? `（休憩 ${d.breakMinutes}分）` : ""}`
     case "LEAVE": {
       const lt = d.leaveType === "substitute" ? "振休" : "有給"
       const hd = d.halfDay === "am" ? "（午前）" : d.halfDay === "pm" ? "（午後）" : ""
@@ -212,6 +212,14 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
             <option value="">未設定</option>
             {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
+        </div>
+        <div>
+          <label className={labelClass}>休憩の申告（早退のとき）</label>
+          <select name="breakMinutes" defaultValue={detail.breakMinutes ?? ""} className={inputClass}>
+            <option value="">申告なし</option>
+            {BREAK_MINUTE_OPTIONS.map(m => <option key={m} value={m}>{m === 0 ? "取らなかった（0分）" : `${m}分`}</option>)}
+          </select>
+          <p className="mt-1 text-[11px] text-gray-400">承認済みの申請を直すと、その日の休憩の合計も休憩申請と同じ順で入れ直します。</p>
         </div>
       </>
     )

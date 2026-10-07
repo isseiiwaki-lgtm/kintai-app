@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma"
-import { hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice } from "@/lib/attendance"
+import { earlyLeaveNudgeTime, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice } from "@/lib/attendance"
 import { isRestDay, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 
@@ -62,13 +62,15 @@ export async function shouldShowOvertimeNotice(userId: string, today: Date): Pro
 }
 
 /** 本人向けの当日の注意表示（どれも当日の画面だけ。要確認の状態・件数には入れない） */
-export type DayNotices = { overtime: boolean; breakRecord: boolean; holidayWork: boolean }
+/** earlyLeave：定時前に退勤した正社員への早退申請の促し。出すときは申請フォームの初期時刻（HH:MM）、出さないなら null */
+export type DayNotices = { overtime: boolean; breakRecord: boolean; holidayWork: boolean; earlyLeave: string | null }
 
 /**
  * 当日の注意表示をまとめて判定する（打刻画面・ホームが使う）
  * - overtime：残業申請が無いのに定時を15分以上過ぎて退勤した（④ON のとき）
  * - breakRecord：パートの休憩申請漏れ（所定休憩が設定されているのに記録が無い／実働6時間超で記録が無い）。退勤後に出す
  * - holidayWork：休日に休日出勤申請が無いまま打刻した
+ * - earlyLeave：正社員が定時（段0）より前に退勤し、その日の早退申請がまだ無い（申請フォームへ誘導。休憩の申告もそこで答える）
  * 呼び出し側が today を渡すので、翌日以降は出ない
  */
 export async function loadDayNotices(userId: string, today: Date): Promise<DayNotices> {
@@ -84,7 +86,7 @@ export async function loadDayNotices(userId: string, today: Date): Promise<DayNo
     prisma.user.findUnique({
       where: { id: userId },
       select: {
-        employmentType: true, breakMinutes: true,
+        employmentType: true, breakMinutes: true, workStartTime: true, workEndTime: true,
         workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       },
     }),
@@ -92,14 +94,27 @@ export async function loadDayNotices(userId: string, today: Date): Promise<DayNo
     prisma.request.findMany({
       where: {
         userId, targetDate: today,
-        OR: [{ type: "BREAK", status: "PENDING" }, { type: "HOLIDAY_WORK", status: { in: ["PENDING", "APPROVED"] } }],
+        OR: [
+          { type: "BREAK", status: "PENDING" },
+          { type: "HOLIDAY_WORK", status: { in: ["PENDING", "APPROVED"] } },
+          { type: "ABSENCE", status: { in: ["PENDING", "APPROVED"] } },
+        ],
       },
-      select: { type: true },
+      select: { type: true, detail: true },
     }),
   ])
-  if (!record || !user) return { overtime, breakRecord: false, holidayWork: false }
+  if (!record || !user) return { overtime, breakRecord: false, holidayWork: false, earlyLeave: null }
+  // 段0の定時（半休は前半/後半、休日は定時なし）。定時前の退勤の判定に使う
+  const schedule = resolveScheduleForDate({
+    date: today, user, setting: sched.setting,
+    isHoliday: sched.isHoliday(today), isHolidayWork: record.isHolidayWork, requests: sched.requestsOf(userId, today),
+  })
   return {
     overtime,
+    earlyLeave: earlyLeaveNudgeTime({
+      employmentType: user.employmentType, date: today, schedule, clockOut: record.clockOut,
+      hasEarlyLeaveRequest: requests.some((r) => r.type === "ABSENCE" && (r.detail as { absenceType?: string } | null)?.absenceType === "early"),
+    }),
     breakRecord: needsBreakRecordNotice({
       employmentType: user.employmentType, userBreakMinutes: user.breakMinutes,
       breakMinutes: record.breakMinutes, breakStart: record.breakStart, breakEnd: record.breakEnd,

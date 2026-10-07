@@ -68,12 +68,22 @@ export async function actionCreateRequest(formData: FormData): Promise<CreateReq
       }
       break
     }
-    case "ABSENCE":
+    case "ABSENCE": {
       detail = {
         absenceType: formData.get("absenceType") as string,
         time:        formData.get("time")         as string,
       }
+      // 正社員の早退申請は「休憩を取りましたか」が必須（0＝取らなかった／15分刻みの分数）。パート・遅刻・欠勤は聞かない
+      if (detail.absenceType === "early") {
+        const me = await prisma.user.findUnique({ where: { id: userId }, select: { employmentType: true } })
+        if (me?.employmentType !== "part") {
+          const minutes = parseBreakRequestMinutes(formData.get("breakMinutes"))
+          if (minutes === null) return { ok: false, error: "休憩を取ったかどうか（取った場合は15分刻みの分数）を選んでください" }
+          detail.breakMinutes = String(minutes)
+        }
+      }
       break
+    }
     case "LEAVE":
       detail = {
         leaveType: formData.get("leaveType") as string,

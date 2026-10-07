@@ -314,6 +314,50 @@ export function parseBreakRequestMinutes(v: unknown): number | null {
   return n
 }
 
+/**
+ * 休憩の申告がある申請か。あれば申告の分数を返す（無ければ null）。
+ * - 休憩申請（BREAK）：detail.minutes
+ * - 早退申請（ABSENCE・absenceType=early）：detail.breakMinutes（正社員が申請時に答える「休憩を取りましたか」。0＝取らなかった）
+ * 承認されると、どちらも同じしくみ（承認前の値 prevBreakMinutes・適用順 breakAppliedAt）でその日の breakMinutes に入る
+ */
+export function breakAnswerMinutes(req: { type: string; detail: unknown }): number | null {
+  const d = (req.detail ?? {}) as { minutes?: unknown; breakMinutes?: unknown; absenceType?: unknown }
+  if (req.type === "BREAK") return parseBreakRequestMinutes(d.minutes)
+  if (req.type === "ABSENCE" && d.absenceType === "early" && d.breakMinutes !== undefined) return parseBreakRequestMinutes(d.breakMinutes)
+  return null
+}
+
+/** 早退申請フォームへのリンク（退勤直後の知らせ用。対象日・種別・退勤時刻を入れておく） */
+export function earlyLeaveRequestHref(dateKey: string, time: string): string {
+  return `/requests/new?type=ABSENCE&absenceType=early&date=${dateKey}&time=${time}`
+}
+
+/**
+ * 定時前に退勤した正社員への「早退申請を出してください」の知らせの判定。
+ * 出すなら申請フォームの初期時刻（退勤時刻を申請の刻みで切り下げた HH:MM）、出さないなら null。
+ * - パートは対象外（休憩ボタンがあるため）／定時なしの日（休日など）は対象外
+ * - 退勤が定時の終業より前／その日の早退申請（審査中・承認済み）がまだ無い
+ * 当日だけ出す（呼び出し側が当日を渡す）。要確認の状態・件数には入れない
+ */
+export function earlyLeaveNudgeTime(p: {
+  employmentType: string | null | undefined
+  /** 記録の日付（JST の暦日の UTC 0時）。日をまたぐ退勤を早退と取り違えないために使う */
+  date: Date
+  schedule: DaySchedule
+  clockOut: Date | null
+  hasEarlyLeaveRequest: boolean
+  stepMinutes?: number
+}): string | null {
+  if (p.employmentType === "part" || !p.schedule || !p.clockOut || p.hasEarlyLeaveRequest) return null
+  const end = parseHHMM(p.schedule.end)
+  if (end === null) return null
+  const out = Math.floor((p.clockOut.getTime() - (p.date.getTime() - 9 * 60 * 60 * 1000)) / 60000)
+  if (out >= end || out < 0) return null
+  const step = p.stepMinutes ?? 15
+  const floored = Math.floor(out / step) * step
+  return `${String(Math.floor(floored / 60)).padStart(2, "0")}:${String(floored % 60).padStart(2, "0")}`
+}
+
 /** 6時間（分）。パートの休憩申請漏れの判定（実働がこれを超えたら休憩の記録が要る） */
 const BREAK_NOTICE_WORK_MINUTES = 360
 

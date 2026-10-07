@@ -36,9 +36,9 @@ vi.mock("@/lib/prisma", () => {
           const r = (store.reqs as Req[]).find((x) => x.id === a.where.id)
           return r ? { ...r, approvals: [], user: { workStartTime: "09:00", workEndTime: "15:00", employmentType: "part", breakMinutes: 60, department: null } } : null
         },
-        findMany: async (a: { where: { targetDate: Date; status: string; type: string; id?: { not: string } } }) =>
+        findMany: async (a: { where: { targetDate: Date; status: string; type: string | { in: string[] }; id?: { not: string } } }) =>
           (store.reqs as Req[]).filter((r) =>
-            r.type === a.where.type && r.status === a.where.status && r.targetDate.getTime() === a.where.targetDate.getTime() && r.id !== a.where.id?.not),
+            (typeof a.where.type === "string" ? r.type === a.where.type : a.where.type.in.includes(r.type)) && r.status === a.where.status && r.targetDate.getTime() === a.where.targetDate.getTime() && r.id !== a.where.id?.not),
         update: async (a: { where: { id: string }; data: Partial<Req> }) => { Object.assign((store.reqs as Req[]).find((r) => r.id === a.where.id)!, a.data) },
         delete: async (a: { where: { id: string } }) => { store.reqs = (store.reqs as Req[]).filter((r) => r.id !== a.where.id) },
         count: async () => 0,

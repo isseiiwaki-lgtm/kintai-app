@@ -42,7 +42,7 @@ function detailSummary(type: string, detail: unknown): string {
     }
     case "HOLIDAY_WORK": return holidayWorkSummary(d as HolidayWorkDetail)
     case "BREAK":    return d.minutes != null ? `休憩 ${d.minutes}分` : ""
-    case "ABSENCE":  return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
+    case "ABSENCE":  return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}${d.absenceType === "early" && d.breakMinutes != null ? `（休憩 ${d.breakMinutes}分）` : ""}`
     case "LEAVE": {
       const lt = d.leaveType === "substitute" ? "振休" : "有給"
       const hd = d.halfDay === "am" ? "（午前）" : d.halfDay === "pm" ? "（午後）" : ""
