@@ -67,6 +67,24 @@ export function calcScheduledMinutes(
 }
 
 /**
+ * 旧方式（⑤OFF）の本人所定勤務時間（分）＝ 拘束時間（定時の終業−始業）− 法定休憩（6時間超45分・8時間超60分）。
+ * 本番 a1d25ca の calcScheduledMinutes と同じ。本人の休憩設定・会社設定は見ない。未設定は雇用形態で fallback（正社員480・他0）
+ */
+export function calcLegacyScheduledMinutes(
+  workStartTime: string | null | undefined,
+  workEndTime:   string | null | undefined,
+  employmentType: string | null | undefined,
+): number {
+  const startMins = parseHHMM(workStartTime)
+  const endMins   = parseHHMM(workEndTime)
+  if (startMins !== null && endMins !== null && endMins > startMins) {
+    const raw = endMins - startMins
+    return raw - calcLegalBreak(raw)
+  }
+  return employmentType === "full" ? 480 : 0
+}
+
+/**
  * 実働時間（分）を計算する。外出時間を除いた在席時間から、段7で決めた休憩分数を控除する。
  * 休憩分数は resolveBreakMinutes（lib/clock-pipeline.ts）が決める。ここでは雇用形態・休憩打刻を見ない。
  * 出勤または退勤が欠けている場合は null（未確定）。
@@ -523,6 +541,11 @@ export function resolveDayMetrics(
     overtimeMinutes: number | null
   },
   schedule: DaySchedule,
+  /**
+   * ⑤旧方式（記録に保存した⑤がOFF）の残業の求め方。保存値が無い日の画面計算にだけ使う。
+   * 省略は新しい式（早出＋終業後）。workingMinutes は保存した実働、legacyScheduledMinutes は calcLegacyScheduledMinutes
+   */
+  legacy?: { workingMinutes: number | null; legacyScheduledMinutes: number },
 ): { lateMinutes: number; earlyLeaveMinutes: number; overtimeMinutes: number } {
   const metrics = calcMetrics({
     clockIn: rec.clockIn,
@@ -533,7 +556,11 @@ export function resolveDayMetrics(
   return {
     lateMinutes: rec.lateMinutes ?? metrics.lateMinutes,
     earlyLeaveMinutes: rec.earlyLeaveMinutes ?? metrics.earlyLeaveMinutes,
-    overtimeMinutes: rec.overtimeMinutes ?? metrics.overtimeMinutes,
+    overtimeMinutes: rec.overtimeMinutes ?? (legacy
+      ? (schedule && legacy.workingMinutes != null && legacy.legacyScheduledMinutes > 0
+          ? Math.max(0, legacy.workingMinutes - legacy.legacyScheduledMinutes)
+          : 0)
+      : metrics.overtimeMinutes),
   }
 }
 

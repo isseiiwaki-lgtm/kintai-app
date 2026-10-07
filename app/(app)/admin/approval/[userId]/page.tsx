@@ -5,7 +5,7 @@ import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { ProxyPunchForm } from "./_components/ProxyPunchForm"
 import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
-import { correctionLogIdSet, pickEarlyStartTime, isRestDay, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
+import { correctionLogIdSet, legacyOvertimeInput, pickEarlyStartTime, isRestDay, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
 import { correctionKey, loadApprovedCorrections, loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
@@ -198,7 +198,7 @@ export default async function UserApprovalPage({
       workStartTime: schedule?.start ?? null, workEndTime: schedule?.end ?? null,
     })
     // 遅刻・早退・残業: 保存値があればそれ、無ければ記録時刻と定時の差から計算（段4・段8）
-    const metrics = resolveDayMetrics(r, schedule)
+    const metrics = resolveDayMetrics(r, schedule, legacyOvertimeInput(r, setting, user))
     const nightMinutes = calcNightMinutes(r.clockIn, r.clockOut)
     // ④（残業の申請上限）: 実打刻・申請終了・記録時刻の3つを管理者に見せる。一般社員の画面には出さない
     const dayOvertimeReqs = overtimeReqByDate.get(r.date.toISOString()) ?? []

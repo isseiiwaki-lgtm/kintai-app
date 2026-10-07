@@ -2,7 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, storedBreakMinutes } from "@/lib/attendance"
-import { isClockInCapped, isClockOutCapped, resolveInputTime, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { isClockInCapped, isClockOutCapped, legacyOvertimeInput, resolveInputTime, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
@@ -146,7 +146,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
     const breakMins = storedBreakMinutes(rec) ?? 0
 
     // 残業・遅刻・早退: 保存値 or 記録時刻と定時の差から計算（CLOCK_PIPELINE 段4・段8。定時は段0の結果）
-    const { overtimeMinutes: overtime, lateMinutes: late, earlyLeaveMinutes: earlyLeave } = resolveDayMetrics(rec, schedule)
+    const { overtimeMinutes: overtime, lateMinutes: late, earlyLeaveMinutes: earlyLeave } = resolveDayMetrics(rec, schedule, legacyOvertimeInput(rec, sched.setting, user))
     // ④で打ち切った出勤（段2：早出申請の開始で切った）・退勤（段6）には実打刻を併記しない（一般社員の画面に④の内訳を出さない）。
     // 管理者が確定した時刻は④を通していないので対象外。退勤側は originalClockOut の有無に関係なく判定する
     const switches = resolveSwitches(rec, sched.setting)

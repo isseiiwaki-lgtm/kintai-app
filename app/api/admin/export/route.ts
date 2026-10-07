@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { resolveDayMetrics } from "@/lib/attendance"
-import { resolveScheduleForDate } from "@/lib/clock-pipeline"
+import { legacyOvertimeInput, resolveScheduleForDate } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 
 function toJST(dt: Date) {
@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
           goOutAt: true, returnAt: true,
           workingMinutes: true, overtimeMinutes: true, note: true, status: true,
           isHolidayWork: true, lateMinutes: true, earlyLeaveMinutes: true,
+          switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true, switchNewCalc: true,
         },
       },
     },
@@ -71,7 +72,7 @@ export async function GET(req: NextRequest) {
         date: r.date, user: u, setting: sched.setting,
         isHoliday: sched.isHoliday(r.date), isHolidayWork: r.isHolidayWork, requests: sched.requestsOf(u.id, r.date),
       })
-      const overtime = resolveDayMetrics(r, schedule).overtimeMinutes
+      const overtime = resolveDayMetrics(r, schedule, legacyOvertimeInput(r, sched.setting, u)).overtimeMinutes
       rows.push([
         u.name ?? u.email ?? "",
         u.department ?? "",

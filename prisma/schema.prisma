@@ -161,6 +161,7 @@ model AttendanceRecord {
   switchRoundNear      Boolean?  // ② roundNearClockTime
   switchRoundQuarter   Boolean?  // ③ roundQuarterHour
   switchCapOvertime    Boolean?  // ④ capOvertimeByRequest
+  switchNewCalc        Boolean?  // ⑤ newCalcMethod（休憩の規定値と残業の式。false＝旧方式）
   createdAt            DateTime  @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -251,6 +252,7 @@ model Setting {
   roundNearClockTime Boolean  @default(false) // 定時±14分以内→定時きっかり
   roundQuarterHour   Boolean  @default(false) // ③15分丸め（出勤切り上げ・退勤切り捨て。本人の定時起点）
   capOvertimeByRequest Boolean @default(false) // ④残業の申請上限（退勤の記録時刻を最後の承認済み残業申請の終了、無ければ定時で頭打ち）
+  newCalcMethod       Boolean  @default(false) // ⑤新しい計算方式（正社員の休憩の規定値＝定時から決める／残業＝早出＋終業後）。OFF＝旧方式。締め期間の初日にON
   lunchStartTime      String   @default("12:00") // 昼休憩の開始時刻。正社員の半休の境目を決めるためだけに使う（休憩控除の判定には使わない）
   legalHolidayWeekday Int      @default(0)       // 法定休日の曜日（0=日曜〜6=土曜）。仮置き（労務担当者に確認中）。休日出勤の担当が使う
   weekStartDay        Int      @default(0)       // 週の起算日（0=日曜〜6=土曜）。仮置き（労務担当者に確認中）。休日出勤の担当が使う

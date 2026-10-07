@@ -2,7 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { calcNeedsReview, calcScheduledMinutes, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice, resolveDayMetrics } from "@/lib/attendance"
-import { isRestDay, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { isRestDay, legacyOvertimeInput, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
@@ -57,7 +57,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
           workingMinutes: true, clockIn: true, clockOut: true, rawClockIn: true, rawClockOut: true, date: true, status: true,
           goOutAt: true, returnAt: true, breakStart: true, breakEnd: true, breakMinutes: true,
           isHolidayWork: true, lateMinutes: true, earlyLeaveMinutes: true, overtimeMinutes: true,
-          switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true,
+          switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true, switchNewCalc: true,
         },
       },
     },
@@ -118,7 +118,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     clockIn: Date | null; clockOut: Date | null; rawClockIn: Date | null; rawClockOut: Date | null; date: Date; workingMinutes: number | null; status: string
     goOutAt: Date | null; returnAt: Date | null; breakStart: Date | null; breakEnd: Date | null; breakMinutes: number | null
     isHolidayWork: boolean; lateMinutes: number | null; earlyLeaveMinutes: number | null; overtimeMinutes: number | null
-    switchRoundEarly: boolean | null; switchRoundNear: boolean | null; switchRoundQuarter: boolean | null; switchCapOvertime: boolean | null
+    switchRoundEarly: boolean | null; switchRoundNear: boolean | null; switchRoundQuarter: boolean | null; switchCapOvertime: boolean | null; switchNewCalc: boolean | null
   }
   const rows: Row[] = users.map((u: typeof users[number]) => {
     const recs = u.attendanceRecords as Rec[]
@@ -135,7 +135,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
       isHoliday: sched.isHoliday(r.date), isHolidayWork: r.isHolidayWork, requests: sched.requestsOf(u.id, r.date),
     })
     // 残業 ＝ 早出 ＋ 終業後（保存値があればそれ。CLOCK_PIPELINE 段8）
-    const overtimeMin       = recs.reduce((s, r) => s + resolveDayMetrics(r, scheduleOf(r)).overtimeMinutes, 0)
+    const overtimeMin       = recs.reduce((s, r) => s + resolveDayMetrics(r, scheduleOf(r), legacyOvertimeInput(r, sched.setting, u)).overtimeMinutes, 0)
     const unapprovedDays    = recs.filter((r) => {
       const sc = scheduleOf(r)
       return r.status === "OPEN" && calcNeedsReview({

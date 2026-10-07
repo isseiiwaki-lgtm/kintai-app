@@ -13,6 +13,7 @@
 import {
   applyRounding,
   calcDefaultBreakMinutes,
+  calcLegacyScheduledMinutes,
   calcMetrics,
   hhmmToUTCDate,
   isNormalOvertime,
@@ -21,21 +22,56 @@ import {
   type DaySchedule,
   type OvertimeRequestLike,
 } from "@/lib/attendance"
-import { REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
+import { REQUEST_TIME_STEP_MINUTES, calcLegalBreak } from "@/config/attendance.config"
 
 // 段7の規定値は lib/attendance.ts に置く（所定勤務時間の計算と共有し、循環 import を避ける）
 export { calcDefaultBreakMinutes }
+
+/**
+ * 画面・Excel が resolveDayMetrics に渡す「⑤旧方式の残業の求め方」。記録に保存した⑤がONなら undefined（新しい式）。
+ * 保存した⑤（無ければ resolveSwitches の規則）に従い、現在の設定には従わない
+ */
+export function legacyOvertimeInput(
+  rec: SavedSwitches & { workingMinutes: number | null },
+  setting: SwitchSetting | null | undefined,
+  user: { workStartTime: string | null; workEndTime: string | null; employmentType: string | null } | null | undefined,
+): { workingMinutes: number | null; legacyScheduledMinutes: number } | undefined {
+  if (resolveSwitches(rec, setting).newCalc) return undefined
+  return {
+    workingMinutes: rec.workingMinutes,
+    legacyScheduledMinutes: calcLegacyScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType),
+  }
+}
+
+/**
+ * 段8：残業分数（⑤で式が変わる）
+ * ⑤ON：早出＋終業後（pipelineOvertime。記録時刻と定時の差だけで出した値）
+ * ⑤OFF：旧方式。実働（休憩控除後）− 本人の所定勤務時間（calcLegacyScheduledMinutes）、0未満は0。所定が0なら0。
+ *   定時なしの日（休日で休日出勤申請が無い日）は旧方式でも残業を付けない（ここは誤りの修正として新旧共通）
+ */
+export function resolveOvertimeMinutes(p: {
+  newCalc: boolean
+  pipelineOvertime: number
+  workingMinutes: number | null
+  legacyScheduledMinutes: number
+  hasSchedule: boolean
+}): number {
+  if (p.newCalc) return p.pipelineOvertime
+  if (!p.hasSchedule || p.workingMinutes == null || p.legacyScheduledMinutes <= 0) return 0
+  return Math.max(0, p.workingMinutes - p.legacyScheduledMinutes)
+}
 
 // ---------------------------------------------------------------------------
 // スイッチ
 // ---------------------------------------------------------------------------
 
-/** ①〜④のスイッチ状態（打刻時点のもの。記録に保存し、計算し直すときもこれを使う） */
+/** ①〜⑤のスイッチ状態（打刻時点のもの。記録に保存し、計算し直すときもこれを使う） */
 export type PipelineSwitches = {
   roundEarly:   boolean  // ① 申請が無い日、定時前の出勤を定時にする
   roundNear:    boolean  // ② 定時から14分以内の早出・残業側の端数を定時にする（申請の有無に関係なく効く）
   roundQuarter: boolean  // ③ 全体の15分丸め
   capOvertime:  boolean  // ④ 早出・残業を申請の時刻で打ち切る
+  newCalc:      boolean  // ⑤ 新しい計算方式：正社員の休憩の規定値（定時から決める）と残業の式（早出＋終業後）。OFF＝旧方式
 }
 
 /** 会社設定（Setting）のうちスイッチに関わる部分 */
@@ -44,6 +80,7 @@ export type SwitchSetting = {
   roundNearClockTime?:   boolean | null
   roundQuarterHour?:     boolean | null
   capOvertimeByRequest?: boolean | null
+  newCalcMethod?:        boolean | null
 }
 
 /** AttendanceRecord に保存したスイッチ状態（null＝保存値なし） */
@@ -52,6 +89,7 @@ export type SavedSwitches = {
   switchRoundNear?:    boolean | null
   switchRoundQuarter?: boolean | null
   switchCapOvertime?:  boolean | null
+  switchNewCalc?:      boolean | null
 }
 
 /** 現在の設定をスイッチ状態にする（出勤打刻時に記録へ保存する値） */
@@ -61,6 +99,7 @@ export function switchesFromSetting(setting: SwitchSetting | null | undefined): 
     roundNear:    setting?.roundNearClockTime   ?? false,
     roundQuarter: setting?.roundQuarterHour     ?? false,
     capOvertime:  setting?.capOvertimeByRequest ?? false,
+    newCalc:      setting?.newCalcMethod        ?? false,
   }
 }
 
@@ -71,12 +110,14 @@ export function switchesToColumns(sw: PipelineSwitches) {
     switchRoundNear:    sw.roundNear,
     switchRoundQuarter: sw.roundQuarter,
     switchCapOvertime:  sw.capOvertime,
+    switchNewCalc:      sw.newCalc,
   }
 }
 
 /**
  * 計算に使うスイッチ状態を決める（原則5：遡及しない）。
- * 記録に保存値があればそれを使う。保存値が無い既存の記録は「③④OFF・①②は現在値」。
+ * 記録に保存値があればそれを使う。保存値が無い既存の記録は「③④OFF・①②⑤は現在値」。
+ * ⑤だけ保存値が無く①〜④の保存値がある記録は、⑤導入前の記録なので旧方式（OFF）。
  */
 export function resolveSwitches(saved: SavedSwitches | null | undefined, setting: SwitchSetting | null | undefined): PipelineSwitches {
   const has = saved
@@ -90,6 +131,7 @@ export function resolveSwitches(saved: SavedSwitches | null | undefined, setting
       roundNear:    saved.switchRoundNear!,
       roundQuarter: saved.switchRoundQuarter!,
       capOvertime:  saved.switchCapOvertime!,
+      newCalc:      saved.switchNewCalc ?? false,
     }
   }
   return {
@@ -97,6 +139,7 @@ export function resolveSwitches(saved: SavedSwitches | null | undefined, setting
     roundNear:    setting?.roundNearClockTime ?? false,
     roundQuarter: false,
     capOvertime:  false,
+    newCalc:      setting?.newCalcMethod ?? false,
   }
 }
 
@@ -120,7 +163,9 @@ function formatHHMM(mins: number): string {
  * 2. 値が無く、過去の休憩打刻（開始・終了）が両方ある → 打刻の差（休憩ボタン導入前の記録。再計算で実働が増えないように）
  * 3. パート → 0（休憩申請漏れの知らせの対象になりうる）
  * 4. 半休の日 → 0
- * 5. 正社員 → 規定値（本人の User.breakMinutes、無ければ会社設定の休憩ルールを定時の拘束時間に当てた値）
+ * 5. 正社員 → 規定値。⑤ON（新しい計算方式）：本人の User.breakMinutes、無ければ会社設定の休憩ルールを定時の拘束時間に当てた値。
+ *    ⑤OFF（旧方式。リリース2より前の規則）：在席時間（外出を除く）に法定休憩（6時間超45分・8時間超60分）を当てた値
+ * 1・2 は事実（休憩ボタン・承認済みの休憩申請・早退申請の休憩の申告・過去の休憩打刻）なので、⑤ON/OFF どちらでも同じ
  * 審査中の休憩申請は差し引かない（承認されて breakMinutes に入った時点で反映される）。
  * daySchedule は段0の結果。休日出勤の日はその申請の開始〜終了を拘束時間にする。
  * 定時なし（休日で休日出勤申請が無い日）は、本人の所定休憩が無ければ「在席時間」（presenceMinutes）に会社の休憩ルールを当てる
@@ -139,6 +184,8 @@ export function resolveBreakMinutes(p: {
   /** 外出を除いた在席時間（分）。定時なしの日の規定値に使う */
   presenceMinutes?: number | null
   setting?: { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number } | null
+  /** ⑤（記録に保存した値）。省略は ON（新しい計算方式）。本番の呼び出しは必ず渡す */
+  newCalc?: boolean
 }): number {
   if (p.savedBreakMinutes != null) return p.savedBreakMinutes
   if (p.breakStart && p.breakEnd) {
@@ -146,6 +193,8 @@ export function resolveBreakMinutes(p: {
   }
   if (p.employmentType === "part") return 0
   if (p.halfDay) return 0
+  // ⑤OFF：旧方式。在席時間に法定休憩を当てる（定時・本人の所定休憩・会社設定は見ない）
+  if (p.newCalc === false) return calcLegalBreak(Math.max(0, p.presenceMinutes ?? 0))
   if (!p.daySchedule && p.userBreakMinutes == null && p.presenceMinutes != null) {
     return calcDefaultBreakMinutes(
       { userBreakMinutes: null, workStartTime: "00:00", workEndTime: formatHHMM(Math.max(0, p.presenceMinutes)) },

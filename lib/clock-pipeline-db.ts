@@ -12,13 +12,14 @@
 
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
-import { calcWorkingMinutes } from "@/lib/attendance"
+import { calcLegacyScheduledMinutes, calcWorkingMinutes } from "@/lib/attendance"
 import {
   computeClockPipeline,
   isRestDay,
   pickHalfDay,
   resolveBreakMinutes,
   resolveInputTime,
+  resolveOvertimeMinutes,
   resolveScheduleForDate,
   resolveSwitches,
   switchesFromSetting,
@@ -130,6 +131,7 @@ export function buildRecordUpdate(
 
   // スイッチ状態：保存値（無ければ ③④OFF・①②は現在値）。打刻時の保存では現在の設定
   const snapshotNow = opts.snapshot === "overwrite" || (opts.snapshot === "ifMissing" && rec.switchRoundEarly == null)
+  // ⑤だけ保存値が無い記録（⑤導入前の ①〜④ 保存済みの記録）には、④の保存値と同じく書き込まない。resolveSwitches が旧方式（OFF）として扱う
   const switches = snapshotNow ? switchesFromSetting(ctx.setting) : resolveSwitches(rec, ctx.setting)
 
   // 段1：入力の時刻
@@ -177,6 +179,7 @@ export function buildRecordUpdate(
       daySchedule: schedule,
       presenceMinutes: Math.floor((out.clockOut.getTime() - out.clockIn.getTime() - (rec.goOutAt && rec.returnAt ? rec.returnAt.getTime() - rec.goOutAt.getTime() : 0)) / 60000),
       setting: ctx.setting,
+      newCalc: switches.newCalc,
     })
     data.workingMinutes = out.capBeforeClockIn
       ? 0
@@ -185,8 +188,14 @@ export function buildRecordUpdate(
           goOutAt: rec.goOutAt, returnAt: rec.returnAt,
           breakMinutes,
         })
-    // 段8：残業 ＝ 早出 ＋ 終業後（退勤時の保存・承認時の保存・画面の計算で同じ式）
-    data.overtimeMinutes = out.overtimeMinutes
+    // 段8：残業。⑤ON＝早出 ＋ 終業後、⑤OFF＝旧方式（実働 − 所定）。退勤時の保存・承認時の保存・画面の計算で同じ式
+    data.overtimeMinutes = resolveOvertimeMinutes({
+      newCalc: switches.newCalc,
+      pipelineOvertime: out.overtimeMinutes,
+      workingMinutes: data.workingMinutes ?? null,
+      legacyScheduledMinutes: calcLegacyScheduledMinutes(ctx.user.workStartTime, ctx.user.workEndTime, ctx.user.employmentType),
+      hasSchedule: !!schedule,
+    })
   }
   // 遅刻・早退は承認時に保存する（承認前は保存値が無く、表示時に記録時刻から計算される）
   // 承認取り消しで OPEN に戻った記録など、保存値が残っている日は古い値が残らないよう保存し直す

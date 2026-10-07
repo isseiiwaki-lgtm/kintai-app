@@ -8,7 +8,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { resolveDayMetrics, storedBreakMinutes } from "@/lib/attendance"
 import { fmtRestDate } from "@/lib/holiday-work"
-import { pickHalfDay, pickHolidayWorkRequest, resolveBreakMinutes, resolveScheduleForDate } from "@/lib/clock-pipeline"
+import { legacyOvertimeInput, pickHalfDay, pickHolidayWorkRequest, resolveBreakMinutes, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly, effectiveChangedFields } from "@/lib/export-format"
 import ExcelJS from "exceljs"
@@ -260,12 +260,13 @@ export async function GET(req: NextRequest) {
           employmentType: user.employmentType, userBreakMinutes: user.breakMinutes,
           workStartTime: user.workStartTime, workEndTime: user.workEndTime,
           daySchedule: schedule, presenceMinutes: rawMinutes, setting,
+          newCalc: resolveSwitches(rec, setting).newCalc,
         })
         workingMinutes = rec.workingMinutes ?? Math.max(0, rawMinutes - breakMinutes)
       }
       // 残業・遅刻・早退: 保存値が無い日（承認前）は画面と同じく記録時刻と定時の差から計算する（段4・段8）
       const dayMetrics = rec
-        ? resolveDayMetrics(rec, schedule)
+        ? resolveDayMetrics(rec, schedule, legacyOvertimeInput(rec, setting, user))
         : { lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: 0 }
       const overtime   = dayMetrics.overtimeMinutes
       const regular    = Math.max(0, workingMinutes - overtime)

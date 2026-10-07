@@ -14,6 +14,7 @@ const DEFAULT_SETTING = {
   roundNearClockTime: false,
   roundQuarterHour:   false,
   capOvertimeByRequest: false,
+  newCalcMethod:      false,
   lunchStartTime:     "12:00",
 }
 
@@ -116,6 +117,7 @@ export default async function SettingsPage() {
           roundNearClockTime={setting.roundNearClockTime}
           roundQuarterHour={setting.roundQuarterHour}
           capOvertimeByRequest={setting.capOvertimeByRequest}
+          newCalcMethod={setting.newCalcMethod}
         />
 
         <button
