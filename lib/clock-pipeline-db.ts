@@ -20,6 +20,7 @@ import {
   resolveSwitches,
   switchesFromSetting,
   switchesToColumns,
+  type ApprovedCorrection,
   type PipelineOutput,
 } from "@/lib/clock-pipeline"
 
@@ -212,4 +213,31 @@ export async function recomputeDay(userId: string, date: Date, opts: RecomputeOp
   const rec = await prisma.attendanceRecord.findUnique({ where: { userId_date: { userId, date } } })
   if (!rec) return
   await recomputeRecords(userId, [rec], opts)
+}
+
+/** loadApprovedCorrections の結果の引き方（日付・項目ごと） */
+export const correctionKey = (date: Date, field: string) => `${date.getTime()}:${field}`
+
+/**
+ * 期間内の承認済みの打刻修正申請を、日付・項目ごとにまとめて返す（どの変更履歴が承認由来かを見分ける材料）。
+ * 承認の記録（Approval）は 2026-07-06 以降しか無いので、approvedAts が空の申請もある（見分け方は findCorrectionLog）
+ */
+export async function loadApprovedCorrections(userId: string, from: Date, to: Date): Promise<Map<string, ApprovedCorrection[]>> {
+  const reqs = await prisma.request.findMany({
+    where: { userId, type: "CORRECTION", status: "APPROVED", targetDate: { gte: from, lte: to } },
+    select: {
+      targetDate: true, detail: true, createdAt: true,
+      approvals: { where: { action: "APPROVED" }, select: { actedAt: true } },
+    },
+  })
+  const map = new Map<string, ApprovedCorrection[]>()
+  for (const r of reqs) {
+    const d = r.detail as Record<string, string> | null
+    if (!d?.targetField || !d?.correctedTime) continue
+    const key = correctionKey(r.targetDate, d.targetField)
+    const list = map.get(key) ?? []
+    list.push({ correctedTime: d.correctedTime, createdAt: r.createdAt, approvedAts: r.approvals.map((a) => a.actedAt) })
+    map.set(key, list)
+  }
+  return map
 }

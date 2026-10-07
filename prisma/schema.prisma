@@ -178,6 +178,9 @@ model AttendanceChangeLog {
   fieldName   String   // "clockIn" / "clockOut" など
   oldValue    String?  // HH:MM または null
   newValue    String?
+  // 取り消し（管理者の修正の取り消し・打刻修正申請の削除）で書いた履歴のとき、取り消した履歴の id。
+  // 取り消された履歴と取り消しの履歴は、次の取り消しの「戻し先」に数えない
+  revertsLogId String?
 
   record    AttendanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
   changedBy User             @relation(fields: [changedById], references: [id])

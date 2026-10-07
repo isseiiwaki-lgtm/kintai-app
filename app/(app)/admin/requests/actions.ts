@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache"
 import { formatHHMMfromDate, calcScheduledMinutes } from "@/lib/attendance"
 import { recomputeDay } from "@/lib/clock-pipeline-db"
 import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
-import { findCorrectionLog, isLatestInputLog, planInputRevert } from "@/lib/clock-pipeline"
+import { findCorrectionLog, planFieldRevert, planInputRevert } from "@/lib/clock-pipeline"
 
 export type ActionResult = { ok: true } | { ok: false; error: string }
 
@@ -38,16 +38,20 @@ async function lockedCorrectionError(req: { type: string; userId: string; target
  * 承認済みの打刻修正申請を削除するとき、記録を修正前の時刻に戻して打刻パイプラインで計算し直す。
  *
  * 「修正前」の決め方
- * - 出勤・退勤：その修正の変更履歴を取り除いた入力（1つ前の打刻修正があればその時刻、無ければ実打刻）。
+ * - 出勤・退勤：その修正の変更履歴を取り除いた入力（1つ前の有効な打刻修正があればその時刻、無ければ実打刻）。
  *   変更履歴に「項目: 修正した時刻 → 戻した時刻（無ければ空＝取り消しの印）」を1件書く（履歴は消さない）。
+ *   書いた履歴は revertsLogId で取り消した履歴を指す。取り消し済みの履歴は、あとの取り消しの戻し先に数えない
+ *   （同じ項目の修正を2件とも削除したとき、古いほうの時刻が残らず実打刻に戻る）。
+ *   あとの修正・管理者の編集が同じ項目に入っている場合は、それが優先なので入力は動かさない（取り消し済みの印だけ書く）。
  *   実打刻も他の修正も無い日は、承認時に変更履歴へ残した「修正前の値」を記録時刻の列へ戻す（無ければ空）
- * - 外出・戻り・休憩：承認時に変更履歴へ残した「修正前の値」を列へ戻す。特定できなければ削除を拒否する
- * - あとから別の修正・管理者の編集が同じ項目に入っている場合は、それが優先なので時刻は動かさない
- * - 承認の変更履歴は承認の記録の前後2分以内で見つける（変更履歴に操作の種別が無いため）
+ * - 外出・戻り・休憩：承認時に変更履歴へ残した「修正前の値」（先に取り消した修正があれば、その前の値）を列へ戻す。
+ *   特定できなければ削除を拒否する
+ * - 承認の変更履歴の見つけ方は findCorrectionLog を参照（承認の記録が無い 2026-07-06 より前の承認は、申請の作成以後で
+ *   同じ時刻の最も早い履歴）。変更履歴に操作の種別が無いための規則
  * 締め済み（LOCKED）の日は拒否する
  */
 async function revertApprovedCorrection(
-  req: { userId: string; targetDate: Date; detail: unknown; approvals: { actedAt: Date }[] },
+  req: { userId: string; targetDate: Date; detail: unknown; createdAt: Date; approvals: { actedAt: Date }[] },
   changedById: string,
 ): Promise<ActionResult> {
   const detail = req.detail as Record<string, string> | null
@@ -65,15 +69,15 @@ async function revertApprovedCorrection(
 
   const logs = await prisma.attendanceChangeLog.findMany({
     where: { recordId: rec.id, fieldName: field },
-    select: { id: true, oldValue: true, newValue: true, changedAt: true },
+    select: { id: true, oldValue: true, newValue: true, changedAt: true, revertsLogId: true },
   })
-  const matched = findCorrectionLog(logs, correctedTime, req.approvals.map((a) => a.actedAt))
+  const matched = findCorrectionLog(logs, correctedTime, req.approvals.map((a) => a.actedAt), req.createdAt)
 
   const data: Record<string, Date | null> = {}
   let logNewValue: string | null
   if (field === "clockIn" || field === "clockOut") {
-    // 承認の変更履歴が見つからない・あとの修正が優先なら、入力は動かさない
-    if (!matched || !isLatestInputLog(logs, matched)) return { ok: true }
+    // 承認の変更履歴が見つからなければ、入力は動かさない
+    if (!matched) return { ok: true }
     const raw = field === "clockIn" ? rec.rawClockIn : rec.rawClockOut
     const plan = planInputRevert({ date: rec.date, raw, logs, removeId: matched.id })
     logNewValue = plan.logNewValue
@@ -82,9 +86,9 @@ async function revertApprovedCorrection(
     if (!matched) {
       return { ok: false, error: "修正前の値を特定できないため削除できません。勤怠の編集で直してから削除してください" }
     }
-    if (!isLatestInputLog(logs, matched)) return { ok: true }
-    logNewValue = matched.oldValue
-    data[field] = matched.oldValue ? hhmmOnDate(rec.date, matched.oldValue) : null
+    const plan = planFieldRevert({ logs, removeId: matched.id })
+    logNewValue = plan.value
+    if (plan.changeColumn) data[field] = plan.value ? hhmmOnDate(rec.date, plan.value) : null
   }
 
   // 勤務時間・残業・遅刻・早退は古い値が残らないよう空にし、このあとの計算し直しで出し直す
@@ -94,7 +98,10 @@ async function revertApprovedCorrection(
       data: { ...data, workingMinutes: null, overtimeMinutes: null, lateMinutes: null, earlyLeaveMinutes: null },
     }),
     prisma.attendanceChangeLog.create({
-      data: { recordId: rec.id, changedById, changedAt: new Date(), fieldName: field, oldValue: correctedTime, newValue: logNewValue },
+      data: {
+        recordId: rec.id, changedById, changedAt: new Date(), fieldName: field,
+        oldValue: correctedTime, newValue: logNewValue, revertsLogId: matched.id,
+      },
     }),
   ])
   await recomputeDay(req.userId, req.targetDate)

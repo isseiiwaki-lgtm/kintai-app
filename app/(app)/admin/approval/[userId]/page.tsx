@@ -5,8 +5,8 @@ import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { ProxyPunchForm } from "./_components/ProxyPunchForm"
 import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
-import { pickEarlyStartTime, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
-import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
+import { correctionLogIdSet, pickEarlyStartTime, planAdminRevert, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
+import { correctionKey, loadApprovedCorrections, loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
 type Params      = Promise<{ userId: string }>
@@ -90,6 +90,34 @@ export default async function UserApprovalPage({
 
   // 段0：その日の定時（休日は定時なし・半休は前半/後半）。遅刻・早退・残業・要確認の判定に使う
   const sched = await loadScheduleInputs([userId], firstDay, lastDay)
+
+  // 「管理者の修正を取り消す」を出す日の判定材料（admin 列がある日の出退勤の変更履歴と、承認済みの打刻修正）
+  const adminRecordIds = records.filter((r) => r.adminClockIn || r.adminClockOut).map((r) => r.id)
+  const [adminLogs, corrections] = await Promise.all([
+    adminRecordIds.length === 0 ? Promise.resolve([]) : prisma.attendanceChangeLog.findMany({
+      where: { recordId: { in: adminRecordIds }, fieldName: { in: ["clockIn", "clockOut"] } },
+      select: { id: true, recordId: true, fieldName: true, oldValue: true, newValue: true, changedAt: true, revertsLogId: true },
+    }),
+    loadApprovedCorrections(userId, firstDay, lastDay),
+  ])
+  /** 取り消すものがある日か（出勤・退勤のどちらかに取り消し先がある） */
+  const canClearAdminEdit = (r: (typeof records)[number]): boolean => {
+    const recLogs = adminLogs.filter((l) => l.recordId === r.id)
+    const firstLogAt = recLogs.length > 0 ? new Date(Math.min(...recLogs.map((l) => l.changedAt.getTime()))) : null
+    return ([
+      { field: "clockIn", admin: r.adminClockIn, raw: r.rawClockIn },
+      { field: "clockOut", admin: r.adminClockOut, raw: r.rawClockOut },
+    ] as const).some((t) => {
+      if (!t.admin) return false
+      const logs = recLogs.filter((l) => l.fieldName === t.field)
+      return planAdminRevert({
+        date: r.date, raw: t.raw, admin: t.admin, logs,
+        correctionLogIds: correctionLogIdSet(logs, corrections.get(correctionKey(r.date, t.field)) ?? []),
+        dayHasRawPunch: !!(r.rawClockIn || r.rawClockOut),
+        firstLogAt,
+      }).kind !== "none"
+    })
+  }
 
   // 申請を日付キーでマップ
   const requestMap = new Map(
@@ -182,7 +210,7 @@ export default async function UserApprovalPage({
       clockOut:    formatHHMM(r.clockOut),
       rawClockIn:  formatHHMM(r.rawClockIn),
       rawClockOut: formatHHMM(r.rawClockOut),
-      hasAdminEdit: !!r.adminClockIn || !!r.adminClockOut,
+      hasAdminEdit: canClearAdminEdit(r),
       requestEndTime,
       noOvertimeRequest,
       breakStart:  formatHHMM(r.breakStart),

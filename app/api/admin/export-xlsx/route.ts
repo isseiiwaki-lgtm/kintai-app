@@ -10,7 +10,7 @@ import { calcLegalBreak } from "@/config/attendance.config"
 import { resolveDayMetrics } from "@/lib/attendance"
 import { resolveScheduleForDate } from "@/lib/clock-pipeline"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
-import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly } from "@/lib/export-format"
+import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly, effectiveChangedFields } from "@/lib/export-format"
 import ExcelJS from "exceljs"
 
 // 分 → H:MM 形式（0以下は空欄）
@@ -89,8 +89,8 @@ export async function GET(req: NextRequest) {
       attendanceRecords: {
         where: { date: { gte: firstDay, lte: lastDay } },
         orderBy: { date: "asc" },
-        // 変更出勤・変更退勤の「手を入れた日」判定用（変更履歴の項目名だけ）
-        include: { changeLogs: { select: { fieldName: true } } },
+        // 変更出勤・変更退勤の「手を入れた日」判定用（取り消して実打刻に戻った日を除くため、新しい値と時刻も読む）
+        include: { changeLogs: { select: { fieldName: true, newValue: true, changedAt: true } } },
       },
       requests: {
         where: {
@@ -278,8 +278,8 @@ export async function GET(req: NextRequest) {
 
       const absent = rec?.isAbsent ? "1" : ""
 
-      // 変更出勤・変更退勤: 変更履歴に出退勤の修正がある日だけ。直した側は記録時刻、直していない側は実打刻
-      const changed = fmtChangedPair(rec, (rec?.changeLogs ?? []).map((l) => l.fieldName))
+      // 変更出勤・変更退勤: 変更履歴に出退勤の実質の修正が残っている日だけ（取り消して実打刻に戻った日は `-`）。直した側は記録時刻、直していない側は実打刻
+      const changed = fmtChangedPair(rec, effectiveChangedFields(rec, rec?.changeLogs ?? []))
 
       const rowData = [
         fmtDateWithWeekday(dayDate),             // 日付（11/5(水) 形式）

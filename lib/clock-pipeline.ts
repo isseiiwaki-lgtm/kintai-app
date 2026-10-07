@@ -522,7 +522,24 @@ export function resolveInputTime(p: {
 }
 
 /** 変更履歴の1件（出勤・退勤の1項目ぶん） */
-export type InputLog = { id: string; oldValue: string | null; newValue: string | null; changedAt: Date }
+export type InputLog = {
+  id: string
+  oldValue: string | null
+  newValue: string | null
+  changedAt: Date
+  /** 取り消しで書いた履歴のとき、取り消した履歴の id（通常の履歴は null / 省略） */
+  revertsLogId?: string | null
+}
+
+/**
+ * 有効な履歴：取り消された履歴（revertsLogId で指されたもの）と、取り消しの履歴そのものを除く。
+ * 取り消しの履歴は「戻した時刻」を新しい値として書き直すので、読み手（resolveInputTime）は最新の値を読むだけで済む。
+ * 一方、次の取り消しの「戻し先」を求めるときは、取り消し済みの申請・管理者の修正の履歴を拾ってはいけない
+ */
+export function liveInputLogs<T extends InputLog>(logs: T[]): T[] {
+  const dead = new Set(logs.map((l) => l.revertsLogId).filter((v): v is string => !!v))
+  return logs.filter((l) => !l.revertsLogId && !dead.has(l.id))
+}
 
 /** 変更履歴の時刻と承認の記録の時刻が一致とみなす幅（承認の記録のあとに同じ操作で変更履歴を書くため） */
 const APPROVAL_LOG_WINDOW_MS = 2 * 60 * 1000
@@ -530,15 +547,46 @@ const APPROVAL_LOG_WINDOW_MS = 2 * 60 * 1000
 const isValidTime = (v: string | null | undefined): v is string => !!v && /^\d{1,2}:\d{2}$/.test(v)
 
 /**
- * 打刻修正申請の承認で書かれた変更履歴を探す（同じ新しい値で、承認の記録の時刻の前後2分以内。複数あれば最新）。
- * 変更履歴には「誰が・何の操作で」の区別が無いので、承認の記録との時刻の一致で見分ける
+ * 打刻修正申請の承認で書かれた変更履歴を探す（取り消し済みの履歴は対象外）。
+ * 変更履歴には「誰が・何の操作で」の区別が無いので、次の規則で見分ける
+ * - 承認の記録（Approval）がある申請：同じ新しい値で、承認の記録の時刻の前後2分以内の履歴（複数あれば最新）
+ * - 承認の記録が1件も無い申請（承認の記録は 2026-07-06 以降しか無く、それ以前に承認したもの）：
+ *   同じ新しい値で、申請の作成（createdAt）以後に書かれた履歴のうち最も早い1件。
+ *   承認は申請の作成後に行われ、同じ時刻を管理者があとから入れ直した履歴は承認より遅いので、最も早い履歴を承認由来とみなす
+ * 見つからなければ null
  */
-export function findCorrectionLog(logs: InputLog[], correctedTime: string, approvedAts: Date[]): InputLog | null {
-  const hit = logs
-    .filter((l) => l.newValue === correctedTime
-      && approvedAts.some((a) => Math.abs(a.getTime() - l.changedAt.getTime()) <= APPROVAL_LOG_WINDOW_MS))
-    .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime())
+export function findCorrectionLog(
+  logs: InputLog[],
+  correctedTime: string,
+  approvedAts: Date[],
+  /** 申請の作成日時。承認の記録が無い申請の照合に使う */
+  createdAt?: Date,
+): InputLog | null {
+  const live = liveInputLogs(logs).filter((l) => l.newValue === correctedTime)
+  if (approvedAts.length > 0) {
+    const hit = live
+      .filter((l) => approvedAts.some((a) => Math.abs(a.getTime() - l.changedAt.getTime()) <= APPROVAL_LOG_WINDOW_MS))
+      .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime())
+    return hit[0] ?? null
+  }
+  if (!createdAt) return null
+  const hit = live
+    .filter((l) => l.changedAt.getTime() >= createdAt.getTime())
+    .sort((a, b) => a.changedAt.getTime() - b.changedAt.getTime() || a.id.localeCompare(b.id))
   return hit[0] ?? null
+}
+
+/** 承認済みの打刻修正申請（1項目ぶん）。変更履歴のどれが承認由来かを見分ける材料 */
+export type ApprovedCorrection = { correctedTime: string; createdAt: Date; approvedAts: Date[] }
+
+/** 承認済みの打刻修正の変更履歴の id の集合（残りは管理者の入力・代理打刻の履歴とみなす） */
+export function correctionLogIdSet(logs: InputLog[], corrections: ApprovedCorrection[]): Set<string> {
+  const ids = new Set<string>()
+  for (const c of corrections) {
+    const hit = findCorrectionLog(logs, c.correctedTime, c.approvedAts, c.createdAt)
+    if (hit) ids.add(hit.id)
+  }
+  return ids
 }
 
 /** その履歴が、有効な履歴のうち最新か（これより後に入力を変える履歴が無いか） */
@@ -559,7 +607,8 @@ export function planInputRevert(p: {
   /** 取り消す履歴の id。特定できなければ null（全履歴を残して1つ前を求める） */
   removeId: string | null
 }): { logNewValue: string | null; noInput: boolean } {
-  const rest = p.logs.filter((l) => l.id !== p.removeId)
+  // 取り消し済みの申請・管理者の修正の履歴は戻し先にしない（有効な履歴だけから探す）
+  const rest = liveInputLogs(p.logs).filter((l) => l.id !== p.removeId)
   const prior = resolveInputTime({ date: p.date, raw: p.raw, recorded: null, logs: rest })
   if (prior.source === "corrected" && prior.time) {
     const j = new Date(prior.time.getTime() + 9 * 60 * 60 * 1000)
@@ -567,6 +616,104 @@ export function planInputRevert(p: {
     return { logNewValue: hhmm, noInput: false }
   }
   return { logNewValue: null, noInput: prior.source === "recorded" }
+}
+
+const jstHHMM = (d: Date): string => {
+  const j = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+  return `${String(j.getUTCHours()).padStart(2, "0")}:${String(j.getUTCMinutes()).padStart(2, "0")}`
+}
+
+/** 管理者の修正の取り消し方（出勤・退勤それぞれ） */
+export type AdminRevertPlan =
+  /** 取り消すものが無い（代理打刻で入れたままの項目など） */
+  | { kind: "none" }
+  /** 1つ前の値も管理者・代理打刻の入力：その値へ admin 列ごと戻す（丸めない） */
+  | { kind: "restoreAdmin"; value: string; targetId: string | null }
+  /** admin 列を空にして、1つ前の打刻修正の時刻・実打刻（パイプラインを通す）へ戻す。noInput なら記録時刻の列も空にする */
+  | { kind: "clearAdmin"; logNewValue: string | null; noInput: boolean; targetId: string | null }
+
+/**
+ * 管理者の確定修正（admin 列）を取り消すときの戻し先を決める（出勤・退勤のどちらか1項目ぶん）。
+ * - 管理者の修正の履歴 ＝ admin 列と同じ新しい値の、有効な履歴のうち最新（特定できなければ null）
+ * - 戻し先 ＝ それを除いた有効な履歴のうち最新（実打刻より前のものは使わない）
+ *   - 打刻修正の承認の履歴ではない（管理者の入力・代理打刻・リリース2より前の移行分）なら、その値へ admin 列ごと戻す
+ *     （管理者が入れた時刻なので丸めない。代理打刻の時刻を直した日は、代理打刻の時刻に戻る）
+ *   - 打刻修正の承認の履歴なら、admin 列を空にしてその時刻へ（パイプラインを通す）
+ *   - 履歴が無ければ実打刻へ。実打刻も無い日は次のとおり
+ *     - 他の項目に実打刻がある日（退勤の打ち忘れに管理者が入れた等）：記録時刻の列を空にして戻す
+ *     - 打刻ゼロの日（代理打刻）：代理打刻と同時に入れた最初の履歴だけの項目は、あとから直していないので取り消さない（none）。
+ *       あとから足した項目（最初の履歴より後に書かれたもの）は、空に戻す
+ */
+export function planAdminRevert(p: {
+  date: Date
+  raw: Date | null
+  /** admin 列の時刻 */
+  admin: Date
+  /** この項目の変更履歴（取り消しの履歴を含めて渡す） */
+  logs: InputLog[]
+  /** 打刻修正の承認で書かれた履歴の id（correctionLogIdSet） */
+  correctionLogIds: Set<string>
+  /** その日に実打刻（出勤・退勤のどちらか）があるか */
+  dayHasRawPunch: boolean
+  /** その日の出勤・退勤の変更履歴のうち最も早い書き込み時刻（代理打刻の最初の履歴の判定に使う） */
+  firstLogAt: Date | null
+}): AdminRevertPlan {
+  const adminHHMM = jstHHMM(p.admin)
+  const live = liveInputLogs(p.logs).filter((l) => isValidTime(l.newValue))
+  const desc = (a: InputLog, b: InputLog) => b.changedAt.getTime() - a.changedAt.getTime()
+  const target = live.filter((l) => l.newValue === adminHHMM).sort(desc)[0] ?? null
+  const prior = live
+    .filter((l) => l.id !== target?.id && (!p.raw || p.raw.getTime() <= l.changedAt.getTime()))
+    .sort(desc)[0] ?? null
+  const targetId = target?.id ?? null
+  if (prior) {
+    return p.correctionLogIds.has(prior.id)
+      ? { kind: "clearAdmin", logNewValue: prior.newValue, noInput: false, targetId }
+      : { kind: "restoreAdmin", value: prior.newValue!, targetId }
+  }
+  if (p.raw) return { kind: "clearAdmin", logNewValue: null, noInput: false, targetId }
+  if (p.dayHasRawPunch) return { kind: "clearAdmin", logNewValue: null, noInput: true, targetId }
+  // 打刻ゼロの日（代理打刻）：代理打刻と同時に書いた最初の履歴だけの項目は触らない
+  if (target && p.firstLogAt && target.changedAt.getTime() - p.firstLogAt.getTime() <= PROXY_BATCH_WINDOW_MS) {
+    return { kind: "none" }
+  }
+  return { kind: "clearAdmin", logNewValue: null, noInput: true, targetId }
+}
+
+/** 代理打刻は1回の保存で出勤・退勤の履歴を書く。同じ保存とみなす書き込み時刻の幅 */
+const PROXY_BATCH_WINDOW_MS = 1000
+
+/**
+ * 外出・戻り・休憩の打刻修正（承認済み）を取り消すときの、列へ戻す値を決める。
+ * - これより後に別の有効な履歴（別の修正・管理者の編集）があれば、それが優先なので列は動かさない（changeColumn = false）
+ *   取り消しの履歴には現在の値（最新の有効な履歴の値）を書く
+ * - 最新なら、1つ前の有効な履歴の値へ。無ければ修正前の値（取り消し済みの履歴をたどって、最初の修正の前の値）へ
+ */
+export function planFieldRevert(p: {
+  logs: InputLog[]
+  removeId: string
+}): { value: string | null; changeColumn: boolean } {
+  const target = p.logs.find((l) => l.id === p.removeId)
+  const live = liveInputLogs(p.logs).filter((l) => isValidTime(l.newValue))
+  const desc = (a: InputLog, b: InputLog) => b.changedAt.getTime() - a.changedAt.getTime()
+  const latest = live.sort(desc)[0]
+  if (latest && latest.id !== p.removeId) return { value: latest.newValue, changeColumn: false }
+  const prior = live.filter((l) => l.id !== p.removeId)[0]
+  if (prior) return { value: prior.newValue, changeColumn: true }
+  // 戻し先の履歴が無い：修正前の値。先に取り消した修正の履歴があれば、その前の値までさかのぼる
+  const liveIds = new Set(live.map((l) => l.id))
+  const deadOnes = p.logs.filter((l) => !l.revertsLogId && !liveIds.has(l.id) && l.id !== p.removeId)
+  let v = target?.oldValue ?? null
+  const seen = new Set<string>()
+  while (v && target) {
+    const d = deadOnes
+      .filter((l) => l.newValue === v && !seen.has(l.id) && l.changedAt.getTime() < target.changedAt.getTime())
+      .sort(desc)[0]
+    if (!d) break
+    seen.add(d.id)
+    v = d.oldValue
+  }
+  return { value: v, changeColumn: true }
 }
 
 // ---------------------------------------------------------------------------

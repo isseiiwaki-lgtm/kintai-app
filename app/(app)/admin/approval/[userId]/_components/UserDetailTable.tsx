@@ -14,7 +14,7 @@ type Rec = {
   clockOut:   string | null
   rawClockIn:  string | null   // 生打刻（丸め前）。丸めと差がある日のみ併記表示
   rawClockOut: string | null
-  hasAdminEdit: boolean        // 管理者の確定修正（段6.5）がある日。「管理者の修正を取り消す」を出す
+  hasAdminEdit: boolean        // 管理者の確定修正（段6.5）に取り消し先がある日。「管理者の修正を取り消す」を出す
   requestEndTime: string | null   // ④: 承認済み残業申請（最後に出した申請）の終了時刻。④OFF・申請なしは null
   noOvertimeRequest: boolean      // ④ON で残業申請が無いのに実打刻が定時を15分以上過ぎた日の目印
   breakStart: string | null
@@ -77,7 +77,7 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
   // 管理者の確定修正（出勤・退勤）を取り消し、その日をパイプラインで計算し直す
   function handleClearAdminEdit() {
     if (!editRec) return
-    if (!window.confirm(`${editRec.dateLabel} の管理者の修正（出勤・退勤）を取り消しますか？\n実打刻（または打刻修正）の時刻に戻して計算し直します。`)) return
+    if (!window.confirm(`${editRec.dateLabel} の管理者の修正（出勤・退勤）を取り消しますか？\n1つ前の時刻（実打刻・打刻修正・代理打刻の時刻）に戻して計算し直します。`)) return
     startTransition(async () => {
       const res = await actionClearAdminEdit(editRec.id)
       if (!res.ok) { setEditError(res.error); return }

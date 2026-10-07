@@ -4,8 +4,8 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { formatHHMMfromDate } from "@/lib/attendance"
-import { recomputeDay } from "@/lib/clock-pipeline-db"
-import { planInputRevert, type InputLog } from "@/lib/clock-pipeline"
+import { correctionKey, loadApprovedCorrections, recomputeDay } from "@/lib/clock-pipeline-db"
+import { correctionLogIdSet, planAdminRevert, type InputLog } from "@/lib/clock-pipeline"
 import { approveRecordsWithMetrics } from "@/lib/approve-records"
 
 async function checkRole() {
@@ -91,12 +91,15 @@ export async function actionAdminUpdateRecord(
 }
 
 /**
- * 管理者の確定修正（段6.5の admin 列）を取り消す。出勤・退勤それぞれ、admin 列がある項目だけを戻す。
+ * 管理者の確定修正（段6.5の admin 列）を取り消す。出勤・退勤それぞれ、取り消すものがある項目だけを戻す。
  *
- * 「修正前」の決め方：管理者の修正の変更履歴を取り除いた入力（1つ前の打刻修正があればその時刻、無ければ実打刻）。
+ * 戻し先の決め方は planAdminRevert（lib/clock-pipeline.ts）を参照。要点
+ * - 1つ前の値も管理者・代理打刻の入力（代理打刻の時刻を直した日、リリース2より前の移行分を含む）なら、その値へ戻す。
+ *   管理者が入れた時刻なので admin 列にも入れ直し、丸めない（例：代理打刻 8:50 → 9:10 に修正 → 取り消し → 8:50）
+ * - 1つ前が打刻修正の承認・実打刻なら、admin 列を空にして、その時刻をパイプラインに通す
+ * - 代理打刻のまま直していない項目は触らない（取り消すものが無い）
  * - 戻す先を入力にするため、変更履歴に「出勤/退勤: 管理者の時刻 → 戻した時刻（無ければ空＝取り消しの印）」を1件書く
- *   （履歴は消さない。取り消しの印は lib/clock-pipeline.ts の resolveInputTime が読む）
- * - 実打刻も他の打刻修正も無い日（代理打刻など）は、戻す先が無いので記録時刻の列を空にする
+ *   （履歴は消さない。revertsLogId で取り消した管理者の修正の履歴を指す。取り消しの印は resolveInputTime が読む）
  * 締め済み（LOCKED）は取り消せない。状態（承認済）は変えない
  */
 export async function actionClearAdminEdit(recordId: string): Promise<ActionResult> {
@@ -109,11 +112,13 @@ export async function actionClearAdminEdit(recordId: string): Promise<ActionResu
 
   const allLogs = await prisma.attendanceChangeLog.findMany({
     where: { recordId, fieldName: { in: ["clockIn", "clockOut"] } },
-    select: { id: true, fieldName: true, oldValue: true, newValue: true, changedAt: true },
+    select: { id: true, fieldName: true, oldValue: true, newValue: true, changedAt: true, revertsLogId: true },
   })
+  const corrections = await loadApprovedCorrections(rec.userId, rec.date, rec.date)
+  const firstLogAt = allLogs.length > 0 ? new Date(Math.min(...allLogs.map((l) => l.changedAt.getTime()))) : null
 
   const data: Record<string, Date | null> = {}
-  const newLogs: { fieldName: string; oldValue: string | null; newValue: string | null }[] = []
+  const newLogs: { fieldName: string; oldValue: string | null; newValue: string | null; revertsLogId: string | null }[] = []
   const targets = [
     { field: "clockIn",  admin: rec.adminClockIn,  raw: rec.rawClockIn,  adminCol: "adminClockIn",  col: "clockIn" },
     { field: "clockOut", admin: rec.adminClockOut, raw: rec.rawClockOut, adminCol: "adminClockOut", col: "clockOut" },
@@ -122,15 +127,29 @@ export async function actionClearAdminEdit(recordId: string): Promise<ActionResu
     if (!t.admin) continue
     const adminHHMM = formatHHMMfromDate(t.admin)
     const logs: InputLog[] = allLogs.filter((l) => l.fieldName === t.field)
-    // 管理者の修正の変更履歴 ＝ 管理者の時刻と同じ新しい値の最新の履歴（特定できなければ全履歴を残して1つ前を求める）
-    const target = logs
-      .filter((l) => l.newValue === adminHHMM)
-      .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime())[0]
-    const plan = planInputRevert({ date: rec.date, raw: t.raw, logs, removeId: target?.id ?? null })
+    const plan = planAdminRevert({
+      date: rec.date,
+      raw: t.raw,
+      admin: t.admin,
+      logs,
+      correctionLogIds: correctionLogIdSet(logs, corrections.get(correctionKey(rec.date, t.field)) ?? []),
+      dayHasRawPunch: !!(rec.rawClockIn || rec.rawClockOut),
+      firstLogAt,
+    })
+    if (plan.kind === "none") continue
+    if (plan.kind === "restoreAdmin") {
+      // 管理者・代理打刻が入れた1つ前の時刻へ。admin 列に入れ直す（丸めない）
+      const v = toUTC(rec.date.toISOString(), plan.value)
+      data[t.adminCol] = v
+      data[t.col] = v
+      newLogs.push({ fieldName: t.field, oldValue: adminHHMM, newValue: plan.value, revertsLogId: plan.targetId })
+      continue
+    }
     data[t.adminCol] = null
-    if (plan.noInput) data[t.col] = null  // 戻す先が無い（代理打刻など）：記録時刻の列を空にする
-    newLogs.push({ fieldName: t.field, oldValue: adminHHMM, newValue: plan.logNewValue })
+    if (plan.noInput) data[t.col] = null  // 戻す先が無い：記録時刻の列を空にする
+    newLogs.push({ fieldName: t.field, oldValue: adminHHMM, newValue: plan.logNewValue, revertsLogId: plan.targetId })
   }
+  if (newLogs.length === 0) return { ok: false, error: "取り消す管理者の修正がありません" }
 
   // 勤務時間・残業・遅刻・早退は古い値が残らないよう空にし、このあとの計算し直しで出し直す
   await prisma.$transaction([
