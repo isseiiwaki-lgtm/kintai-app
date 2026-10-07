@@ -100,24 +100,26 @@ export default async function UserApprovalPage({
     }),
     loadApprovedCorrections(userId, firstDay, lastDay),
   ])
-  /** 取り消すものがある日か（出勤・退勤のどちらかに取り消し先がある） */
+  /** 取り消すものがある日か（出勤・退勤のどちらかに取り消し先があり、特定できない項目が無い。actionClearAdminEdit と同じ判定） */
   const canClearAdminEdit = (r: (typeof records)[number]): boolean => {
     const recLogs = adminLogs.filter((l) => l.recordId === r.id)
     const firstLogAt = proxyFirstLogAt(recLogs)
-    return ([
+    const kinds = ([
       { field: "clockIn", admin: r.adminClockIn, raw: r.rawClockIn },
       { field: "clockOut", admin: r.adminClockOut, raw: r.rawClockOut },
-    ] as const).some((t) => {
-      if (!t.admin) return false
+    ] as const).flatMap((t) => {
+      if (!t.admin) return []
       const logs = recLogs.filter((l) => l.fieldName === t.field)
-      const kind = planAdminRevert({
+      return [planAdminRevert({
         date: r.date, raw: t.raw, admin: t.admin, logs,
         correctionLogIds: correctionLogIdSet(logs, corrections.get(correctionKey(r.date, t.field)) ?? []),
         dayHasRawPunch: !!(r.rawClockIn || r.rawClockOut),
         firstLogAt,
-      }).kind
-      return kind !== "none" && kind !== "unidentified"
+      }).kind]
     })
+    // 片方でも特定できない項目があると取り消し処理は全体を拒否するため、ボタンも出さない
+    if (kinds.includes("unidentified")) return false
+    return kinds.some((k) => k !== "none")
   }
 
   // 申請を日付キーでマップ
