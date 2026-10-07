@@ -14,6 +14,7 @@ const DEFAULT_SETTING = {
   roundNearClockTime: false,
   roundQuarterHour:   false,
   capOvertimeByRequest: false,
+  lunchStartTime:     "12:00",
 }
 
 export default async function SettingsPage() {
@@ -95,6 +96,18 @@ export default async function SettingsPage() {
           <p className="text-xs text-gray-400 mt-3">
             ※ ルール2が優先（8時間超はルール1ではなくルール2を適用）
           </p>
+        </div>
+
+        {/* 昼休憩の開始時刻（正社員の半休の境目を決めるためだけに使う。休憩控除の判定には使わない） */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <h2 className="text-sm font-semibold text-gray-800 mb-1">昼休憩の開始時刻</h2>
+          <p className="text-xs text-gray-400 mb-3">正社員の半休の前半・後半の境目に使います（昼休憩の終わり ＝ 開始 ＋ 本人の休憩の長さ）。休憩の控除には使いません。</p>
+          <input
+            type="time" name="lunchStartTime"
+            defaultValue={setting.lunchStartTime ?? "12:00"}
+            required
+            className={inputClass}
+          />
         </div>
 
         {/* 打刻丸め ①②③ と残業の申請上限 ④ */}
