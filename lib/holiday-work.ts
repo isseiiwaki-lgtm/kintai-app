@@ -105,7 +105,7 @@ export function fmtRestDate(key: string): string {
 
 /**
  * 振休・代休で休む日の行の表示。例：「振休（10/12 出勤分）」「代休（10/12 出勤分）」（10/12 は休日出勤した日）。
- * 欠勤に見えないよう、Excel・/records の休む日の行で同じ文言を使う（承認詳細への表示は未実装・オーナー判断待ち）
+ * 欠勤に見えないよう、Excel・/records・管理者の承認詳細の休む日の行で同じ文言を使う
  */
 export function restDayLabel(kind: RestKind | string | undefined, workDateKey: string): string {
   const k = kind === "daikyu" ? "daikyu" : "furikyu"
@@ -143,6 +143,21 @@ export function buildRestDayLabels(
     map.set(d.restDate, restDayLabel(d.restKind, r.targetDate.toISOString().slice(0, 10)))
   }
   return map
+}
+
+/**
+ * 休む日のラベルがあるのに勤怠記録が無い日（"YYYY-MM-DD"）を、期間内（firstKey〜lastKey を含む）で昇順に返す。
+ * 管理者の承認詳細で、記録の無い休む日にもラベルだけの行を出すのに使う（日付キーは同じ書式の文字列比較）
+ */
+export function labelOnlyRestDates(
+  labels: Map<string, string>,
+  recordDateKeys: Set<string>,
+  firstKey: string,
+  lastKey: string,
+): string[] {
+  return [...labels.keys()]
+    .filter((k) => k >= firstKey && k <= lastKey && !recordDateKeys.has(k))
+    .sort()
 }
 
 /** 申請一覧・承認画面の内容欄の文言。例：「休日出勤 9:00〜15:00・振休 10/12」「…・休む日未定」 */

@@ -8,6 +8,7 @@ import { holidayWorkDateError, recomputeDay } from "@/lib/clock-pipeline-db"
 import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
 import { scheduledMinutesForRecord, findCorrectionLog, planFieldRevert, planInputRevert } from "@/lib/clock-pipeline"
 import { resolveRestKind, validateHolidayWorkTimes, validateRestDate } from "@/lib/holiday-work"
+import { restDateTakenError } from "@/lib/holiday-work-db"
 
 export type ActionResult = { ok: true } | { ok: false; error: string }
 
@@ -640,6 +641,12 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
       if (breakRaw !== "" && breakParsed === null) return { ok: false, error: "休憩の分数が正しくありません（15分刻み）" }
       const restErr = validateRestDate(restDate, targetDate)
       if (restErr) return { ok: false, error: restErr }
+      // 休む日は1つの休日出勤申請にしかひも付けられない。休む日を新しく入れる・変えるときだけ確かめる（却下済みの申請の修正、休む日を変えない修正は対象外）
+      if (restDate && before && before.status !== "REJECTED" &&
+          !(before.type === "HOLIDAY_WORK" && beforeDetail.restDate === restDate)) {
+        const takenErr = await restDateTakenError(before.userId, restDate, id)
+        if (takenErr) return { ok: false, error: takenErr }
+      }
       // 振休か代休かは「いつ決めたか」。すでに区別が決まっていれば変えない。
       // 休む日を初めて足すとき：まだ審査中の申請に足すのは申請と一緒に決めた扱い＝振休、処理済み（承認・却下）の後に足すのは＝代休
       const prev = before?.type === "HOLIDAY_WORK" ? beforeDetail : {}

@@ -41,6 +41,15 @@ type Rec = {
   scheduledMinutes: number  // 所定勤務時間（分）
   timeConstraint: AdminTimeConstraint  // 管理者の入力画面の選択肢を決める、その日のスイッチ・定時・申請の条件（段6.5）
   isWeekend:  boolean
+  restLabel:  string | null   // 振休・代休で休む日の表示（「振休（10/12 出勤分）」）。休む日でなければ null
+}
+
+/** 休む日なのに勤怠記録が無い日のラベルだけの行 */
+type RestOnlyRow = { dateISO: string; dateLabel: string; restLabel: string; isWeekend: boolean }
+
+/** 打刻（出勤・退勤）が1つでもあるか。休む日の行で、欠勤記録だけの日（ラベルだけ出す日）と区別する */
+function hasPunch(rec: Pick<Rec, "clockIn" | "clockOut" | "rawClockIn" | "rawClockOut">): boolean {
+  return !!(rec.clockIn || rec.clockOut || rec.rawClockIn || rec.rawClockOut)
 }
 
 
@@ -48,6 +57,7 @@ const selectClass = "border border-gray-200 rounded px-2 py-1 text-xs font-mono 
 
 type Props = {
   records:     Rec[]
+  restOnlyRows?: RestOnlyRow[]
   firstDayISO: string
   lastDayISO:  string
   userId:      string
@@ -56,7 +66,7 @@ type Props = {
   approvedCount: number
 }
 
-export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAdmin, openCount, approvedCount }: Props) {
+export function UserDetailTable({ records, restOnlyRows = [], firstDayISO, lastDayISO, userId, isAdmin, openCount, approvedCount }: Props) {
   const [editRec, setEditRec]   = useState<Rec | null>(null)
   const [unrestricted, setUnrestricted] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -153,7 +163,24 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
             </tr>
           </thead>
           <tbody>
-            {records.map((rec) => {
+            {[
+              ...records.map((rec) => ({ dateISO: rec.dateISO, rec, rest: null as RestOnlyRow | null })),
+              ...restOnlyRows.map((rest) => ({ dateISO: rest.dateISO, rec: null as Rec | null, rest })),
+            ].sort((a, b) => a.dateISO.localeCompare(b.dateISO)).map(({ rec, rest }) => {
+              if (!rec && rest) {
+                // 記録の無い休む日：ラベルだけ（欠勤には見せない。編集・承認の対象にもしない）
+                return (
+                  <tr key={`rest-${rest.dateISO}`} className={`border-b border-gray-50 last:border-0 ${rest.isWeekend ? "bg-gray-50/60" : ""}`}>
+                    <td className="px-4 py-2.5 text-gray-700">{rest.dateLabel}</td>
+                    <td colSpan={10} className="px-3 py-2.5 text-center text-gray-300">—</td>
+                    <td className="px-3 py-2.5 text-center">
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700 whitespace-nowrap">{rest.restLabel}</span>
+                    </td>
+                    <td className="px-3 py-2.5"></td>
+                  </tr>
+                )
+              }
+              if (!rec) return null
               // 残業 ＝ 早出 ＋ 終業後（保存値、無ければ記録時刻と定時の差。サーバー側で計算済み。CLOCK_PIPELINE 段8）
               const overtimeMin = rec.overtimeMinutes
               return (
@@ -228,7 +255,10 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                       : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-2.5 text-center">
-                    {rec.isAbsent ? (
+                    {rec.restLabel && (
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700 whitespace-nowrap">{rec.restLabel}</span>
+                    )}
+                    {rec.restLabel && rec.isAbsent && !hasPunch(rec) ? null : rec.isAbsent && !rec.restLabel ? (
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                     ) : (
                       <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${rec.displayStatus.className}`}>

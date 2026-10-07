@@ -7,6 +7,7 @@ import { redirect } from "next/navigation"
 import { parseBreakRequestMinutes } from "@/lib/attendance"
 import { holidayWorkDateError } from "@/lib/clock-pipeline-db"
 import { resolveRestKind, validateHolidayWorkTimes, validateRestDate } from "@/lib/holiday-work"
+import { restDateTakenError } from "@/lib/holiday-work-db"
 
 /** 申請の入力エラー（フォームに出す）。それ以外の失敗は例外 */
 export type CreateRequestResult = { ok: false; error: string } | void
@@ -62,6 +63,9 @@ export async function actionCreateRequest(formData: FormData): Promise<CreateReq
       if (breakMinutes === null) return { ok: false, error: "休憩（分）を15分刻みで選んでください（取らない場合は0分）" }
       const restErr = validateRestDate(restDate, targetDate)
       if (restErr) throw new Error(restErr)
+      // 休む日は1つの休日出勤申請にしかひも付けられない（審査中・承認済みの別の申請が持つ日は選べない）
+      const takenErr = await restDateTakenError(userId, restDate || undefined)
+      if (takenErr) return { ok: false, error: takenErr }
       // 対象日が休日か（休日カレンダー・本人の休みの曜日）はサーバーでも確かめる。画面に出して申請させない
       const dateErr = await holidayWorkDateError(userId, new Date(targetDate))
       if (dateErr) return { ok: false, error: dateErr }

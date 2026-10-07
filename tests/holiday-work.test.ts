@@ -285,6 +285,8 @@ describe("承認・削除・修正（サーバーアクション）", () => {
   }
 
   it("修正：承認済みの休日出勤に後から休む日を足す → 代休。時刻・日付が同じなら記録には触れない（締め済みでも可）", async () => {
+    // 休む日の重なり確認（1回目の count）は重なりなし
+    mocks.requestCount.mockResolvedValueOnce(0)
     mocks.requestFind.mockResolvedValue(pendingReq({ status: "APPROVED" }))
     mocks.recordFind.mockResolvedValue({ id: "r1", status: "LOCKED" })
     const res = await actionUpdateRequest("q1", editForm({ restDate: "2026-10-14" }))
@@ -295,6 +297,8 @@ describe("承認・削除・修正（サーバーアクション）", () => {
   })
 
   it("修正：まだ審査中の休日出勤申請に管理者が休む日を足す → 申請と一緒に決めた扱い＝振休。処理済みのあとに足すなら代休", async () => {
+    // 休む日の重なり確認（1回目の count）は重なりなし
+    mocks.requestCount.mockResolvedValueOnce(0)
     mocks.requestFind.mockResolvedValue(pendingReq({ status: "PENDING" }))
     await actionUpdateRequest("q1", editForm({ restDate: "2026-10-14" }))
     const call = mocks.requestUpdate.mock.calls[0][0] as { data: { detail: Record<string, string> } }
@@ -315,6 +319,8 @@ describe("承認・削除・修正（サーバーアクション）", () => {
   })
 
   it("修正：申請と一緒に決めた休む日（振休）は、日付を直しても振休のまま", async () => {
+    // 休む日の重なり確認（1回目の count）は重なりなし
+    mocks.requestCount.mockResolvedValueOnce(0)
     mocks.requestFind.mockResolvedValue(pendingReq({
       status: "APPROVED", detail: { startTime: "09:00", endTime: "15:00", restDate: "2026-10-13", restKind: "furikyu" },
     }))

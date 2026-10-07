@@ -7,6 +7,7 @@ import { ProxyPunchForm } from "./_components/ProxyPunchForm"
 import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
 import { scheduledMinutesForRecord, correctionLogIdSet, legacyOvertimeInput, pickEarlyStartTime, isRestDay, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
 import { correctionKey, loadApprovedCorrections, loadScheduleInputs } from "@/lib/clock-pipeline-db"
+import { buildRestDayLabels, labelOnlyRestDates, restDateMonthPrefixes } from "@/lib/holiday-work"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
 type Params      = Promise<{ userId: string }>
@@ -54,7 +55,7 @@ export default async function UserApprovalPage({
   const prevLink  = `/admin/approval/${userId}?year=${prevYear}&month=${prevMonth}`
   const nextLink  = `/admin/approval/${userId}?year=${nextYear}&month=${nextMonth}`
 
-  const [user, records, requests, overtimeRequests, breakHolidayRequests] = await Promise.all([
+  const [user, records, requests, overtimeRequests, breakHolidayRequests, restDayRequests] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -87,7 +88,16 @@ export default async function UserApprovalPage({
       },
       select: { targetDate: true, type: true },
     }),
+    // 振休・代休で休む日の行の表示用：休む日が期間内にある承認済みの休日出勤申請（/records・Excel と同じ buildRestDayLabels で作る）
+    prisma.request.findMany({
+      where: {
+        userId, type: "HOLIDAY_WORK", status: "APPROVED",
+        OR: restDateMonthPrefixes(firstDay, lastDay).map((p) => ({ detail: { path: ["restDate"], string_starts_with: p } })),
+      },
+      select: { targetDate: true, createdAt: true, detail: true },
+    }),
   ])
+  const restLabelMap = buildRestDayLabels(restDayRequests)
   const overtimeReqByDate = new Map<string, typeof overtimeRequests>()
   for (const q of overtimeRequests) {
     const k = q.targetDate.toISOString()
@@ -271,6 +281,21 @@ export default async function UserApprovalPage({
         }
       })(),
       isWeekend:   dow === 0 || dow === 6,
+      restLabel:   restLabelMap.get(`${dy}-${String(dm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`) ?? null,
+    }
+  })
+
+  // 休む日なのに勤怠記録が無い日：ラベルだけの行（編集・承認の対象ではない。出勤の打刻が要るときは上の代理打刻から）
+  const iso = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+  const restOnlyRows = labelOnlyRestDates(
+    restLabelMap, new Set(tableRows.map((r) => r.dateISO)), iso(firstDay), iso(lastDay),
+  ).map((dateISO) => {
+    const d = new Date(`${dateISO}T00:00:00Z`)
+    return {
+      dateISO,
+      dateLabel: `${d.getUTCMonth() + 1}/${d.getUTCDate()}（${WEEKDAY[d.getUTCDay()]}）`,
+      restLabel: restLabelMap.get(dateISO) ?? "",
+      isWeekend: d.getUTCDay() === 0 || d.getUTCDay() === 6,
     }
   })
 
@@ -305,6 +330,7 @@ export default async function UserApprovalPage({
 
       <UserDetailTable
         records={tableRows}
+        restOnlyRows={restOnlyRows}
         firstDayISO={firstDay.toISOString()}
         lastDayISO={lastDay.toISOString()}
         userId={userId}

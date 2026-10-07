@@ -41,6 +41,11 @@ function RawTime({ recorded, raw, hide }: { recorded: Date | null | undefined; r
   return <span className="block text-[10px] text-gray-400 leading-tight">実 {label}</span>
 }
 
+/** 休む日の行がラベルだけでよいか：記録が無い、または打刻の無い記録（欠勤記録だけ）。打刻があれば通常の行で出す */
+function isLabelOnlyRestDay(rec: { clockIn: Date | null; clockOut: Date | null; rawClockIn: Date | null; rawClockOut: Date | null } | undefined): boolean {
+  return !rec || !(rec.clockIn || rec.clockOut || rec.rawClockIn || rec.rawClockOut)
+}
+
 const WEEKDAY = ["日", "月", "火", "水", "木", "金", "土"]
 
 export default async function RecordsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -273,7 +278,9 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
               const needsReview = data?.needsReview ?? false
               const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
               // 修正依頼リンクの表示条件: 要確認（遅刻早退申請で打ち消されていない理由が残る）かつ CORRECTION申請中でない
-              const showCorrection = needsReview && correctionStatus !== "PENDING"
+              // 休む日で打刻が無い行（欠勤記録だけある日も含む）は、ラベルだけ出す（状態バッジ・修正依頼は出さない）
+              const labelOnly = !!restLabel && isLabelOnlyRestDay(rec)
+              const showCorrection = needsReview && correctionStatus !== "PENDING" && !labelOnly
 
               return (
                 <tr
@@ -305,7 +312,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                     {restLabel && (
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700 whitespace-nowrap">{restLabel}</span>
                     )}
-                    {rec?.isAbsent && !restLabel ? (
+                    {labelOnly ? null : rec?.isAbsent && !restLabel ? (
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                     ) : rec ? (
                       (() => {
@@ -340,12 +347,14 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
           const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
           const restLabel = restLabelMap.get(dateStr) ?? null  // 振休・代休で休む日（PC の表と同じ。休む日は欠勤に見せない）
           const showAbsent = !!rec?.isAbsent && !restLabel
-          if (!rec || (!rec.clockIn && !showAbsent)) return null
+          // 休む日で打刻が無い日は、記録が無くても（欠勤記録だけでも）ラベルだけのカードを出す（PC の表と同じ）
+          const labelOnly = !!restLabel && isLabelOnlyRestDay(rec)
+          if (!labelOnly && (!rec || (!rec.clockIn && !showAbsent))) return null
           const data    = rec ? buildRowData(rec) : null
           const needsReview = data?.needsReview ?? false
           const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
           // 修正依頼ボタンの表示条件: 要確認（遅刻早退申請で打ち消されていない理由が残る）かつ CORRECTION申請中でない
-          const showCorrection = needsReview && correctionStatus !== "PENDING"
+          const showCorrection = needsReview && correctionStatus !== "PENDING" && !labelOnly
 
           return (
             <div key={dateStr} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
@@ -365,9 +374,9 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   {restLabel && (
                     <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700 whitespace-nowrap">{restLabel}</span>
                   )}
-                  {showAbsent ? (
+                  {labelOnly ? null : showAbsent ? (
                     <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
-                  ) : (
+                  ) : rec && (
                     (() => {
                       const s = getDisplayStatus(rec.status, needsReview, correctionStatus, data?.reviewPending)
                       return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${s.className}`}>{s.label}</span>
@@ -375,7 +384,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   )}
                 </div>
               </div>
-              {!showAbsent && (
+              {!showAbsent && !labelOnly && rec && (
                 <>
                   <div className="grid grid-cols-3 gap-2 text-center text-xs mb-1.5">
                     <div>
