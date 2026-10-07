@@ -43,7 +43,8 @@ async function lockedCorrectionError(req: { type: string; userId: string; target
  *   書いた履歴は revertsLogId で取り消した履歴を指す。取り消し済みの履歴は、あとの取り消しの戻し先に数えない
  *   （同じ項目の修正を2件とも削除したとき、古いほうの時刻が残らず実打刻に戻る）。
  *   あとの修正・管理者の編集が同じ項目に入っている場合は、それが優先なので入力は動かさない（取り消し済みの印だけ書く）。
- *   実打刻も他の修正も無い日は、承認時に変更履歴へ残した「修正前の値」を記録時刻の列へ戻す（無ければ空）
+ *   実打刻も他の修正も無い日は、承認時に変更履歴へ残した「修正前の値」を記録時刻の列へ戻す（無ければ空）。
+ *   先に取り消した修正があれば、その履歴をさかのぼった値（例：9:00 → 8:50 と直した2件を、9:00 → 8:50 の順に消すと空に戻る）
  * - 外出・戻り・休憩：承認時に変更履歴へ残した「修正前の値」（先に取り消した修正があれば、その前の値）を列へ戻す。
  *   特定できなければ削除を拒否する
  * - 承認の変更履歴の見つけ方は findCorrectionLog を参照（承認の記録が無い 2026-07-06 より前の承認は、申請の作成以後で
@@ -51,7 +52,7 @@ async function lockedCorrectionError(req: { type: string; userId: string; target
  * 締め済み（LOCKED）の日は拒否する
  */
 async function revertApprovedCorrection(
-  req: { userId: string; targetDate: Date; detail: unknown; createdAt: Date; approvals: { actedAt: Date }[] },
+  req: { id: string; userId: string; targetDate: Date; detail: unknown; createdAt: Date; approvals: { actedAt: Date }[] },
   changedById: string,
 ): Promise<ActionResult> {
   const detail = req.detail as Record<string, string> | null
@@ -71,7 +72,26 @@ async function revertApprovedCorrection(
     where: { recordId: rec.id, fieldName: field },
     select: { id: true, oldValue: true, newValue: true, changedAt: true, revertsLogId: true },
   })
-  const matched = findCorrectionLog(logs, correctedTime, req.approvals.map((a) => a.actedAt), req.createdAt)
+  // 承認の記録が無い申請は、同じ項目・同じ時刻の先に作成された申請と履歴を取り合わないよう1対1で照合する（findCorrectionLog 参照）
+  let earlierSameTime: Date[] = []
+  if (req.approvals.length === 0) {
+    const sibs = await prisma.request.findMany({
+      where: {
+        userId: req.userId, type: "CORRECTION", status: "APPROVED", targetDate: req.targetDate,
+        id: { not: req.id }, createdAt: { lte: req.createdAt }, approvals: { none: { action: "APPROVED" } },
+      },
+      select: { id: true, detail: true, createdAt: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    })
+    earlierSameTime = sibs
+      .filter((q) => {
+        const d = q.detail as Record<string, string> | null
+        return d?.targetField === field && d?.correctedTime === correctedTime
+          && (q.createdAt.getTime() < req.createdAt.getTime() || q.id < req.id)
+      })
+      .map((q) => q.createdAt)
+  }
+  const matched = findCorrectionLog(logs, correctedTime, req.approvals.map((a) => a.actedAt), req.createdAt, earlierSameTime)
 
   const data: Record<string, Date | null> = {}
   let logNewValue: string | null
@@ -81,7 +101,7 @@ async function revertApprovedCorrection(
     const raw = field === "clockIn" ? rec.rawClockIn : rec.rawClockOut
     const plan = planInputRevert({ date: rec.date, raw, logs, removeId: matched.id })
     logNewValue = plan.logNewValue
-    if (plan.noInput) data[field] = matched.oldValue ? hhmmOnDate(rec.date, matched.oldValue) : null
+    if (plan.noInput) data[field] = plan.noInputValue ? hhmmOnDate(rec.date, plan.noInputValue) : null
   } else {
     if (!matched) {
       return { ok: false, error: "修正前の値を特定できないため削除できません。勤怠の編集で直してから削除してください" }

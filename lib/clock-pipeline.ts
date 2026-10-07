@@ -552,7 +552,10 @@ const isValidTime = (v: string | null | undefined): v is string => !!v && /^\d{1
  * - 承認の記録（Approval）がある申請：同じ新しい値で、承認の記録の時刻の前後2分以内の履歴（複数あれば最新）
  * - 承認の記録が1件も無い申請（承認の記録は 2026-07-06 以降しか無く、それ以前に承認したもの）：
  *   同じ新しい値で、申請の作成（createdAt）以後に書かれた履歴のうち最も早い1件。
- *   承認は申請の作成後に行われ、同じ時刻を管理者があとから入れ直した履歴は承認より遅いので、最も早い履歴を承認由来とみなす
+ *   承認は申請の作成後に行われ、同じ時刻を管理者があとから入れ直した履歴は承認より遅いので、最も早い履歴を承認由来とみなす。
+ *   同じ項目・同じ時刻の申請が複数あるときは1対1で割り当てる：申請を作成順に並べ、それぞれが
+ *   「他の申請に割り当て済みでない履歴」のうち最も早い1件を取る（earlierSameTimeCreatedAts に、この申請より前の申請の作成日時を渡す）。
+ *   これで2件目の承認の履歴が、1件目と同じ履歴に重なって管理者の修正と誤判定されることを防ぐ
  * 見つからなければ null
  */
 export function findCorrectionLog(
@@ -561,6 +564,8 @@ export function findCorrectionLog(
   approvedAts: Date[],
   /** 申請の作成日時。承認の記録が無い申請の照合に使う */
   createdAt?: Date,
+  /** 承認の記録が無い申請の照合用：同じ項目・同じ時刻で、この申請より前に作成された承認の記録が無い申請の作成日時（作成順） */
+  earlierSameTimeCreatedAts: Date[] = [],
 ): InputLog | null {
   const live = liveInputLogs(logs).filter((l) => l.newValue === correctedTime)
   if (approvedAts.length > 0) {
@@ -570,10 +575,13 @@ export function findCorrectionLog(
     return hit[0] ?? null
   }
   if (!createdAt) return null
-  const hit = live
-    .filter((l) => l.changedAt.getTime() >= createdAt.getTime())
-    .sort((a, b) => a.changedAt.getTime() - b.changedAt.getTime() || a.id.localeCompare(b.id))
-  return hit[0] ?? null
+  const sorted = [...live].sort((a, b) => a.changedAt.getTime() - b.changedAt.getTime() || a.id.localeCompare(b.id))
+  const taken = new Set<string>()
+  for (const c of earlierSameTimeCreatedAts) {
+    const hit = sorted.find((l) => !taken.has(l.id) && l.changedAt.getTime() >= c.getTime())
+    if (hit) taken.add(hit.id)
+  }
+  return sorted.find((l) => !taken.has(l.id) && l.changedAt.getTime() >= createdAt.getTime()) ?? null
 }
 
 /** 承認済みの打刻修正申請（1項目ぶん）。変更履歴のどれが承認由来かを見分ける材料 */
@@ -582,10 +590,15 @@ export type ApprovedCorrection = { correctedTime: string; createdAt: Date; appro
 /** 承認済みの打刻修正の変更履歴の id の集合（残りは管理者の入力・代理打刻の履歴とみなす） */
 export function correctionLogIdSet(logs: InputLog[], corrections: ApprovedCorrection[]): Set<string> {
   const ids = new Set<string>()
-  for (const c of corrections) {
-    const hit = findCorrectionLog(logs, c.correctedTime, c.approvedAts, c.createdAt)
+  // 承認の記録が無い申請は1対1で割り当てる（同じ時刻の申請は作成順。findCorrectionLog 参照）
+  const ordered = [...corrections].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  ordered.forEach((c, i) => {
+    const earlier = c.approvedAts.length > 0
+      ? []
+      : ordered.slice(0, i).filter((e) => e.approvedAts.length === 0 && e.correctedTime === c.correctedTime).map((e) => e.createdAt)
+    const hit = findCorrectionLog(logs, c.correctedTime, c.approvedAts, c.createdAt, earlier)
     if (hit) ids.add(hit.id)
-  }
+  })
   return ids
 }
 
@@ -598,7 +611,8 @@ export function isLatestInputLog(logs: InputLog[], target: InputLog): boolean {
  * ある変更履歴（管理者の修正・承認済みの打刻修正）を取り消して、入力を1つ前の状態に戻すために書く変更履歴の「新しい値」を決める。
  * - 1つ前に有効な履歴があれば、その値を書き直す（"HH:MM"）
  * - 1つ前が実打刻、または無ければ null（取り消しの印。入力は実打刻に戻る）
- * noInput が true のときは実打刻も他の履歴も無く、記録時刻の列そのものを呼び出し側が戻す必要がある
+ * noInput が true のときは実打刻も他の履歴も無く、記録時刻の列そのものを呼び出し側が戻す必要がある。
+ * 戻す値は noInputValue（取り消し済みの修正の履歴をさかのぼった、最初の修正の前の値。無ければ null＝空）
  */
 export function planInputRevert(p: {
   date: Date
@@ -606,16 +620,39 @@ export function planInputRevert(p: {
   logs: InputLog[]
   /** 取り消す履歴の id。特定できなければ null（全履歴を残して1つ前を求める） */
   removeId: string | null
-}): { logNewValue: string | null; noInput: boolean } {
+}): { logNewValue: string | null; noInput: boolean; noInputValue: string | null } {
   // 取り消し済みの申請・管理者の修正の履歴は戻し先にしない（有効な履歴だけから探す）
   const rest = liveInputLogs(p.logs).filter((l) => l.id !== p.removeId)
   const prior = resolveInputTime({ date: p.date, raw: p.raw, recorded: null, logs: rest })
   if (prior.source === "corrected" && prior.time) {
     const j = new Date(prior.time.getTime() + 9 * 60 * 60 * 1000)
     const hhmm = `${String(j.getUTCHours()).padStart(2, "0")}:${String(j.getUTCMinutes()).padStart(2, "0")}`
-    return { logNewValue: hhmm, noInput: false }
+    return { logNewValue: hhmm, noInput: false, noInputValue: null }
   }
-  return { logNewValue: null, noInput: prior.source === "recorded" }
+  const noInput = prior.source === "recorded"
+  const target = p.removeId ? p.logs.find((l) => l.id === p.removeId) : undefined
+  return { logNewValue: null, noInput, noInputValue: noInput && target ? walkBackOldValue(p.logs, target) : null }
+}
+
+/**
+ * 取り消す履歴の「修正前の値」。その値を新しい値として書いた、先に取り消し済みの履歴があれば、その前の値までさかのぼる
+ * （例：9:00 → 8:50 と2回修正して、9:00 の修正を先に取り消したあと 8:50 の修正を取り消すと、戻し先は 9:00 ではなく空）。
+ * 取り消しの履歴（revertsLogId あり）と有効な履歴は、たどる対象にしない
+ */
+function walkBackOldValue(logs: InputLog[], target: InputLog): string | null {
+  const liveIds = new Set(liveInputLogs(logs).map((l) => l.id))
+  const deadOnes = logs.filter((l) => !l.revertsLogId && !liveIds.has(l.id) && l.id !== target.id)
+  let v = target.oldValue ?? null
+  const seen = new Set<string>()
+  while (v) {
+    const d = deadOnes
+      .filter((l) => l.newValue === v && !seen.has(l.id) && l.changedAt.getTime() < target.changedAt.getTime())
+      .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime())[0]
+    if (!d) break
+    seen.add(d.id)
+    v = d.oldValue
+  }
+  return v
 }
 
 const jstHHMM = (d: Date): string => {
@@ -627,14 +664,16 @@ const jstHHMM = (d: Date): string => {
 export type AdminRevertPlan =
   /** 取り消すものが無い（代理打刻で入れたままの項目など） */
   | { kind: "none" }
+  /** admin 列に対応する履歴を特定できない（履歴が無い・消えている）。取り消しの印を書けないので取り消しを拒否する */
+  | { kind: "unidentified" }
   /** 1つ前の値も管理者・代理打刻の入力：その値へ admin 列ごと戻す（丸めない） */
-  | { kind: "restoreAdmin"; value: string; targetId: string | null }
+  | { kind: "restoreAdmin"; value: string; targetId: string }
   /** admin 列を空にして、1つ前の打刻修正の時刻・実打刻（パイプラインを通す）へ戻す。noInput なら記録時刻の列も空にする */
-  | { kind: "clearAdmin"; logNewValue: string | null; noInput: boolean; targetId: string | null }
+  | { kind: "clearAdmin"; logNewValue: string | null; noInput: boolean; targetId: string }
 
 /**
  * 管理者の確定修正（admin 列）を取り消すときの戻し先を決める（出勤・退勤のどちらか1項目ぶん）。
- * - 管理者の修正の履歴 ＝ admin 列と同じ新しい値の、有効な履歴のうち最新（特定できなければ null）
+ * - 管理者の修正の履歴 ＝ admin 列と同じ新しい値の、有効な履歴のうち最新（特定できなければ unidentified ＝ 取り消しを拒否する）
  * - 戻し先 ＝ それを除いた有効な履歴のうち最新（実打刻より前のものは使わない）
  *   - 打刻修正の承認の履歴ではない（管理者の入力・代理打刻・リリース2より前の移行分）なら、その値へ admin 列ごと戻す
  *     （管理者が入れた時刻なので丸めない。代理打刻の時刻を直した日は、代理打刻の時刻に戻る）
@@ -665,7 +704,9 @@ export function planAdminRevert(p: {
   const prior = live
     .filter((l) => l.id !== target?.id && (!p.raw || p.raw.getTime() <= l.changedAt.getTime()))
     .sort(desc)[0] ?? null
-  const targetId = target?.id ?? null
+  // 対象の履歴が特定できないと、取り消しの履歴が取り消しの印（revertsLogId）を持てず、あとで有効な履歴に数えられてしまう
+  if (!target) return { kind: "unidentified" }
+  const targetId = target.id
   if (prior) {
     return p.correctionLogIds.has(prior.id)
       ? { kind: "clearAdmin", logNewValue: prior.newValue, noInput: false, targetId }
@@ -674,10 +715,25 @@ export function planAdminRevert(p: {
   if (p.raw) return { kind: "clearAdmin", logNewValue: null, noInput: false, targetId }
   if (p.dayHasRawPunch) return { kind: "clearAdmin", logNewValue: null, noInput: true, targetId }
   // 打刻ゼロの日（代理打刻）：代理打刻と同時に書いた最初の履歴だけの項目は触らない
-  if (target && p.firstLogAt && target.changedAt.getTime() - p.firstLogAt.getTime() <= PROXY_BATCH_WINDOW_MS) {
+  if (p.firstLogAt && target.changedAt.getTime() - p.firstLogAt.getTime() <= PROXY_BATCH_WINDOW_MS) {
     return { kind: "none" }
   }
   return { kind: "clearAdmin", logNewValue: null, noInput: true, targetId }
+}
+
+/**
+ * 代理打刻の最初の書き込み時刻（planAdminRevert の firstLogAt）：その日の出勤・退勤の有効な履歴のうち最も早い書き込み時刻。
+ * 取り消し済みの履歴・取り消しの履歴は含めない（含めると、取り消し済みの打刻修正の履歴が基準になり、
+ * 代理打刻のまま直していない項目まで空にしてしまう）。actions.ts と page.tsx で共有する
+ */
+export function proxyFirstLogAt(dayLogs: (InputLog & { fieldName: string })[]): Date | null {
+  // 出勤・退勤を別々に有効判定する（取り消しの履歴は同じ項目の履歴を指すため）
+  const byField = new Map<string, InputLog[]>()
+  for (const l of dayLogs) {
+    byField.set(l.fieldName, [...(byField.get(l.fieldName) ?? []), l])
+  }
+  const live = [...byField.values()].flatMap((ls) => liveInputLogs(ls))
+  return live.length > 0 ? new Date(Math.min(...live.map((l) => l.changedAt.getTime()))) : null
 }
 
 /** 代理打刻は1回の保存で出勤・退勤の履歴を書く。同じ保存とみなす書き込み時刻の幅 */
@@ -701,19 +757,7 @@ export function planFieldRevert(p: {
   const prior = live.filter((l) => l.id !== p.removeId)[0]
   if (prior) return { value: prior.newValue, changeColumn: true }
   // 戻し先の履歴が無い：修正前の値。先に取り消した修正の履歴があれば、その前の値までさかのぼる
-  const liveIds = new Set(live.map((l) => l.id))
-  const deadOnes = p.logs.filter((l) => !l.revertsLogId && !liveIds.has(l.id) && l.id !== p.removeId)
-  let v = target?.oldValue ?? null
-  const seen = new Set<string>()
-  while (v && target) {
-    const d = deadOnes
-      .filter((l) => l.newValue === v && !seen.has(l.id) && l.changedAt.getTime() < target.changedAt.getTime())
-      .sort(desc)[0]
-    if (!d) break
-    seen.add(d.id)
-    v = d.oldValue
-  }
-  return { value: v, changeColumn: true }
+  return { value: target ? walkBackOldValue(p.logs, target) : null, changeColumn: true }
 }
 
 // ---------------------------------------------------------------------------

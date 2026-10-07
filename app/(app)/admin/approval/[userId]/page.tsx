@@ -5,7 +5,7 @@ import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { ProxyPunchForm } from "./_components/ProxyPunchForm"
 import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
-import { correctionLogIdSet, pickEarlyStartTime, planAdminRevert, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
+import { correctionLogIdSet, pickEarlyStartTime, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
 import { correctionKey, loadApprovedCorrections, loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
@@ -103,19 +103,20 @@ export default async function UserApprovalPage({
   /** 取り消すものがある日か（出勤・退勤のどちらかに取り消し先がある） */
   const canClearAdminEdit = (r: (typeof records)[number]): boolean => {
     const recLogs = adminLogs.filter((l) => l.recordId === r.id)
-    const firstLogAt = recLogs.length > 0 ? new Date(Math.min(...recLogs.map((l) => l.changedAt.getTime()))) : null
+    const firstLogAt = proxyFirstLogAt(recLogs)
     return ([
       { field: "clockIn", admin: r.adminClockIn, raw: r.rawClockIn },
       { field: "clockOut", admin: r.adminClockOut, raw: r.rawClockOut },
     ] as const).some((t) => {
       if (!t.admin) return false
       const logs = recLogs.filter((l) => l.fieldName === t.field)
-      return planAdminRevert({
+      const kind = planAdminRevert({
         date: r.date, raw: t.raw, admin: t.admin, logs,
         correctionLogIds: correctionLogIdSet(logs, corrections.get(correctionKey(r.date, t.field)) ?? []),
         dayHasRawPunch: !!(r.rawClockIn || r.rawClockOut),
         firstLogAt,
-      }).kind !== "none"
+      }).kind
+      return kind !== "none" && kind !== "unidentified"
     })
   }
 

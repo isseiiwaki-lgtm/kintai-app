@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { formatHHMMfromDate } from "@/lib/attendance"
 import { correctionKey, loadApprovedCorrections, recomputeDay } from "@/lib/clock-pipeline-db"
-import { correctionLogIdSet, planAdminRevert, type InputLog } from "@/lib/clock-pipeline"
+import { correctionLogIdSet, planAdminRevert, proxyFirstLogAt, type InputLog } from "@/lib/clock-pipeline"
 import { approveRecordsWithMetrics } from "@/lib/approve-records"
 
 async function checkRole() {
@@ -100,6 +100,7 @@ export async function actionAdminUpdateRecord(
  * - 代理打刻のまま直していない項目は触らない（取り消すものが無い）
  * - 戻す先を入力にするため、変更履歴に「出勤/退勤: 管理者の時刻 → 戻した時刻（無ければ空＝取り消しの印）」を1件書く
  *   （履歴は消さない。revertsLogId で取り消した管理者の修正の履歴を指す。取り消しの印は resolveInputTime が読む）
+ * 取り消す履歴を特定できない項目があるときは、取り消しの印を書けないので全体を拒否する
  * 締め済み（LOCKED）は取り消せない。状態（承認済）は変えない
  */
 export async function actionClearAdminEdit(recordId: string): Promise<ActionResult> {
@@ -115,7 +116,8 @@ export async function actionClearAdminEdit(recordId: string): Promise<ActionResu
     select: { id: true, fieldName: true, oldValue: true, newValue: true, changedAt: true, revertsLogId: true },
   })
   const corrections = await loadApprovedCorrections(rec.userId, rec.date, rec.date)
-  const firstLogAt = allLogs.length > 0 ? new Date(Math.min(...allLogs.map((l) => l.changedAt.getTime()))) : null
+  // 代理打刻の最初の書き込み時刻（取り消し済み・取り消しの履歴は含めない）
+  const firstLogAt = proxyFirstLogAt(allLogs)
 
   const data: Record<string, Date | null> = {}
   const newLogs: { fieldName: string; oldValue: string | null; newValue: string | null; revertsLogId: string | null }[] = []
@@ -137,6 +139,9 @@ export async function actionClearAdminEdit(recordId: string): Promise<ActionResu
       firstLogAt,
     })
     if (plan.kind === "none") continue
+    if (plan.kind === "unidentified") {
+      return { ok: false, error: "管理者の修正に対応する変更履歴を特定できないため、取り消せません。勤怠の編集で直してください" }
+    }
     if (plan.kind === "restoreAdmin") {
       // 管理者・代理打刻が入れた1つ前の時刻へ。admin 列に入れ直す（丸めない）
       const v = toUTC(rec.date.toISOString(), plan.value)

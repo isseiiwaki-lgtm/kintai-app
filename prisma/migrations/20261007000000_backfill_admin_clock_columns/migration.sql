@@ -11,6 +11,8 @@
 --   (2) 承認の記録が1件も無い申請（承認の記録は 2026-07-06 以降しか無い。それ以前に承認したもの）：
 --       同じ人・同じ日・同じ項目・同じ時刻の変更履歴のうち、申請の作成（Request.createdAt）以後で最も早い1件
 --       （承認は申請の作成後。同じ時刻を管理者があとから入れ直した履歴は、承認より遅いので管理者の変更のまま残る）
+--       同じ記録・同じ項目・同じ時刻の申請が複数あるときは1対1：申請を作成順（createdAt, id）に並べ、それぞれが
+--       「先の申請に割り当て済みでない履歴」のうち、作成以後で最も早い1件を取る（2件目の承認の履歴が1件目と重ならない）
 --   ※承認済みの申請そのものが削除された場合は承認の記録も消えているため、管理者の変更として扱う（一致を取れない）
 -- 値の選び方
 --   記録ごと・項目ごとに、出退勤の変更履歴のうち最新の1件だけを見る。それが管理者の変更なら admin 列へ写す。
@@ -21,10 +23,49 @@
 -- 変更履歴の値は "HH:MM"（JST）。記録の date は JST の暦日の UTC 0時なので、date + 時刻 - 9時間 が UTC の時刻になる。
 -- 既に admin 列に値がある記録は触らない（再実行しても同じ結果）。
 
+-- (2) の割り当て：承認の記録が無い申請 → 承認由来とみなす変更履歴（1対1）。再帰で申請を作成順に1件ずつ処理する
+CREATE TEMP TABLE "_approvalless_matches" AS
+WITH RECURSIVE reqs AS (
+  SELECT q."id" AS "qid", r."id" AS "rid",
+         q."detail"->>'targetField' AS "fld", q."detail"->>'correctedTime' AS "tm", q."createdAt" AS "cat",
+         row_number() OVER (
+           PARTITION BY r."id", q."detail"->>'targetField', q."detail"->>'correctedTime'
+           ORDER BY q."createdAt", q."id"
+         ) AS "rn"
+  FROM "Request" q
+  JOIN "AttendanceRecord" r ON r."userId" = q."userId" AND r."date" = q."targetDate"
+  WHERE q."type" = 'CORRECTION'
+    AND q."status" = 'APPROVED'
+    AND q."detail"->>'targetField' IN ('clockIn', 'clockOut')
+    AND NOT EXISTS (SELECT 1 FROM "Approval" a2 WHERE a2."requestId" = q."id" AND a2."action" = 'APPROVED')
+), walk AS (
+  SELECT s."rid", s."fld", s."tm", s."rn", m."id" AS "logId",
+         CASE WHEN m."id" IS NULL THEN ARRAY[]::text[] ELSE ARRAY[m."id"] END AS "taken"
+  FROM reqs s
+  LEFT JOIN LATERAL (
+    SELECT y."id" FROM "AttendanceChangeLog" y
+    WHERE y."recordId" = s."rid" AND y."fieldName" = s."fld" AND y."newValue" = s."tm" AND y."changedAt" >= s."cat"
+    ORDER BY y."changedAt", y."id" LIMIT 1
+  ) m ON true
+  WHERE s."rn" = 1
+  UNION ALL
+  SELECT s."rid", s."fld", s."tm", s."rn", m."id",
+         w."taken" || CASE WHEN m."id" IS NULL THEN ARRAY[]::text[] ELSE ARRAY[m."id"] END
+  FROM walk w
+  JOIN reqs s ON s."rid" = w."rid" AND s."fld" = w."fld" AND s."tm" = w."tm" AND s."rn" = w."rn" + 1
+  LEFT JOIN LATERAL (
+    SELECT y."id" FROM "AttendanceChangeLog" y
+    WHERE y."recordId" = s."rid" AND y."fieldName" = s."fld" AND y."newValue" = s."tm" AND y."changedAt" >= s."cat"
+      AND NOT (y."id" = ANY (w."taken"))
+    ORDER BY y."changedAt", y."id" LIMIT 1
+  ) m ON true
+)
+SELECT DISTINCT "logId" FROM walk WHERE "logId" IS NOT NULL;
+
 CREATE TEMP TABLE "_admin_clock_values" AS
 WITH latest AS (
   SELECT DISTINCT ON (l."recordId", l."fieldName")
-         l."recordId", l."fieldName", l."newValue", l."changedAt"
+         l."id", l."recordId", l."fieldName", l."newValue", l."changedAt"
   FROM "AttendanceChangeLog" l
   WHERE l."fieldName" IN ('clockIn', 'clockOut')
     AND l."newValue" ~ '^[0-9]{1,2}:[0-9]{2}$'
@@ -53,26 +94,8 @@ AND NOT EXISTS (
     AND a."actedAt" BETWEEN x."changedAt" - interval '2 minutes' AND x."changedAt" + interval '2 minutes'
 )
 AND NOT EXISTS (
-  -- (2) 承認の記録が無い申請：申請の作成以後で同じ時刻の履歴のうち最も早い1件が x なら、承認由来
-  SELECT 1
-  FROM "Request" q
-  WHERE q."userId" = r."userId"
-    AND q."type" = 'CORRECTION'
-    AND q."status" = 'APPROVED'
-    AND q."targetDate" = r."date"
-    AND q."detail"->>'targetField' = x."fieldName"
-    AND q."detail"->>'correctedTime' = x."newValue"
-    AND NOT EXISTS (SELECT 1 FROM "Approval" a2 WHERE a2."requestId" = q."id" AND a2."action" = 'APPROVED')
-    AND x."changedAt" >= q."createdAt"
-    AND NOT EXISTS (
-      SELECT 1
-      FROM "AttendanceChangeLog" y
-      WHERE y."recordId" = x."recordId"
-        AND y."fieldName" = x."fieldName"
-        AND y."newValue" = x."newValue"
-        AND y."changedAt" >= q."createdAt"
-        AND (y."changedAt" < x."changedAt" OR (y."changedAt" = x."changedAt" AND y."id" < x."id"))
-    )
+  -- (2) 承認の記録が無い申請：1対1の割り当て（_approvalless_matches）で承認由来になった履歴は除く
+  SELECT 1 FROM "_approvalless_matches" mm WHERE mm."logId" = x."id"
 );
 
 UPDATE "AttendanceRecord" r
@@ -86,3 +109,4 @@ FROM "_admin_clock_values" v
 WHERE v."recordId" = r."id" AND v."fieldName" = 'clockOut' AND r."adminClockOut" IS NULL;
 
 DROP TABLE "_admin_clock_values";
+DROP TABLE "_approvalless_matches";

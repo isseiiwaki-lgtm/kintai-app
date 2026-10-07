@@ -109,15 +109,15 @@ describe("結論5・6：修正の取り消し（取り消しの印と、1つ前�
   it("管理者の修正を取り消す：1つ前の打刻修正があればその時刻を書き直す", () => {
     const logs = [log("c", "09:05", 9), log("adm", "09:00", 10)]
     const p = planInputRevert({ date: DATE, raw: jst(9, 20), logs, removeId: "adm" })
-    expect(p).toEqual({ logNewValue: "09:05", noInput: false })
+    expect(p).toEqual({ logNewValue: "09:05", noInput: false, noInputValue: null })
   })
   it("管理者の修正を取り消す：1つ前が実打刻なら取り消しの印（空）", () => {
     const p = planInputRevert({ date: DATE, raw: jst(9, 20), logs: [log("adm", "09:00", 10)], removeId: "adm" })
-    expect(p).toEqual({ logNewValue: null, noInput: false })
+    expect(p).toEqual({ logNewValue: null, noInput: false, noInputValue: null })
   })
   it("実打刻も他の履歴も無い日（代理打刻）は noInput：記録時刻の列を戻す必要がある", () => {
     const p = planInputRevert({ date: DATE, raw: null, logs: [log("adm", "09:00", 10)], removeId: "adm" })
-    expect(p).toEqual({ logNewValue: null, noInput: true })
+    expect(p).toEqual({ logNewValue: null, noInput: true, noInputValue: null })
   })
   it("戻したあとの入力：再入力の履歴で1つ前の時刻、印で実打刻", () => {
     const logs = [log("c", "09:05", 9), log("adm", "09:00", 10), log("re", "09:05", 11)]

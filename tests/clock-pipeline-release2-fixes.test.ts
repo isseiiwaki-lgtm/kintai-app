@@ -8,6 +8,7 @@ import {
   findCorrectionLog,
   liveInputLogs,
   planAdminRevert,
+  proxyFirstLogAt,
   planFieldRevert,
   planInputRevert,
   resolveInputTime,
@@ -221,5 +222,90 @@ describe("Excel：取り消して実打刻に戻った日は変更欄を出さ�
   })
   it("代理打刻の日（実打刻なし）は履歴があれば変更あり", () => {
     expect(effectiveChangedFields(rec(null, null), [fl("clockIn", log("p", "08:50", 9))])).toEqual(["clockIn"])
+  })
+})
+
+describe("R2-1：実打刻の無い項目で打刻修正を2件削除（noInput の戻し値）", () => {
+  // 出勤の打ち忘れ：C1（9:00）を承認 → C2（8:50）を承認（C2 の修正前は 9:00）
+  const c1 = { correctedTime: "09:00", createdAt: jst(8, 0, 6), approvedAts: [] as Date[] }
+  const c2 = { correctedTime: "08:50", createdAt: jst(8, 30, 6), approvedAts: [] as Date[] }
+  const base = [log("C1", "09:00", 10, null), log("C2", "08:50", 11, "09:00")]
+
+  /** 申請 c を削除する：変更履歴に取り消しの印を書き、noInput なら記録時刻の列に戻す値を返す */
+  function del(logs: InputLog[], c: typeof c1, h: number) {
+    const matched = findCorrectionLog(logs, c.correctedTime, c.approvedAts, c.createdAt)!
+    const plan = planInputRevert({ date: DATE, raw: null, logs, removeId: matched.id })
+    const next = [...logs, { id: `rev-${matched.id}`, oldValue: c.correctedTime, newValue: plan.logNewValue, changedAt: jst(h, 0, 7), revertsLogId: matched.id }]
+    return { plan, next }
+  }
+
+  it("C1 → C2 の順に削除：最後は空（C2 の修正前 09:00 は C1 で、C1 は取り消し済み）", () => {
+    const first = del(base, c1, 12)
+    expect(first.plan).toMatchObject({ logNewValue: "08:50", noInput: false })
+    const second = del(first.next, c2, 13)
+    expect(second.plan).toEqual({ logNewValue: null, noInput: true, noInputValue: null })
+  })
+  it("C2 → C1 の順に削除：C2 の削除で 09:00 に戻り、C1 の削除で空", () => {
+    const first = del(base, c2, 12)
+    expect(first.plan).toMatchObject({ logNewValue: "09:00", noInput: false })
+    const second = del(first.next, c1, 13)
+    expect(second.plan).toEqual({ logNewValue: null, noInput: true, noInputValue: null })
+  })
+  it("取り消し済みの履歴が無ければ、修正前の値へ戻す（1件だけの削除）", () => {
+    const logs = [log("C2", "08:50", 11, "09:00")]
+    const plan = planInputRevert({ date: DATE, raw: null, logs, removeId: "C2" })
+    expect(plan).toEqual({ logNewValue: null, noInput: true, noInputValue: "09:00" })
+  })
+})
+
+describe("R2-2：代理打刻の最初の書き込み時刻（取り消し済みの履歴を含めない）", () => {
+  const fl = (fieldName: string, l: InputLog) => ({ ...l, fieldName })
+  it("打刻修正の承認 → 削除 → 代理打刻 → 退勤を修正：出勤（代理打刻のまま）は取り消せない", () => {
+    const zOut = log("Z", "18:00", 8)
+    const marker: InputLog = { id: "rZ", oldValue: "18:00", newValue: null, changedAt: jst(9, 0, 6), revertsLogId: "Z" }
+    const pIn = log("pin", "09:00", 10)
+    const pOut = log("pout", "18:00", 10)
+    const edit = log("edit", "18:30", 12, "18:00")
+    const dayLogs = [fl("clockOut", zOut), fl("clockOut", marker), fl("clockIn", pIn), fl("clockOut", pOut), fl("clockOut", edit)]
+    const firstLogAt = proxyFirstLogAt(dayLogs)
+    expect(firstLogAt?.getTime()).toBe(pIn.changedAt.getTime())
+    const plan = planAdminRevert({
+      date: DATE, raw: null, admin: jst(9, 0), logs: [pIn], correctionLogIds: new Set<string>(),
+      dayHasRawPunch: false, firstLogAt,
+    })
+    expect(plan.kind).toBe("none")
+  })
+  it("履歴が無ければ null", () => {
+    expect(proxyFirstLogAt([])).toBeNull()
+  })
+})
+
+describe("R2-3：承認の記録が無い同じ時刻の申請は履歴を1対1で割り当てる", () => {
+  const q1 = jst(8, 0, 6)
+  const q2 = jst(8, 5, 6)
+  const logs = [log("L1", "09:10", 10), log("L2", "09:10", 10, null, 5)]
+  it("2件目の申請は1件目が使った履歴を取らない", () => {
+    expect(findCorrectionLog(logs, "09:10", [], q1)?.id).toBe("L1")
+    expect(findCorrectionLog(logs, "09:10", [], q2, [q1])?.id).toBe("L2")
+  })
+  it("correctionLogIdSet は両方の履歴を承認由来にする（2件目の履歴が管理者の修正に見えない）", () => {
+    const ids = correctionLogIdSet(logs, [
+      { correctedTime: "09:10", createdAt: q2, approvedAts: [] },
+      { correctedTime: "09:10", createdAt: q1, approvedAts: [] },
+    ])
+    expect([...ids].sort()).toEqual(["L1", "L2"])
+  })
+  it("履歴が1件しか無ければ2件目は見つからない（取り合わない）", () => {
+    expect(findCorrectionLog([logs[0]], "09:10", [], q2, [q1])).toBeNull()
+  })
+})
+
+describe("R2-4：管理者の修正の履歴を特定できない項目は取り消さない", () => {
+  it("admin 列と同じ値の履歴が無ければ unidentified", () => {
+    const plan = planAdminRevert({
+      date: DATE, raw: jst(9, 20), admin: jst(9, 40), logs: [log("a", "09:10", 10)], correctionLogIds: new Set<string>(),
+      dayHasRawPunch: true, firstLogAt: null,
+    })
+    expect(plan).toEqual({ kind: "unidentified" })
   })
 })
