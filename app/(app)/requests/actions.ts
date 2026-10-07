@@ -56,12 +56,16 @@ export async function actionCreateRequest(formData: FormData): Promise<CreateReq
       const restDate = ((formData.get("restDate") as string) ?? "").trim()
       const timeErr = validateHolidayWorkTimes(startTime, endTime)
       if (timeErr) throw new Error(timeErr)
+      // 休憩（分）は必須（0〜240・15分刻み。取らない場合は0）。承認されたときに初めてその日の休憩になる
+      const breakRaw = formData.get("breakMinutes")
+      const breakMinutes = breakRaw === null || breakRaw === "" ? null : parseBreakRequestMinutes(breakRaw)
+      if (breakMinutes === null) return { ok: false, error: "休憩（分）を15分刻みで選んでください（取らない場合は0分）" }
       const restErr = validateRestDate(restDate, targetDate)
       if (restErr) throw new Error(restErr)
       // 対象日が休日か（休日カレンダー・本人の休みの曜日）はサーバーでも確かめる。画面に出して申請させない
       const dateErr = await holidayWorkDateError(userId, new Date(targetDate))
       if (dateErr) return { ok: false, error: dateErr }
-      detail = { startTime, endTime }
+      detail = { startTime, endTime, breakMinutes: String(breakMinutes) }
       if (restDate) {
         detail.restDate = restDate
         detail.restKind = resolveRestKind({ nextRestDate: restDate, decidedWithRequest: true }) as string
@@ -85,6 +89,10 @@ export async function actionCreateRequest(formData: FormData): Promise<CreateReq
       break
     }
     case "LEAVE":
+      // 旧「振休申請」（LEAVE の substitute）は新規に受け付けない。休日出勤申請で振休・代休を決める（過去の申請の表示・管理者の修正は残す）
+      if (formData.get("leaveType") === "substitute") {
+        return { ok: false, error: "振休申請は廃止しました。休日出勤した日の「休日出勤申請」で、代わりに休む日を決めてください" }
+      }
       detail = {
         leaveType: formData.get("leaveType") as string,
         halfDay:   (formData.get("halfDay") as string) || "full",

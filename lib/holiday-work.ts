@@ -4,10 +4,14 @@
  * 申請の detail：{ startTime, endTime, restDate?, restKind? }
  * - startTime〜endTime：休日出勤する予定の時刻。承認された日は、これがその日の定時の代わりになる（段0）
  * - restDate：代わりに休む日（"YYYY-MM-DD"）。空欄でも申請できる
+ * - breakMinutes：休憩（分。0〜240・15分刻み）。必須（旧い申請は無し）。承認されるとその日の breakMinutes に入る（休憩申請と同じ連鎖。
+ *   休日は上長が確認して承認したときに初めて有効になる＝審査中は差し引かない）
  * - restKind：振休か代休か。**システムが決める**。休む日を申請と一緒に決めた＝"furikyu"（振休）、後で決めた＝"daikyu"（代休）。
  *   休む日が休日出勤の前でも後でもよい（区別は「いつ決めたか」）。一度決まった区別は、休む日を直しても変えない
  * 代休の残り時間は管理しない。代休は休日出勤申請1件にひも付く（restDate をその申請に持つ）
  */
+
+import { calcLegalBreak } from "@/config/attendance.config"
 
 export type RestKind = "furikyu" | "daikyu"
 
@@ -16,6 +20,7 @@ export type HolidayWorkDetail = {
   endTime?: string
   restDate?: string
   restKind?: RestKind
+  breakMinutes?: string
 }
 
 const HHMM = /^\d{1,2}:\d{2}$/
@@ -36,6 +41,17 @@ export function validateHolidayWorkTimes(startTime: string | undefined, endTime:
   if (s === null || e === null) return "予定の開始・終了時刻を選んでください"
   if (e <= s) return "終了時刻は開始時刻より後にしてください"
   return null
+}
+
+/**
+ * 休日出勤申請フォームの「休憩（分）」の初期値の目安：予定の開始〜終了の長さに旧い法定休憩の規則を当てる（6時間超45分・8時間超60分）。
+ * 開始・終了が不正なら 0。あくまで目安で、本人が15分刻みで直せる
+ */
+export function defaultHolidayBreakMinutes(startTime: string | undefined, endTime: string | undefined): number {
+  const s = toMinutes(startTime)
+  const e = toMinutes(endTime)
+  if (s === null || e === null || e <= s) return 0
+  return calcLegalBreak(e - s)
 }
 
 /** 休む日の検証（空欄は許可）。休日出勤の日と同じ日は不可。問題なければ null */
@@ -87,10 +103,53 @@ export function fmtRestDate(key: string): string {
   return `${m}/${d}`
 }
 
+/**
+ * 振休・代休で休む日の行の表示。例：「振休（10/12 出勤分）」「代休（10/12 出勤分）」（10/12 は休日出勤した日）。
+ * 欠勤に見えないよう、Excel・/records・承認詳細の休む日の行で同じ文言を使う
+ */
+export function restDayLabel(kind: RestKind | string | undefined, workDateKey: string): string {
+  const k = kind === "daikyu" ? "daikyu" : "furikyu"
+  return `${REST_KIND_LABEL[k]}（${fmtRestDate(workDateKey)} 出勤分）`
+}
+
+/**
+ * 期間内の休む日（restDate）を持つ休日出勤申請を DB から絞るための "YYYY-MM" の接頭辞（期間にかかる月）。
+ * 休む日は申請の detail（JSON）にあり、休日出勤した日（targetDate）は期間の外のこともあるので、休む日で引く
+ */
+export function restDateMonthPrefixes(firstDay: Date, lastDay: Date): string[] {
+  const out: string[] = []
+  const d = new Date(Date.UTC(firstDay.getUTCFullYear(), firstDay.getUTCMonth(), 1))
+  const end = Date.UTC(lastDay.getUTCFullYear(), lastDay.getUTCMonth(), 1)
+  while (d.getTime() <= end) {
+    out.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`)
+    d.setUTCMonth(d.getUTCMonth() + 1)
+  }
+  return out
+}
+
+/**
+ * 承認済みの休日出勤申請から、休む日（"YYYY-MM-DD"）→ 表示ラベル（「振休（10/12 出勤分）」）の対応を作る。
+ * 同じ休む日に複数あれば最後に出した申請。休む日が無い申請は対象外。
+ * targetDate は休日出勤した日（UTC 0時の通し日）。Excel・/records の休む日の行で使う
+ */
+export function buildRestDayLabels(
+  requests: { targetDate: Date; createdAt: Date; detail?: unknown }[],
+): Map<string, string> {
+  const sorted = [...requests].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  const map = new Map<string, string>()
+  for (const r of sorted) {
+    const d = r.detail as HolidayWorkDetail | null | undefined
+    if (!d?.restDate || !DATE_KEY.test(d.restDate)) continue
+    map.set(d.restDate, restDayLabel(d.restKind, r.targetDate.toISOString().slice(0, 10)))
+  }
+  return map
+}
+
 /** 申請一覧・承認画面の内容欄の文言。例：「休日出勤 9:00〜15:00・振休 10/12」「…・休む日未定」 */
 export function holidayWorkSummary(detail: HolidayWorkDetail | null | undefined): string {
   if (!detail) return ""
-  const time = detail.startTime && detail.endTime ? `休日出勤 ${detail.startTime}〜${detail.endTime}` : "休日出勤"
+  const brk = detail.breakMinutes != null && detail.breakMinutes !== "" ? `（休憩 ${detail.breakMinutes}分）` : ""
+  const time = (detail.startTime && detail.endTime ? `休日出勤 ${detail.startTime}〜${detail.endTime}` : "休日出勤") + brk
   if (!detail.restDate) return `${time}・休む日未定`
   const kind = detail.restKind ? REST_KIND_LABEL[detail.restKind] : "休む日"
   return `${time}・${kind} ${fmtRestDate(detail.restDate)}`

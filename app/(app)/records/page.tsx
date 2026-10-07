@@ -5,6 +5,7 @@ import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEa
 import { isClockInCapped, isClockOutCapped, legacyOvertimeInput, resolveInputTime, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
+import { buildRestDayLabels, restDateMonthPrefixes } from "@/lib/holiday-work"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
 
@@ -57,7 +58,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
   const { firstDay, lastDay } = getClosingPeriod(year, month, closingDay)
 
-  const [records, user, correctionRequests, absenceRequests] = await Promise.all([
+  const [records, user, correctionRequests, absenceRequests, restDayRequests] = await Promise.all([
     prisma.attendanceRecord.findMany({
       where: { userId, date: { gte: firstDay, lte: lastDay } },
       orderBy: { date: "asc" },
@@ -80,7 +81,16 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
       select: { targetDate: true, status: true, detail: true },
       orderBy: { createdAt: "desc" },
     }),
+    // 振休・代休で休む日の行の表示用：休む日が期間内にある承認済みの休日出勤申請（休日出勤した日は期間の外のこともある）
+    prisma.request.findMany({
+      where: {
+        userId, type: "HOLIDAY_WORK", status: "APPROVED",
+        OR: restDateMonthPrefixes(firstDay, lastDay).map((p) => ({ detail: { path: ["restDate"], string_starts_with: p } })),
+      },
+      select: { targetDate: true, createdAt: true, detail: true },
+    }),
   ])
+  const restLabelMap = buildRestDayLabels(restDayRequests)
 
   // 日付文字列 → 打刻修正申請ステータス（最新のみ）
   const correctionMap = new Map<string, "PENDING" | "APPROVED" | "REJECTED">()
@@ -259,6 +269,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
               const rec     = recordMap.get(`${dy}-${dm}-${d}`)
               const isWeekend = dow === 0 || dow === 6
               const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+              const restLabel = restLabelMap.get(dateStr) ?? null  // 振休・代休で休む日（欠勤に見せない）
               const data    = rec ? buildRowData(rec) : null
               const needsReview = data?.needsReview ?? false
               const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
@@ -292,6 +303,9 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   <td className="px-2 py-2 text-center font-mono text-xs text-amber-600">{data ? fmtDur(data.late) : "--"}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-amber-600">{data ? fmtDur(data.earlyLeave) : "--"}</td>
                   <td className="px-3 py-2 text-center">
+                    {restLabel && !rec?.clockIn && (
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700 whitespace-nowrap">{restLabel}</span>
+                    )}
                     {rec?.isAbsent ? (
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                     ) : rec ? (

@@ -168,8 +168,8 @@ function formatHHMM(mins: number): string {
  * 1・2 は事実（休憩ボタン・承認済みの休憩申請・早退申請の休憩の申告・過去の休憩打刻）なので、⑤ON/OFF どちらでも同じ
  * 審査中の休憩申請は差し引かない（承認されて breakMinutes に入った時点で反映される）。
  * daySchedule は段0の結果。休日出勤の日はその申請の開始〜終了を拘束時間にする。
- * 定時なし（休日で休日出勤申請が無い日）は、本人の所定休憩が無ければ「在席時間」（presenceMinutes）に会社の休憩ルールを当てる
- * （休日に半日だけ出た人に、平日の定時ぶんの休憩を引かない）。所定休憩が設定されていればそれを使う
+ * 定時なし（休日で休日出勤申請が無い日）は、⑤ON/OFF とも本人の所定休憩を使わず「在席時間」（presenceMinutes）に法定休憩を当てる
+ * （休日に2時間だけ出た人に、平日の所定休憩60分を引かない）。承認済みの休日出勤申請の休憩は 1 で breakMinutes に入っている
  */
 export function resolveBreakMinutes(p: {
   savedBreakMinutes: number | null | undefined
@@ -195,12 +195,9 @@ export function resolveBreakMinutes(p: {
   if (p.halfDay) return 0
   // ⑤OFF：旧方式。在席時間に法定休憩を当てる（定時・本人の所定休憩・会社設定は見ない）
   if (p.newCalc === false) return calcLegalBreak(Math.max(0, p.presenceMinutes ?? 0))
-  if (!p.daySchedule && p.userBreakMinutes == null && p.presenceMinutes != null) {
-    return calcDefaultBreakMinutes(
-      { userBreakMinutes: null, workStartTime: "00:00", workEndTime: formatHHMM(Math.max(0, p.presenceMinutes)) },
-      p.setting,
-    )
-  }
+  // 定時なしの日（休日で、承認済みの休日出勤申請が無い日）：本人の所定休憩は使わず、在席時間に法定休憩を当てる（⑤ON/OFF 共通。
+  // 休日は誰も確かめられないので、休憩は上長が承認した申請でだけ決まる。申請が無い間は在席時間の規定値）
+  if (!p.daySchedule && p.presenceMinutes != null) return calcLegalBreak(Math.max(0, p.presenceMinutes))
   return calcDefaultBreakMinutes(
     {
       userBreakMinutes: p.userBreakMinutes,

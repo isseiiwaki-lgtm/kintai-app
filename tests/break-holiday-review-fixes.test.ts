@@ -153,7 +153,7 @@ describe("休憩ボタン：承認済みの休憩申請がある日は断る", (
 
 describe("休日出勤申請の作成：対象日が休日か", () => {
   const hwForm = (targetDate: string) =>
-    form({ type: "HOLIDAY_WORK", targetDate, reason: "", startTime: "09:00", endTime: "15:00", restDate: "" })
+    form({ type: "HOLIDAY_WORK", targetDate, reason: "", startTime: "09:00", endTime: "15:00", breakMinutes: "45", restDate: "" })
 
   it("平日（休日カレンダーにも無い）→ エラーを返し、申請を作らない", async () => {
     const res = await actionCreateRequest(hwForm("2026-10-07"))

@@ -84,8 +84,8 @@ function compareBreakChain(a: BreakChainItem, b: BreakChainItem): number {
  */
 async function approvedBreakChain(userId: string, date: Date, excludeId: string): Promise<BreakChainItem[]> {
   const reqs = await prisma.request.findMany({
-    // 休憩申請と、休憩の申告つきの早退申請は同じ連鎖（その日の breakMinutes を入れた順に並ぶ）
-    where: { userId, type: { in: ["BREAK", "ABSENCE"] }, status: "APPROVED", targetDate: date, id: { not: excludeId } },
+    // 休憩申請と、休憩の申告つきの早退申請・休日出勤申請は同じ連鎖（その日の breakMinutes を入れた順に並ぶ）
+    where: { userId, type: { in: ["BREAK", "ABSENCE", "HOLIDAY_WORK"] }, status: "APPROVED", targetDate: date, id: { not: excludeId } },
     select: { id: true, type: true, createdAt: true, detail: true },
   }) as BreakChainItem[]
   return reqs.filter((r) => breakAnswerMinutes(r) !== null).sort(compareBreakChain)
@@ -354,18 +354,19 @@ async function applyRequestEffects(
     revalidatePath("/records")
   }
 
-  // 休憩申請の承認時: その日の休憩の合計（上書き）として breakMinutes に入れ、勤務時間を打刻パイプラインで計算し直す
-  // （審査中の間は差し引かない。複数承認されたら最後に承認されたものが残る）
-  // 早退申請の休憩の申告（正社員の「休憩を取りましたか」）も同じしくみで入れる（承認前の値・適用順を申請に残す）
-  if (req.type === "BREAK" || req.type === "ABSENCE") {
-    const minutes = breakAnswerMinutes(req)
-    if (minutes !== null) await applyApprovedBreak(req, minutes)
-  }
-
   // 休日出勤申請の承認時: その日に休日出勤の印を付け（記録が無ければ作る）、打刻パイプラインで計算し直す
   // （段0：申請の開始〜終了がその日の定時の代わりになる。出勤・退勤どちらが先でも同じ結果になる）
   if (req.type === "HOLIDAY_WORK") {
     await syncHolidayWorkMark(req.userId, req.targetDate)
+  }
+
+  // 休憩申請の承認時: その日の休憩の合計（上書き）として breakMinutes に入れ、勤務時間を打刻パイプラインで計算し直す
+  // （審査中の間は差し引かない。複数承認されたら最後に承認されたものが残る）
+  // 早退申請の休憩の申告（正社員の「休憩を取りましたか」）・休日出勤申請の「休憩（分）」も同じしくみで入れる（承認前の値・適用順を申請に残す）
+  // 休日出勤は上の印（記録の作成）の後に入れる
+  if (req.type === "BREAK" || req.type === "ABSENCE" || req.type === "HOLIDAY_WORK") {
+    const minutes = breakAnswerMinutes(req)
+    if (minutes !== null) await applyApprovedBreak(req, minutes)
   }
 
   // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存（本人所定時間ベース。半休は所定時間の半分を四捨五入）
@@ -626,12 +627,19 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
       const restDate = ((formData.get("restDate") as string) ?? "").trim()
       const timeErr = validateHolidayWorkTimes(startTime, endTime)
       if (timeErr) return { ok: false, error: timeErr }
+      // 休憩（分）：空欄は旧い申請（休憩の申告が無かった申請）のときだけ許す。入力があれば15分刻みで検証する
+      const breakRaw = ((formData.get("breakMinutes") as string | null) ?? "").trim()
+      const hadBreak = before?.type === "HOLIDAY_WORK" && beforeDetail.breakMinutes !== undefined
+      if (breakRaw === "" && hadBreak) return { ok: false, error: "休憩（分）を選んでください（取らない場合は0分）" }
+      const breakParsed = breakRaw === "" ? null : parseBreakRequestMinutes(breakRaw)
+      if (breakRaw !== "" && breakParsed === null) return { ok: false, error: "休憩の分数が正しくありません（15分刻み）" }
       const restErr = validateRestDate(restDate, targetDate)
       if (restErr) return { ok: false, error: restErr }
       // 振休か代休かは「いつ決めたか」。すでに区別が決まっていれば変えない。
       // 休む日を初めて足すとき：まだ審査中の申請に足すのは申請と一緒に決めた扱い＝振休、処理済み（承認・却下）の後に足すのは＝代休
       const prev = before?.type === "HOLIDAY_WORK" ? beforeDetail : {}
       detail = { startTime, endTime }
+      if (breakParsed !== null) detail.breakMinutes = String(breakParsed)
       if (restDate) {
         detail.restDate = restDate
         detail.restKind = resolveRestKind({
@@ -773,7 +781,7 @@ export async function actionDeleteRequest(id: string): Promise<ActionResult> {
   // 承認済みの休憩申請を削除するときは、記録を書き換えるので締め済みの日は拒否する
   // 休憩の申告つきの早退申請（ABSENCE）も同じ（承認で入れた休憩分数を戻すので）
   if (req?.status === "APPROVED" && breakAnswerMinutes(req) !== null && (await isLockedDay(req.userId, req.targetDate))) {
-    return { ok: false, error: `締め済みの日の${req.type === "BREAK" ? "休憩申請" : "早退申請（休憩の申告つき）"}は削除できません（締め解除してから削除してください）` }
+    return { ok: false, error: `締め済みの日の${req.type === "BREAK" ? "休憩申請" : req.type === "HOLIDAY_WORK" ? "休日出勤申請" : "早退申請（休憩の申告つき）"}は削除できません（締め解除してから削除してください）` }
   }
   // 承認済みの休日出勤申請を削除するときも、印と定時が変わるので締め済みの日は拒否する
   if (req?.status === "APPROVED" && req.type === "HOLIDAY_WORK" && (await isLockedDay(req.userId, req.targetDate))) {

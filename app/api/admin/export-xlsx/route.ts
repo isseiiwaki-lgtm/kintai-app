@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { resolveDayMetrics, storedBreakMinutes } from "@/lib/attendance"
-import { fmtRestDate } from "@/lib/holiday-work"
+import { buildRestDayLabels, fmtRestDate, restDateMonthPrefixes } from "@/lib/holiday-work"
 import { legacyOvertimeInput, pickHalfDay, pickHolidayWorkRequest, resolveBreakMinutes, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly, effectiveChangedFields } from "@/lib/export-format"
@@ -45,7 +45,7 @@ const COL_WIDTHS = [
   10, 10,             // 深夜2列
   14, 14, 16, 16,     // 法定休日4列
   14, 16, 14, 16,     // 休日出勤4列
-  8,  8, 10, 10,  6,  6, // 有給日・有給時間・特別有給・特別無給・振休・代休
+  8,  8, 10, 10, 20, 20, // 有給日・有給時間・特別有給・特別無給・振休・代休（休む日の行に「振休（10/12 出勤分）」が入る幅）
   14, 6,  7,  7,  8,  8, // 遅刻早退〜変更退勤
 ]
 
@@ -104,6 +104,15 @@ export async function GET(req: NextRequest) {
   })
 
   // employeeCode が文字列型のため JS 側で数値昇順ソート（例: "1","2","10" → 1,2,10）
+  // 振休・代休で休む日の行の表示用：休む日が期間内にある承認済みの休日出勤申請（休日出勤した日は期間の外のこともあるので別に引く）
+  const restReqs = users.length === 0 ? [] : await prisma.request.findMany({
+    where: {
+      userId: { in: users.map((u) => u.id) }, type: "HOLIDAY_WORK", status: "APPROVED",
+      OR: restDateMonthPrefixes(firstDay, lastDay).map((p) => ({ detail: { path: ["restDate"], string_starts_with: p } })),
+    },
+    select: { userId: true, targetDate: true, createdAt: true, detail: true },
+  })
+
   users.sort((a, b) => {
     const na = parseInt(a.employeeCode ?? "", 10)
     const nb = parseInt(b.employeeCode ?? "", 10)
@@ -198,6 +207,8 @@ export async function GET(req: NextRequest) {
       cell.border = thinBorder("FF999999")
     })
 
+    // 休む日（振休・代休）の行のラベル（dateKey → 「振休（10/12 出勤分）」）
+    const restLabelMap = buildRestDayLabels(restReqs.filter((r) => r.userId === user.id))
     // 申請マップ（dateKey → { type, detail }）
     const leaveMap = new Map<string, { type: string; detail: unknown }>()
     for (const req of user.requests) {
@@ -218,6 +229,7 @@ export async function GET(req: NextRequest) {
       const rec = recordMap.get(dateKey)
       const holidayName = holidayMap.get(dateKey) ?? ""
       const leave = leaveMap.get(dateKey)
+      const restLabel = restLabelMap.get(dateKey) ?? ""  // 「振休（10/12 出勤分）」「代休（…）」。休む日の行に出す（欠勤に見せない）
       const dayOfWeek = dayDate.getUTCDay()
       const isHoliday = !!holidayName || dayOfWeek === 0 || dayOfWeek === 6
 
@@ -311,8 +323,9 @@ export async function GET(req: NextRequest) {
         "",  "",  "",  "",                       // 休日出勤4列（未実装）
         paidLeaveDays, paidLeaveTime,            // 有給日・時間
         specialPaid, specialUnpaid,              // 特別休暇
-        subLeave,                                // 振休
-        holidayWork?.restDate && holidayWork.restKind === "daikyu" ? fmtRestDate(holidayWork.restDate) : "", // 代休（休日出勤の日の行に、後から決めた休む日）
+        subLeave || (restLabel.startsWith("振休") ? restLabel : ""), // 振休（旧「振休申請」は 1。休日出勤申請の振休は「振休（10/12 出勤分）」）
+        (holidayWork?.restDate && holidayWork.restKind === "daikyu" ? fmtRestDate(holidayWork.restDate) : "") ||
+          (restLabel.startsWith("代休") ? restLabel : ""), // 代休（休日出勤の日の行に、後から決めた休む日／休む日の行に「代休（10/12 出勤分）」）
         lateEarly,                               // 遅刻／早退（遅 0:30 早 1:00 形式）
         absent,                                  // 欠勤
         fmtRawPunch(rec?.rawClockIn),            // 出勤（実打刻。無い日は空欄）

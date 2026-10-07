@@ -3,10 +3,10 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { actionCreateRequest } from "../actions"
-import { isSameWeek, validateHolidayWorkTimes } from "@/lib/holiday-work"
+import { defaultHolidayBreakMinutes, isSameWeek, validateHolidayWorkTimes } from "@/lib/holiday-work"
 import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 
-type RequestType = "OVERTIME" | "EARLY_START" | "ABSENCE" | "ABSENCE_ABSENT" | "LEAVE_PAID" | "LEAVE_SUB" | "CORRECTION" | "BREAK" | "HOLIDAY_WORK"
+type RequestType = "OVERTIME" | "EARLY_START" | "ABSENCE" | "ABSENCE_ABSENT" | "LEAVE_PAID" | "CORRECTION" | "BREAK" | "HOLIDAY_WORK"
 
 // 申請の時刻の刻み（REQUEST_TIME_STEP_MINUTES）の時刻オプション（HH:MM 形式）。
 // 打刻パイプラインが早出の実打刻を切り上げる刻み（CLOCK_PIPELINE 段2）と同じ定数を参照する
@@ -38,7 +38,6 @@ const TYPE_OPTIONS: { value: RequestType; label: string }[] = [
   { value: "ABSENCE",        label: "遅刻・早退申請" },
   { value: "ABSENCE_ABSENT", label: "欠勤申請" },
   { value: "LEAVE_PAID",     label: "有給休暇申請" },
-  { value: "LEAVE_SUB",      label: "振休申請" },
   { value: "CORRECTION",     label: "打刻修正申請" },
   { value: "BREAK",          label: "休憩申請" },
   { value: "HOLIDAY_WORK",   label: "休日出勤申請" },
@@ -84,6 +83,15 @@ export function NewRequestForm({
   const [absenceKind, setAbsenceKind] = useState<"late" | "early">(searchParams.get("absenceType") === "early" ? "early" : "late")
   const [tookBreak, setTookBreak]     = useState<"" | "no" | "yes">("")
   const [breakMins, setBreakMins]     = useState("")
+  // 休日出勤申請：予定の開始・終了と休憩（分）。休憩の初期値は予定の長さから旧い法定休憩の規則で出す（本人が直したら追従しない）
+  const [hwStart, setHwStart] = useState(defaultStartTime)
+  const [hwEnd, setHwEnd]     = useState(defaultEndTime)
+  const [hwBreak, setHwBreak] = useState(String(defaultHolidayBreakMinutes(defaultStartTime, defaultEndTime)))
+  const [hwBreakTouched, setHwBreakTouched] = useState(false)
+  function changeHwTime(start: string, end: string) {
+    setHwStart(start); setHwEnd(end)
+    if (!hwBreakTouched) setHwBreak(String(defaultHolidayBreakMinutes(start, end)))
+  }
 
   // URL params からプリセット（/records の修正依頼リンク用）
   const presetDate      = searchParams.get("date")  ?? ""
@@ -109,6 +117,7 @@ export function NewRequestForm({
     if (fd.get("type") === "HOLIDAY_WORK") {
       const timeErr = validateHolidayWorkTimes(fd.get("startTime") as string, fd.get("endTime") as string)
       if (timeErr) { setFormError(timeErr); return }
+      if (fd.get("breakMinutes") === null || fd.get("breakMinutes") === "") { setFormError("休憩（分）を選んでください（取らない場合は0分）"); return }
       const workDate = (fd.get("targetDate") as string) ?? ""
       const restDate = (fd.get("restDate") as string) ?? ""
       if (restDate && restDate === workDate) { setFormError("休む日は休日出勤の日と別の日にしてください"); return }
@@ -132,9 +141,6 @@ export function NewRequestForm({
     if (fd.get("type") === "LEAVE_PAID") {
       fd.set("type", "LEAVE")
       fd.set("leaveType", "paid")
-    } else if (fd.get("type") === "LEAVE_SUB") {
-      fd.set("type", "LEAVE")
-      fd.set("leaveType", "substitute")
     } else if (fd.get("type") === "ABSENCE_ABSENT") {
       fd.set("type", "ABSENCE")
       fd.set("absenceType", "absent")
@@ -196,7 +202,7 @@ export function NewRequestForm({
         {/* 対象日 */}
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            {type === "LEAVE_SUB" ? "振休取得日" : type === "HOLIDAY_WORK" ? "休日出勤する日（予定日）" : "対象日"}
+            {type === "HOLIDAY_WORK" ? "休日出勤する日（予定日）" : "対象日"}
           </label>
           <input
             type="date" name="targetDate" required
@@ -321,17 +327,6 @@ export function NewRequestForm({
           </div>
         )}
 
-        {/* 振休: 振替元出勤日 */}
-        {type === "LEAVE_SUB" && (
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">振替元の休日出勤日</label>
-            <input
-              type="date" name="workDate" required
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        )}
-
         {/* 打刻修正: 対象項目 + 修正時刻 */}
         {type === "CORRECTION" && (
           <div className="space-y-3">
@@ -378,7 +373,7 @@ export function NewRequestForm({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">予定の開始時刻</label>
-                <select name="startTime" required defaultValue={defaultStartTime} className={selectClass}>
+                <select name="startTime" required value={hwStart} onChange={(e) => changeHwTime(e.target.value, hwEnd)} className={selectClass}>
                   <option value="" disabled>-- 選択 --</option>
                   {ALL_TIME_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
@@ -387,13 +382,28 @@ export function NewRequestForm({
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">予定の終了時刻</label>
-                <select name="endTime" required defaultValue={defaultEndTime} className={selectClass}>
+                <select name="endTime" required value={hwEnd} onChange={(e) => changeHwTime(hwStart, e.target.value)} className={selectClass}>
                   <option value="" disabled>-- 選択 --</option>
                   {ALL_TIME_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
               </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">休憩（分）</label>
+              <select
+                name="breakMinutes" required value={hwBreak}
+                onChange={(e) => { setHwBreak(e.target.value); setHwBreakTouched(true) }}
+                className={selectClass}
+              >
+                {BREAK_MINUTE_OPTIONS.map((m) => (
+                  <option key={m} value={m}>{m === 0 ? "取らない（0分）" : `${m}分`}</option>
+                ))}
+              </select>
+              <p className="mt-1.5 text-xs text-gray-500">
+                予定の長さから目安（6時間超45分・8時間超60分）を入れています。休日出勤の休憩は、承認されたときに初めて勤務時間から引かれます。
+              </p>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">代わりに休む日（任意）</label>

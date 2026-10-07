@@ -174,6 +174,14 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
           </select>
         </div>
         <div>
+          <label className={labelClass}>休憩（分）</label>
+          <select name="breakMinutes" defaultValue={detail.breakMinutes ?? ""} className={inputClass}>
+            {detail.breakMinutes === undefined && <option value="">申告なし（旧い申請）</option>}
+            {BREAK_MINUTE_OPTIONS.map(m => <option key={m} value={m}>{m === 0 ? "取らない（0分）" : `${m}分`}</option>)}
+          </select>
+          <p className="mt-1 text-[11px] text-gray-400">承認済みの申請を直すと、その日の休憩の合計も休憩申請と同じ順で入れ直します。</p>
+        </div>
+        <div>
           <label className={labelClass}>休む日（{detail.restKind === "furikyu" ? "振休" : detail.restKind === "daikyu" ? "代休" : "未定"}）</label>
           <input type="date" name="restDate" defaultValue={detail.restDate ?? ""} className={inputClass} />
           <p className="mt-1 text-[11px] text-gray-400">

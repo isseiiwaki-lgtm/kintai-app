@@ -318,12 +318,14 @@ export function parseBreakRequestMinutes(v: unknown): number | null {
  * 休憩の申告がある申請か。あれば申告の分数を返す（無ければ null）。
  * - 休憩申請（BREAK）：detail.minutes
  * - 早退申請（ABSENCE・absenceType=early）：detail.breakMinutes（正社員が申請時に答える「休憩を取りましたか」。0＝取らなかった）
+ * - 休日出勤申請（HOLIDAY_WORK）：detail.breakMinutes（必須の「休憩（分）」。旧い申請は無し＝申告なし）
  * 承認されると、どちらも同じしくみ（承認前の値 prevBreakMinutes・適用順 breakAppliedAt）でその日の breakMinutes に入る
  */
 export function breakAnswerMinutes(req: { type: string; detail: unknown }): number | null {
   const d = (req.detail ?? {}) as { minutes?: unknown; breakMinutes?: unknown; absenceType?: unknown }
   if (req.type === "BREAK") return parseBreakRequestMinutes(d.minutes)
   if (req.type === "ABSENCE" && d.absenceType === "early" && d.breakMinutes !== undefined) return parseBreakRequestMinutes(d.breakMinutes)
+  if (req.type === "HOLIDAY_WORK" && d.breakMinutes !== undefined) return parseBreakRequestMinutes(d.breakMinutes)
   return null
 }
 

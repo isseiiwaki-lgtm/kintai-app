@@ -92,8 +92,13 @@ export async function actionSetBreak(minutes: number): Promise<{ ok: true } | { 
   const record = await prisma.attendanceRecord.findUnique({ where: { userId_date: { userId, date: today } } })
   if (!record?.clockIn) return { ok: false, error: "出勤打刻がありません" }
   if (record.status === "LOCKED") return { ok: false, error: "締め済みの日のため変更できません" }
-  // 承認済みの休憩申請がある日は、その申請が休憩を決めている。ボタンで上書きすると申請と記録が食い違うので断る
-  const approvedBreak = await prisma.request.count({ where: { userId, type: "BREAK", status: "APPROVED", targetDate: today } })
+  // 承認済みの休憩申請（休憩つきの休日出勤申請を含む）がある日は、その申請が休憩を決めている。ボタンで上書きすると申請と記録が食い違うので断る
+  const approvedBreak = await prisma.request.count({
+    where: {
+      userId, status: "APPROVED", targetDate: today,
+      OR: [{ type: "BREAK" }, { type: "HOLIDAY_WORK", detail: { path: ["breakMinutes"], string_starts_with: "" } }],
+    },
+  })
   if (approvedBreak > 0) return { ok: false, error: "この日は承認済みの休憩申請があるため、ボタンでは変えられません。変える場合は管理者に修正を依頼してください" }
   await prisma.attendanceRecord.update({
     where: { userId_date: { userId, date: today } },
