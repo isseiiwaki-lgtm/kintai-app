@@ -632,8 +632,10 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
       if (timeErr) return { ok: false, error: timeErr }
       // 休憩（分）：空欄は旧い申請（休憩の申告が無かった申請）のときだけ許す。入力があれば15分刻みで検証する
       const breakRaw = ((formData.get("breakMinutes") as string | null) ?? "").trim()
+      // 他の種別から休日出勤申請に変える場合も、新しい申請と同じく休憩の申告が必要（空欄を許すのは旧い休日出勤申請の修正だけ）
       const hadBreak = before?.type === "HOLIDAY_WORK" && beforeDetail.breakMinutes !== undefined
-      if (breakRaw === "" && hadBreak) return { ok: false, error: "休憩（分）を選んでください（取らない場合は0分）" }
+      const breakRequired = before?.type !== "HOLIDAY_WORK" || hadBreak
+      if (breakRaw === "" && breakRequired) return { ok: false, error: "休憩（分）を選んでください（取らない場合は0分）" }
       const breakParsed = breakRaw === "" ? null : parseBreakRequestMinutes(breakRaw)
       if (breakRaw !== "" && breakParsed === null) return { ok: false, error: "休憩の分数が正しくありません（15分刻み）" }
       const restErr = validateRestDate(restDate, targetDate)
@@ -666,6 +668,8 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
     }
     case "LEAVE":
       detail = {
+        // 修正前も LEAVE なら、フォームに無い項目（特別休暇の isPaid など）を消さない
+        ...(before?.type === "LEAVE" ? beforeDetail : {}),
         leaveType: formData.get("leaveType") as string,
         halfDay:   (formData.get("halfDay")   as string) || "full",
         workDate:  (formData.get("workDate")  as string) || "",
@@ -702,7 +706,7 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
   const holidayWorkInvolved = recordAffected("HOLIDAY_WORK")
   if (before && (breakInvolved || holidayWorkInvolved)) {
     if ((await isLockedDay(before.userId, before.targetDate)) || (await isLockedDay(before.userId, newTargetDate))) {
-      return { ok: false, error: `締め済みの日の${breakInvolved ? "休憩申請（早退申請の休憩の申告を含む）" : "休日出勤申請"}は修正できません（締め解除してから修正してください）` }
+      return { ok: false, error: `締め済みの日の${breakInvolved ? "休憩の申告（休憩申請・早退申請・休日出勤申請）" : "休日出勤申請"}は修正できません（締め解除してから修正してください）` }
     }
   }
 

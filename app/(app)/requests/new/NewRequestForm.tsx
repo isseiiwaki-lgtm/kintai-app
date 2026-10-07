@@ -25,8 +25,8 @@ function buildTimeOptions(startHour = 0, endHour = 23): { value: string; label: 
 const ALL_TIME_OPTIONS = buildTimeOptions(0, 23)
 
 // 初期時刻（退勤直後の知らせのリンクなど）が選択肢の範囲外でも、空欄で開かないよう選択肢に足す
-function withPresetOption(opts: { value: string; label: string }[], preset: string): { value: string; label: string }[] {
-  if (!/^d{2}:d{2}$/.test(preset) || opts.some((o) => o.value === preset)) return opts
+export function withPresetOption(opts: { value: string; label: string }[], preset: string): { value: string; label: string }[] {
+  if (!/^\d{2}:\d{2}$/.test(preset) || opts.some((o) => o.value === preset)) return opts
   return [...opts, { value: preset, label: preset }].sort((a, b) => a.value.localeCompare(b.value))
 }
 

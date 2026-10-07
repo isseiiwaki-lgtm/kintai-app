@@ -155,7 +155,7 @@ describe("段7：休憩分数の決め方（IMPLEMENTATION_PLAN I の具体例�
     // 在席5時間 → 6時間以内なので0分
     expect(resolveBreakMinutes({
       savedBreakMinutes: null, halfDay: null, employmentType: "full", userBreakMinutes: null,
-      workStartTime: "09:00", workEndTime: "18:00", daySchedule: null, presenceMinutes: 300, setting: SETTING,
+      workStartTime: "09:00", workEndTime: "18:00", daySchedule: null, isRestDay: true, presenceMinutes: 300, setting: SETTING,
     })).toBe(0)
   })
 })

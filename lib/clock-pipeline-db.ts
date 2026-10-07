@@ -177,6 +177,7 @@ export function buildRecordUpdate(
       userBreakMinutes: ctx.user.breakMinutes,
       workStartTime: ctx.user.workStartTime, workEndTime: ctx.user.workEndTime,
       daySchedule: schedule,
+      isRestDay: !!rec.isHolidayWork || isRestDay(rec.date, ctx.user, ctx.holidayKeys.has(dateKey(rec.date))),
       presenceMinutes: Math.floor((out.clockOut.getTime() - out.clockIn.getTime() - (rec.goOutAt && rec.returnAt ? rec.returnAt.getTime() - rec.goOutAt.getTime() : 0)) / 60000),
       setting: ctx.setting,
       newCalc: switches.newCalc,

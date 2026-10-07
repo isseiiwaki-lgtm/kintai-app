@@ -80,7 +80,7 @@ describe("休日出勤申請の休憩の目安（旧い法定休憩の規則を�
 describe("休日（定時なし・休日出勤申請なし）の休憩の規定値：在席時間の法定休憩（本人の所定休憩は使わない）", () => {
   const base = {
     savedBreakMinutes: null, halfDay: null, employmentType: "full", userBreakMinutes: 60,
-    workStartTime: "09:00", workEndTime: "18:00", daySchedule: null, setting: SETTING,
+    workStartTime: "09:00", workEndTime: "18:00", daySchedule: null, isRestDay: true, setting: SETTING,
   } as const
   for (const newCalc of [true, false]) {
     it(`⑤${newCalc ? "ON" : "OFF"}：所定休憩60分の社員が日曜 10:00〜12:00（在席120分）→ 休憩0・実働120`, () => {

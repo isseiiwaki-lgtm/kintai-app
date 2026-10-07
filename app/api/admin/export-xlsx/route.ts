@@ -8,7 +8,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { resolveDayMetrics, storedBreakMinutes } from "@/lib/attendance"
 import { buildRestDayLabels, fmtRestDate, restDateMonthPrefixes } from "@/lib/holiday-work"
-import { legacyOvertimeInput, pickHalfDay, pickHolidayWorkRequest, resolveBreakMinutes, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { legacyOvertimeInput, pickHalfDay, isRestDay, pickHolidayWorkRequest, resolveBreakMinutes, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly, effectiveChangedFields } from "@/lib/export-format"
 import ExcelJS from "exceljs"
@@ -272,6 +272,7 @@ export async function GET(req: NextRequest) {
           employmentType: user.employmentType, userBreakMinutes: user.breakMinutes,
           workStartTime: user.workStartTime, workEndTime: user.workEndTime,
           daySchedule: schedule, presenceMinutes: rawMinutes, setting,
+          isRestDay: !!rec?.isHolidayWork || isRestDay(dayDate, user, !!holidayName),
           newCalc: resolveSwitches(rec, setting).newCalc,
         })
         workingMinutes = rec.workingMinutes ?? Math.max(0, rawMinutes - breakMinutes)

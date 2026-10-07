@@ -99,7 +99,7 @@ export async function actionSetBreak(minutes: number): Promise<{ ok: true } | { 
       OR: [{ type: "BREAK" }, { type: "HOLIDAY_WORK", detail: { path: ["breakMinutes"], string_starts_with: "" } }],
     },
   })
-  if (approvedBreak > 0) return { ok: false, error: "この日は承認済みの休憩申請があるため、ボタンでは変えられません。変える場合は管理者に修正を依頼してください" }
+  if (approvedBreak > 0) return { ok: false, error: "この日は承認済みの休憩の申告（休憩申請・早退申請・休日出勤申請）があるため、ボタンでは変えられません。変える場合は管理者に修正を依頼してください" }
   await prisma.attendanceRecord.update({
     where: { userId_date: { userId, date: today } },
     data: { breakMinutes: minutes },

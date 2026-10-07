@@ -44,7 +44,7 @@ function proxyPunch(opts: {
       savedBreakMinutes: null,
       breakStart: t(opts.breakStart), breakEnd: t(opts.breakEnd),
       halfDay: null, employmentType: opts.employmentType, userBreakMinutes: null,
-      workStartTime: opts.workStartTime, workEndTime: opts.workEndTime, daySchedule: schedule,
+      workStartTime: opts.workStartTime, workEndTime: opts.workEndTime, daySchedule: schedule, isRestDay: !!opts.isHolidayWork,
       presenceMinutes: out.clockIn && out.clockOut
         ? Math.floor((out.clockOut.getTime() - out.clockIn.getTime() - (t(opts.goOutAt) && t(opts.returnAt) ? t(opts.returnAt)!.getTime() - t(opts.goOutAt)!.getTime() : 0)) / 60000)
         : null,

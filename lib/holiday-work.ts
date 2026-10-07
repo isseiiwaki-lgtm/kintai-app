@@ -105,7 +105,7 @@ export function fmtRestDate(key: string): string {
 
 /**
  * 振休・代休で休む日の行の表示。例：「振休（10/12 出勤分）」「代休（10/12 出勤分）」（10/12 は休日出勤した日）。
- * 欠勤に見えないよう、Excel・/records・承認詳細の休む日の行で同じ文言を使う
+ * 欠勤に見えないよう、Excel・/records の休む日の行で同じ文言を使う（承認詳細への表示は未実装・オーナー判断待ち）
  */
 export function restDayLabel(kind: RestKind | string | undefined, workDateKey: string): string {
   const k = kind === "daikyu" ? "daikyu" : "furikyu"

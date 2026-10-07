@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { initialLeaveType, leaveTypeOptions } from "@/lib/leave-type"
 import { holidayWorkSummary, type HolidayWorkDetail } from "@/lib/holiday-work"
 import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 import {
@@ -240,9 +241,10 @@ function DetailFields({ type, detail, isPartTimer = false }: { type: string; det
       <>
         <div>
           <label className={labelClass}>休暇種別</label>
-          <select name="leaveType" defaultValue={detail.leaveType ?? "annual"} className={inputClass}>
-            <option value="annual">有給</option>
-            <option value="substitute">振休</option>
+          <select name="leaveType" defaultValue={initialLeaveType(detail.leaveType)} className={inputClass}>
+            {leaveTypeOptions(detail.leaveType).map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
           </select>
         </div>
         <div>
