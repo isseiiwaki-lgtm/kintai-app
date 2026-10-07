@@ -75,9 +75,10 @@ describe("段2：早出申請がある日（定時 9:00・申請 8:00・④ON）
   it("8:13 → 8:15", () => {
     expect(hm(run({ in: jst(8, 13), switches: sw4, requests: req }).clockIn)).toBe("08:15")
   })
-  it("8:50 → 申請無効（有効な開始が 9:00 以降）→ 申請が無い日と同じ。全部 OFF なら 8:50", () => {
+  it("8:50 → 申請無効（有効な開始が 9:00 以降）→ 申請が無い日と同じ。④ON は①も効くので 9:00（④OFF なら 8:50）", () => {
+    expect(hm(run({ in: jst(8, 50), switches: OFF, requests: req }).clockIn)).toBe("08:50")
     const r = run({ in: jst(8, 50), switches: sw4, requests: req })
-    expect(hm(r.clockIn)).toBe("08:50")
+    expect(hm(r.clockIn)).toBe("09:00")
     expect(r.earlyStartRequestApplied).toBe(false)
   })
   it("8:50 → 申請無効 → ①が ON なら 9:00", () => {
@@ -105,12 +106,13 @@ describe("段2：早出申請がある日（定時 9:00・申請 8:00・④ON）
   it("申請の開始が定時以降なら申請は無効", () => {
     const r = run({ in: jst(8, 30), switches: sw4, requests: [earlyReq("09:00")] })
     expect(r.earlyStartRequestApplied).toBe(false)
-    expect(hm(r.clockIn)).toBe("08:30")
+    expect(hm(r.clockIn)).toBe("09:00")  // ④ON は申請が無い日と同じく定時で打ち切る
   })
   it("審査中・却下の早出申請は入力に使わない（承認済みだけ）", () => {
     expect(pickEarlyStartTime([earlyReq("08:00", undefined, "PENDING")])).toBeNull()
     expect(pickEarlyStartTime([earlyReq("08:00", undefined, "REJECTED")])).toBeNull()
-    expect(hm(run({ in: jst(7, 40), switches: sw4, requests: [earlyReq("08:00", undefined, "PENDING")] }).clockIn)).toBe("07:40")
+    expect(hm(run({ in: jst(7, 40), switches: sw4, requests: [earlyReq("08:00", undefined, "PENDING")] }).clockIn)).toBe("09:00")  // 申請が無い日と同じ（④ONは①も効く）
+    expect(hm(run({ in: jst(7, 40), switches: OFF, requests: [earlyReq("08:00", undefined, "PENDING")] }).clockIn)).toBe("07:40")
   })
   it("残業申請（早出でない）は段2に影響しない", () => {
     expect(pickEarlyStartTime([overtimeReq("19:00")])).toBeNull()
@@ -127,7 +129,7 @@ describe("段2：申請が無い日", () => {
   it("全部 OFF なら実打刻のまま（8:10 → 8:10）", () => {
     expect(hm(run({ in: jst(8, 10) }).clockIn)).toBe("08:10")
   })
-  it("④ON でも申請が無い日の出勤は定時で打ち切らない（④は退勤側）：8:50 → 8:50", () => {
-    expect(hm(run({ in: jst(8, 50), switches: sw({ capOvertime: true }) }).clockIn)).toBe("08:50")
+  it("④ON なら申請が無い日の出勤も定時で打ち切る（④ONは①も効く）：8:50 → 9:00", () => {
+    expect(hm(run({ in: jst(8, 50), switches: sw({ capOvertime: true }) }).clockIn)).toBe("09:00")
   })
 })

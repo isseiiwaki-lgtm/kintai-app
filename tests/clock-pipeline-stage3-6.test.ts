@@ -155,13 +155,13 @@ describe("段6：④の打ち切り（退勤 ＝ min(段5までの退勤, 上限
   it("④で打ち切られたか（/records で実打刻を併記するかの判定）", () => {
     const base = { recordedClockIn: jst(9, 0), schedule: SCHEDULE, requests: [] as ReturnType<typeof overtimeReq>[] }
     // 19:51 退勤・申請なし・④ON → 17:30 に打ち切り → 併記しない
-    expect(isClockOutCapped({ ...base, rawClockOut: jst(19, 51), switches: ON34 })).toBe(true)
+    expect(isClockOutCapped({ ...base, inputClockOut: jst(19, 51), switches: ON34 })).toBe(true)
     // ③の丸めだけで変わった（17:20 → 17:15）は打ち切りではない → 従来どおり併記
-    expect(isClockOutCapped({ ...base, rawClockOut: jst(17, 20), switches: ON34 })).toBe(false)
+    expect(isClockOutCapped({ ...base, inputClockOut: jst(17, 20), switches: ON34 })).toBe(false)
     // ④OFF は打ち切りなし
-    expect(isClockOutCapped({ ...base, rawClockOut: jst(19, 51), switches: sw({ roundQuarter: true }) })).toBe(false)
+    expect(isClockOutCapped({ ...base, inputClockOut: jst(19, 51), switches: sw({ roundQuarter: true }) })).toBe(false)
     // 申請 19:30 の範囲内（19:16 → 19:15）は打ち切りではない
-    expect(isClockOutCapped({ ...base, rawClockOut: jst(19, 16), switches: ON34, requests: [overtimeReq("19:30")] })).toBe(false)
+    expect(isClockOutCapped({ ...base, inputClockOut: jst(19, 16), switches: ON34, requests: [overtimeReq("19:30")] })).toBe(false)
   })
 })
 

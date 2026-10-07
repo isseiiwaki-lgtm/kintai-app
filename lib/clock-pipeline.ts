@@ -333,9 +333,10 @@ function computeClockIn(
   }
 
   // 段2（申請が無い日）・段3・段5：①→②→③
+  // ④ONなら①も実効ON（③ONなら②も効くのと同じ形）。申請が無い日の早出は④で定時に打ち切る
   return {
     clockIn: applyRounding(raw, schedule.start, {
-      roundEarly: sw.roundEarly,
+      roundEarly: sw.roundEarly || sw.capOvertime,
       roundNear: near,
       roundQuarter: sw.roundQuarter,
       kind: "in",
@@ -440,13 +441,16 @@ export function computeClockPipeline(input: PipelineInput): PipelineOutput {
  * ④ありとなしの記録時刻を比べ、④ありのほうが遅ければ切られている。
  */
 export function isClockInCapped(p: {
-  rawClockIn: Date | null
+  /** 記録の日付（UTC 0時＝その日）。省略時は入力の出勤の日 */
+  date?: Date
+  /** パイプラインへの入力の出勤（実打刻。打刻修正で直した日はその時刻）。resolveInputTime の結果 */
+  inputClockIn: Date | null
   schedule: DaySchedule
   switches: PipelineSwitches
   requests: PipelineRequest[]
 }): boolean {
-  if (!p.switches.capOvertime || !p.schedule || !p.rawClockIn) return false
-  const base = { inputClockIn: p.rawClockIn, inputClockOut: null, schedule: p.schedule, requests: p.requests }
+  if (!p.switches.capOvertime || !p.schedule || !p.inputClockIn) return false
+  const base = { date: p.date, inputClockIn: p.inputClockIn, inputClockOut: null, schedule: p.schedule, requests: p.requests }
   const withCap = computeClockPipeline({ ...base, switches: p.switches }).clockIn
   const withoutCap = computeClockPipeline({ ...base, switches: { ...p.switches, capOvertime: false } }).clockIn
   return !!withCap && !!withoutCap && withCap.getTime() > withoutCap.getTime()
@@ -458,17 +462,21 @@ export function isClockInCapped(p: {
  * 実打刻を入力にして、④ありとなしの記録時刻を比べる。
  */
 export function isClockOutCapped(p: {
+  /** 記録の日付（UTC 0時＝その日）。出勤が無い日またぎの退勤のみの行でも、記録の日付の定時・上限で判定する */
+  date?: Date
   recordedClockIn: Date | null
-  rawClockOut: Date | null
+  /** パイプラインへの入力の退勤（実打刻。打刻修正で直した日はその時刻）。resolveInputTime の結果 */
+  inputClockOut: Date | null
   schedule: DaySchedule
   switches: PipelineSwitches
   requests: PipelineRequest[]
 }): boolean {
-  if (!p.switches.capOvertime || !p.schedule || !p.rawClockOut) return false
+  if (!p.switches.capOvertime || !p.schedule || !p.inputClockOut) return false
   const base = {
+    date: p.date,
     inputClockIn: p.recordedClockIn,
     clockInIsFinal: true,
-    inputClockOut: p.rawClockOut,
+    inputClockOut: p.inputClockOut,
     schedule: p.schedule,
     requests: p.requests,
   }
@@ -488,6 +496,8 @@ export type InputSource = "raw" | "corrected" | "recorded"
  * - 打刻修正・管理者の直接編集・代理打刻で入れた時刻（変更履歴 AttendanceChangeLog の最新の新しい値）が実打刻より新しければ、それが入力
  *   （修正した時刻にも以降の段の丸めをかける。記録時刻 clockIn/Out は出力なので入力に使わない）
  * - 変更履歴が無ければ実打刻（rawClockIn/Out）
+ * - 新しい値が空（null）の変更履歴は「取り消しの印」。その時刻より前の変更履歴は入力に使わない
+ *   （管理者の修正の取り消し・承認済みの打刻修正申請の削除で、修正前の状態に戻すときに書く）
  * - どちらも無い既存の記録は、記録時刻をそのまま入力にし、丸めない（source = "recorded"）
  * date は記録の日付（UTC 0時＝その日の JST 暦日）。変更履歴の値は "HH:MM"（JST）
  */
@@ -497,8 +507,10 @@ export function resolveInputTime(p: {
   recorded: Date | null
   logs: { newValue: string | null; changedAt: Date }[]
 }): { time: Date | null; source: InputSource } {
+  // 取り消しの印より前の履歴は無かったことにする（印と同時刻の履歴は印より前に書かれたものとみなす）
+  const resetAt = p.logs.reduce((m, l) => (l.newValue === null ? Math.max(m, l.changedAt.getTime()) : m), -Infinity)
   const latest = p.logs
-    .filter((l) => l.newValue && /^\d{1,2}:\d{2}$/.test(l.newValue))
+    .filter((l) => l.newValue && /^\d{1,2}:\d{2}$/.test(l.newValue) && l.changedAt.getTime() > resetAt)
     .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime())[0]
   if (latest && (!p.raw || p.raw.getTime() <= latest.changedAt.getTime())) {
     const [hh, mm] = latest.newValue!.split(":").map(Number)
@@ -507,6 +519,54 @@ export function resolveInputTime(p: {
   }
   if (p.raw) return { time: p.raw, source: "raw" }
   return { time: p.recorded, source: "recorded" }
+}
+
+/** 変更履歴の1件（出勤・退勤の1項目ぶん） */
+export type InputLog = { id: string; oldValue: string | null; newValue: string | null; changedAt: Date }
+
+/** 変更履歴の時刻と承認の記録の時刻が一致とみなす幅（承認の記録のあとに同じ操作で変更履歴を書くため） */
+const APPROVAL_LOG_WINDOW_MS = 2 * 60 * 1000
+
+const isValidTime = (v: string | null | undefined): v is string => !!v && /^\d{1,2}:\d{2}$/.test(v)
+
+/**
+ * 打刻修正申請の承認で書かれた変更履歴を探す（同じ新しい値で、承認の記録の時刻の前後2分以内。複数あれば最新）。
+ * 変更履歴には「誰が・何の操作で」の区別が無いので、承認の記録との時刻の一致で見分ける
+ */
+export function findCorrectionLog(logs: InputLog[], correctedTime: string, approvedAts: Date[]): InputLog | null {
+  const hit = logs
+    .filter((l) => l.newValue === correctedTime
+      && approvedAts.some((a) => Math.abs(a.getTime() - l.changedAt.getTime()) <= APPROVAL_LOG_WINDOW_MS))
+    .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime())
+  return hit[0] ?? null
+}
+
+/** その履歴が、有効な履歴のうち最新か（これより後に入力を変える履歴が無いか） */
+export function isLatestInputLog(logs: InputLog[], target: InputLog): boolean {
+  return !logs.some((l) => l.id !== target.id && isValidTime(l.newValue) && l.changedAt.getTime() > target.changedAt.getTime())
+}
+
+/**
+ * ある変更履歴（管理者の修正・承認済みの打刻修正）を取り消して、入力を1つ前の状態に戻すために書く変更履歴の「新しい値」を決める。
+ * - 1つ前に有効な履歴があれば、その値を書き直す（"HH:MM"）
+ * - 1つ前が実打刻、または無ければ null（取り消しの印。入力は実打刻に戻る）
+ * noInput が true のときは実打刻も他の履歴も無く、記録時刻の列そのものを呼び出し側が戻す必要がある
+ */
+export function planInputRevert(p: {
+  date: Date
+  raw: Date | null
+  logs: InputLog[]
+  /** 取り消す履歴の id。特定できなければ null（全履歴を残して1つ前を求める） */
+  removeId: string | null
+}): { logNewValue: string | null; noInput: boolean } {
+  const rest = p.logs.filter((l) => l.id !== p.removeId)
+  const prior = resolveInputTime({ date: p.date, raw: p.raw, recorded: null, logs: rest })
+  if (prior.source === "corrected" && prior.time) {
+    const j = new Date(prior.time.getTime() + 9 * 60 * 60 * 1000)
+    const hhmm = `${String(j.getUTCHours()).padStart(2, "0")}:${String(j.getUTCMinutes()).padStart(2, "0")}`
+    return { logNewValue: hhmm, noInput: false }
+  }
+  return { logNewValue: null, noInput: prior.source === "recorded" }
 }
 
 // ---------------------------------------------------------------------------

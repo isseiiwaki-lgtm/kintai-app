@@ -2,7 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
-import { isClockInCapped, isClockOutCapped, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { isClockInCapped, isClockOutCapped, resolveInputTime, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
@@ -105,6 +105,11 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
   // 段0（休日・半休を反映した定時）の材料。保存値が無いときの遅刻・早退・残業の計算に使う
   const sched = await loadScheduleInputs([userId], firstDay, lastDay)
+  // 段1の入力（打刻修正で直した日はその時刻）を出すための出退勤の変更履歴。④の併記判定に使う
+  const changeLogs = await prisma.attendanceChangeLog.findMany({
+    where: { recordId: { in: records.map((r) => r.id) }, fieldName: { in: ["clockIn", "clockOut"] } },
+    select: { recordId: true, fieldName: true, newValue: true, changedAt: true },
+  })
 
   type Rec = typeof records[number]
 
@@ -153,11 +158,15 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
     // ④で打ち切った出勤（段2：早出申請の開始で切った）・退勤（段6）には実打刻を併記しない（一般社員の画面に④の内訳を出さない）。
     // 管理者が確定した時刻は④を通していないので対象外。退勤側は originalClockOut の有無に関係なく判定する
     const switches = resolveSwitches(rec, sched.setting)
+    // 判定の入力はパイプラインと同じ（実打刻、打刻修正の日は修正した時刻）。記録の日付も渡す（出勤なし・日またぎの退勤のみの行）
+    const logsOf = (field: string) => changeLogs.filter((l) => l.recordId === rec.id && l.fieldName === field)
+    const inputIn  = resolveInputTime({ date: rec.date, raw: rec.rawClockIn,  recorded: null, logs: logsOf("clockIn") }).time
+    const inputOut = resolveInputTime({ date: rec.date, raw: rec.rawClockOut, recorded: null, logs: logsOf("clockOut") }).time
     const outCapped = !rec.adminClockOut && isClockOutCapped({
-      recordedClockIn: rec.clockIn, rawClockOut: rec.rawClockOut, schedule, switches, requests: dayRequests,
+      date: rec.date, recordedClockIn: rec.clockIn, inputClockOut: inputOut, schedule, switches, requests: dayRequests,
     })
     const inCapped = !rec.adminClockIn && isClockInCapped({
-      rawClockIn: rec.rawClockIn, schedule, switches, requests: dayRequests,
+      date: rec.date, inputClockIn: inputIn, schedule, switches, requests: dayRequests,
     })
     const night      = calcNightMinutes(rec.clockIn, rec.clockOut)
 

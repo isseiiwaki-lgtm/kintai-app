@@ -182,6 +182,7 @@ export default async function UserApprovalPage({
       clockOut:    formatHHMM(r.clockOut),
       rawClockIn:  formatHHMM(r.rawClockIn),
       rawClockOut: formatHHMM(r.rawClockOut),
+      hasAdminEdit: !!r.adminClockIn || !!r.adminClockOut,
       requestEndTime,
       noOvertimeRequest,
       breakStart:  formatHHMM(r.breakStart),

@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import Link from "next/link"
-import { actionAdminUpdateRecord, actionBulkApprove, actionBulkLock } from "../actions"
+import { actionAdminUpdateRecord, actionBulkApprove, actionBulkLock, actionClearAdminEdit } from "../actions"
 import type { AdminTimeConstraint } from "@/lib/clock-pipeline"
 import { AdminTimeSelect } from "./AdminTimeSelect"
 
@@ -14,6 +14,7 @@ type Rec = {
   clockOut:   string | null
   rawClockIn:  string | null   // 生打刻（丸め前）。丸めと差がある日のみ併記表示
   rawClockOut: string | null
+  hasAdminEdit: boolean        // 管理者の確定修正（段6.5）がある日。「管理者の修正を取り消す」を出す
   requestEndTime: string | null   // ④: 承認済み残業申請（最後に出した申請）の終了時刻。④OFF・申請なしは null
   noOvertimeRequest: boolean      // ④ON で残業申請が無いのに実打刻が定時を15分以上過ぎた日の目印
   breakStart: string | null
@@ -53,10 +54,12 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
   const [editRec, setEditRec]   = useState<Rec | null>(null)
   const [unrestricted, setUnrestricted] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [editError, setEditError] = useState<string | null>(null)
 
   function handleEdit(rec: Rec) {
     if (rec.status === "LOCKED") return
     setUnrestricted(false)
+    setEditError(null)
     setEditRec(rec)
   }
 
@@ -65,7 +68,19 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
     if (!editRec) return
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      await actionAdminUpdateRecord(editRec.id, editRec.dateISO, fd)
+      const res = await actionAdminUpdateRecord(editRec.id, editRec.dateISO, fd)
+      if (!res.ok) { setEditError(res.error); return }
+      setEditRec(null)
+    })
+  }
+
+  // 管理者の確定修正（出勤・退勤）を取り消し、その日をパイプラインで計算し直す
+  function handleClearAdminEdit() {
+    if (!editRec) return
+    if (!window.confirm(`${editRec.dateLabel} の管理者の修正（出勤・退勤）を取り消しますか？\n実打刻（または打刻修正）の時刻に戻して計算し直します。`)) return
+    startTransition(async () => {
+      const res = await actionClearAdminEdit(editRec.id)
+      if (!res.ok) { setEditError(res.error); return }
       setEditRec(null)
     })
   }
@@ -256,6 +271,17 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
               </label>
               <p className="text-[10px] text-gray-400">※ 出勤・退勤は、その日のスイッチ（丸め・申請上限）に合う時刻だけを表示しています。入力した出勤・退勤は丸め・上限を通さず、そのまま記録されます</p>
               <p className="text-xs text-amber-600 mt-2">※ 保存すると状態が「承認済」になります</p>
+              {editRec.hasAdminEdit && (
+                <button
+                  type="button"
+                  onClick={handleClearAdminEdit}
+                  disabled={isPending}
+                  className="w-full py-1.5 border border-red-300 text-xs text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-40"
+                >
+                  管理者の修正を取り消す
+                </button>
+              )}
+              {editError && <p role="alert" className="text-xs text-red-600">{editError}</p>}
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"

@@ -59,10 +59,10 @@ describe("出勤側の④（段2）で切った出勤かの判定（/records で
   const sw4 = sw({ capOvertime: true })
   const req = [earlyReq("08:00")]
   it("申請 8:00・7:40 出勤 → 8:00 に切られた → true", () => {
-    expect(isClockInCapped({ rawClockIn: jst(7, 40), schedule: SCHEDULE, switches: sw4, requests: req })).toBe(true)
+    expect(isClockInCapped({ inputClockIn: jst(7, 40), schedule: SCHEDULE, switches: sw4, requests: req })).toBe(true)
   })
   it("④OFF・申請なし・③の丸めだけの差（9:23→9:30 は④ONでも ④と無関係）→ false", () => {
-    expect(isClockInCapped({ rawClockIn: jst(9, 23), schedule: SCHEDULE, switches: ON34, requests: [] })).toBe(false)
-    expect(isClockInCapped({ rawClockIn: jst(7, 40), schedule: SCHEDULE, switches: sw(), requests: req })).toBe(false)
+    expect(isClockInCapped({ inputClockIn: jst(9, 23), schedule: SCHEDULE, switches: ON34, requests: [] })).toBe(false)
+    expect(isClockInCapped({ inputClockIn: jst(7, 40), schedule: SCHEDULE, switches: sw(), requests: req })).toBe(false)
   })
 })

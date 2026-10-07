@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { formatHHMMfromDate } from "@/lib/attendance"
 import { recomputeDay } from "@/lib/clock-pipeline-db"
+import { planInputRevert, type InputLog } from "@/lib/clock-pipeline"
 import { approveRecordsWithMetrics } from "@/lib/approve-records"
 
 async function checkRole() {
@@ -23,12 +24,14 @@ function toUTC(dateISO: string, timeHHMM: string): Date {
   ))
 }
 
+export type ActionResult = { ok: true } | { ok: false; error: string }
+
 // 管理者による直接編集（自動 APPROVED）
 export async function actionAdminUpdateRecord(
   recordId: string,
   dateISO: string,
   formData: FormData,
-) {
+): Promise<ActionResult> {
   const changedById = await checkRole()
 
   const timeFields = ["clockIn", "clockOut", "breakStart", "breakEnd", "goOutAt", "returnAt"] as const
@@ -38,9 +41,9 @@ export async function actionAdminUpdateRecord(
     where: { id: recordId },
     include: { user: { select: { workStartTime: true, workEndTime: true, employmentType: true } } },
   })
-  if (!current) return
+  if (!current) return { ok: false, error: "記録が見つかりません" }
   // 締め済み（LOCKED）の日はサーバー側でも直接修正を受け付けない（画面の制限に頼らない）
-  if (current.status === "LOCKED") return
+  if (current.status === "LOCKED") return { ok: false, error: "締め済みの日のため修正できません（締め解除してから修正してください）" }
 
   // 変更するフィールドのみ data に含める（空値は元値を維持）
   const data: Record<string, Date | string | number> = { status: "APPROVED" }
@@ -84,6 +87,67 @@ export async function actionAdminUpdateRecord(
 
   revalidatePath("/admin/approval")
   revalidatePath("/admin/attendance")
+  return { ok: true }
+}
+
+/**
+ * 管理者の確定修正（段6.5の admin 列）を取り消す。出勤・退勤それぞれ、admin 列がある項目だけを戻す。
+ *
+ * 「修正前」の決め方：管理者の修正の変更履歴を取り除いた入力（1つ前の打刻修正があればその時刻、無ければ実打刻）。
+ * - 戻す先を入力にするため、変更履歴に「出勤/退勤: 管理者の時刻 → 戻した時刻（無ければ空＝取り消しの印）」を1件書く
+ *   （履歴は消さない。取り消しの印は lib/clock-pipeline.ts の resolveInputTime が読む）
+ * - 実打刻も他の打刻修正も無い日（代理打刻など）は、戻す先が無いので記録時刻の列を空にする
+ * 締め済み（LOCKED）は取り消せない。状態（承認済）は変えない
+ */
+export async function actionClearAdminEdit(recordId: string): Promise<ActionResult> {
+  const changedById = await checkRole()
+
+  const rec = await prisma.attendanceRecord.findUnique({ where: { id: recordId } })
+  if (!rec) return { ok: false, error: "記録が見つかりません" }
+  if (rec.status === "LOCKED") return { ok: false, error: "締め済みの日のため取り消せません（締め解除してから操作してください）" }
+  if (!rec.adminClockIn && !rec.adminClockOut) return { ok: false, error: "取り消す管理者の修正がありません" }
+
+  const allLogs = await prisma.attendanceChangeLog.findMany({
+    where: { recordId, fieldName: { in: ["clockIn", "clockOut"] } },
+    select: { id: true, fieldName: true, oldValue: true, newValue: true, changedAt: true },
+  })
+
+  const data: Record<string, Date | null> = {}
+  const newLogs: { fieldName: string; oldValue: string | null; newValue: string | null }[] = []
+  const targets = [
+    { field: "clockIn",  admin: rec.adminClockIn,  raw: rec.rawClockIn,  adminCol: "adminClockIn",  col: "clockIn" },
+    { field: "clockOut", admin: rec.adminClockOut, raw: rec.rawClockOut, adminCol: "adminClockOut", col: "clockOut" },
+  ] as const
+  for (const t of targets) {
+    if (!t.admin) continue
+    const adminHHMM = formatHHMMfromDate(t.admin)
+    const logs: InputLog[] = allLogs.filter((l) => l.fieldName === t.field)
+    // 管理者の修正の変更履歴 ＝ 管理者の時刻と同じ新しい値の最新の履歴（特定できなければ全履歴を残して1つ前を求める）
+    const target = logs
+      .filter((l) => l.newValue === adminHHMM)
+      .sort((a, b) => b.changedAt.getTime() - a.changedAt.getTime())[0]
+    const plan = planInputRevert({ date: rec.date, raw: t.raw, logs, removeId: target?.id ?? null })
+    data[t.adminCol] = null
+    if (plan.noInput) data[t.col] = null  // 戻す先が無い（代理打刻など）：記録時刻の列を空にする
+    newLogs.push({ fieldName: t.field, oldValue: adminHHMM, newValue: plan.logNewValue })
+  }
+
+  // 勤務時間・残業・遅刻・早退は古い値が残らないよう空にし、このあとの計算し直しで出し直す
+  await prisma.$transaction([
+    prisma.attendanceRecord.update({
+      where: { id: recordId },
+      data: { ...data, workingMinutes: null, overtimeMinutes: null, lateMinutes: null, earlyLeaveMinutes: null },
+    }),
+    prisma.attendanceChangeLog.createMany({
+      data: newLogs.map((l) => ({ recordId, changedById, changedAt: new Date(), ...l })),
+    }),
+  ])
+  await recomputeDay(rec.userId, rec.date)
+
+  revalidatePath("/admin/approval")
+  revalidatePath("/admin/attendance")
+  revalidatePath("/records")
+  return { ok: true }
 }
 
 export type ProxyPunchResult = { ok: true } | { ok: false; error: string }
