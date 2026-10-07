@@ -1,8 +1,8 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, storedBreakMinutes } from "@/lib/attendance"
-import { isClockInCapped, isClockOutCapped, legacyOvertimeInput, resolveInputTime, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, resolveDayMetrics, calcNightMinutes, storedBreakMinutes } from "@/lib/attendance"
+import { scheduledMinutesForRecord, isClockInCapped, isClockOutCapped, legacyOvertimeInput, resolveInputTime, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 import { buildRestDayLabels, restDateMonthPrefixes } from "@/lib/holiday-work"
@@ -114,9 +114,8 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
   // 段0（休日・半休を反映した定時）の材料。保存値が無いときの遅刻・早退・残業の計算に使う
   const sched = await loadScheduleInputs([userId], firstDay, lastDay)
   // 所定勤務時間 ＝ 拘束時間 − 所定休憩（本人の所定休憩 → 会社設定の休憩ルール）
-  const scheduledMins = calcScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType, {
-    userBreakMinutes: user?.breakMinutes, setting: sched.setting,
-  })
+  // 記録の⑤スナップショットに従う（記録が無い日は現在の設定）
+  const scheduledMinsOf = (r: Parameters<typeof scheduledMinutesForRecord>[2]) => scheduledMinutesForRecord(user, sched.setting, r)
   // 段1の入力（打刻修正で直した日はその時刻）を出すための出退勤の変更履歴。④の併記判定に使う
   const changeLogs = await prisma.attendanceChangeLog.findMany({
     where: { recordId: { in: records.map((r) => r.id) }, fieldName: { in: ["clockIn", "clockOut"] } },
@@ -297,7 +296,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-700">{fmtDur(rec?.workingMinutes)}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-500">{data ? fmtDur(data.breakMins) : "--"}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-500">{data ? fmtDur(data.goOutMins) : "--"}</td>
-                  <td className="px-2 py-2 text-center font-mono text-xs text-gray-500">{rec?.clockIn ? fmtDur(scheduledMins) : "--"}</td>
+                  <td className="px-2 py-2 text-center font-mono text-xs text-gray-500">{rec?.clockIn ? fmtDur(scheduledMinsOf(rec)) : "--"}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-blue-600">{data ? fmtDur(data.overtime) : "--"}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-purple-600">{data ? fmtDur(data.night) : "--"}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-amber-600">{data ? fmtDur(data.late) : "--"}</td>
@@ -396,7 +395,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   <div className="grid grid-cols-4 gap-2 text-center text-xs text-gray-500">
                     <div>
                       <p className="text-gray-400">所定</p>
-                      <p className="font-mono">{fmtDur(scheduledMins)}</p>
+                      <p className="font-mono">{fmtDur(scheduledMinsOf(rec))}</p>
                     </div>
                     <div>
                       <p className="text-gray-400">残業</p>

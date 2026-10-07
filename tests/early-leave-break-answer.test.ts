@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 type Req = { id: string; userId: string; type: string; status: string; targetDate: Date; createdAt: Date; detail: Record<string, string>; reason: null }
 type Rec = { id: string; userId: string; date: Date; status: string; breakMinutes: number | null }
 
-const store = vi.hoisted(() => ({ reqs: [] as unknown[], recs: [] as unknown[], recomputed: 0 }))
+const store = vi.hoisted(() => ({ reqs: [] as unknown[], recs: [] as unknown[], recomputed: 0, empType: "full" }))
 const reqs = () => store.reqs as Req[]
 const recs = () => store.recs as Rec[]
 
@@ -44,6 +44,7 @@ vi.mock("@/lib/prisma", () => {
         delete: async (a: { where: { id: string } }) => { store.reqs = (store.reqs as Req[]).filter((r) => r.id !== a.where.id) },
         count: async () => 0,
       },
+      user: { findUnique: async () => ({ employmentType: store.empType }) },
       approval: { create: async () => ({}), findMany: async () => [] },
       approvalRoute: { findMany: async () => [] },
       setting: { findUnique: async () => null },
@@ -159,6 +160,14 @@ describe("削除・修正・日付の移動で元に戻る", () => {
     expect(rec()!.breakMinutes).toBe(15)
     await del("e")
     expect(rec()!.breakMinutes).toBeNull()
+  })
+
+  it("パートの早退申請を管理者が直すとき、休憩の申告は受け付けない（申告なしで保存）", async () => {
+    store.empType = "part"
+    addReq("e", "ABSENCE", 30)
+    expect(await actionUpdateRequest("e", absenceForm({ breakMinutes: "15" }))).toEqual({ ok: true })
+    expect(reqs().find((r) => r.id === "e")!.detail.breakMinutes).toBeUndefined()
+    store.empType = "full"
   })
 
   it("申告を空欄にする・遅刻へ変える：元の値に戻る", async () => {

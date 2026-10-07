@@ -37,7 +37,7 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
       where:   { status: "PENDING" },
       orderBy: { createdAt: "asc" },
       include: {
-        user:      { select: { name: true, email: true, department: true } },
+        user:      { select: { name: true, email: true, department: true, employmentType: true } },
         approvals: { select: { step: true, action: true } },
       },
     }),
@@ -48,7 +48,7 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
       },
       // 対象日降順で取得 → 申請者順表示時は下で従業員コード数値昇順に安定ソート（対象日降順は維持）
       orderBy: [{ targetDate: "desc" as const }],
-      include: { user: { select: { name: true, email: true, employeeCode: true } } },
+      include: { user: { select: { name: true, email: true, employeeCode: true, employmentType: true } } },
     }),
     prisma.approvalRoute.findMany({ select: { department: true, step: true, approverId: true } }),
   ])
@@ -79,7 +79,7 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
       createdAt:  r.createdAt.toISOString(),
       reason:     r.reason,
       detail:     r.detail as Record<string, string> | null,
-      user:       { name: r.user.name, email: r.user.email },
+      user:       { name: r.user.name, email: r.user.email, employmentType: r.user.employmentType },
       approvalDone:  route.length > 0 ? progress.done  : null,
       approvalTotal: route.length > 0 ? progress.total : null,
       canApprove,
@@ -106,7 +106,7 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
     createdAt:  r.createdAt.toISOString(),
     reason:     r.reason,
     detail:     r.detail as Record<string, string> | null,
-    user:       { name: r.user.name, email: r.user.email },
+    user:       { name: r.user.name, email: r.user.email, employmentType: r.user.employmentType },
   }))
 
   return (

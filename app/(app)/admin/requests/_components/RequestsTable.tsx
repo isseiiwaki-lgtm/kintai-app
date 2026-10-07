@@ -106,7 +106,7 @@ export type ReqRow = {
   createdAt: string
   reason: string | null
   detail: Record<string, string> | null
-  user: { name: string | null; email: string }
+  user: { name: string | null; email: string; employmentType?: string | null }
   // 多段階承認（申請者の部署に承認経路がある場合のみ設定される）
   approvalDone?:  number | null // 消化済みステップ数
   approvalTotal?: number | null // 総ステップ数
@@ -120,6 +120,7 @@ type EditState = {
   targetDate: string
   reason: string
   detail: Record<string, string>
+  employmentType?: string | null // 申請者の雇用形態（パートには早退の休憩の申告を出さない）
 }
 
 type DeleteState = {
@@ -130,7 +131,7 @@ type DeleteState = {
 const inputClass = "w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-blue-400"
 const labelClass = "block text-xs text-gray-500 mb-1"
 
-function DetailFields({ type, detail }: { type: string; detail: Record<string, string> }) {
+function DetailFields({ type, detail, isPartTimer = false }: { type: string; detail: Record<string, string>; isPartTimer?: boolean }) {
   if (type === "OVERTIME" && detail.overtimeType === "earlyStart") {
     // 早出申請は開始時刻を直す（overtimeType はサーバー側で保持される）
     return (
@@ -221,6 +222,7 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
             {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
+        {!isPartTimer && (
         <div>
           <label className={labelClass}>休憩の申告（早退のとき）</label>
           <select name="breakMinutes" defaultValue={detail.breakMinutes ?? ""} className={inputClass}>
@@ -229,6 +231,7 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
           </select>
           <p className="mt-1 text-[11px] text-gray-400">承認済みの申請を直すと、その日の休憩の合計も休憩申請と同じ順で入れ直します。</p>
         </div>
+        )}
       </>
     )
   }
@@ -310,6 +313,7 @@ export function RequestsTable({
       targetDate: toInputDate(r.targetDate),
       reason:     r.reason ?? "",
       detail:     r.detail ?? {},
+      employmentType: r.user.employmentType,
     })
   }
 
@@ -547,6 +551,7 @@ export function RequestsTable({
                 <DetailFields
                   type={editType}
                   detail={editType === editTarget.type ? editTarget.detail : {}}
+                  isPartTimer={editTarget.employmentType === "part"}
                 />
               </div>
               <div>

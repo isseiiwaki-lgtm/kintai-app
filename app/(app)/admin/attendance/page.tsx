@@ -1,8 +1,8 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcNeedsReview, calcScheduledMinutes, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice, resolveDayMetrics } from "@/lib/attendance"
-import { isRestDay, legacyOvertimeInput, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { calcNeedsReview, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice, resolveDayMetrics } from "@/lib/attendance"
+import { scheduledMinutesForRecord, isRestDay, legacyOvertimeInput, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
@@ -123,13 +123,10 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
   const rows: Row[] = users.map((u: typeof users[number]) => {
     const recs = u.attendanceRecords as Rec[]
     // 所定勤務時間 ＝ 拘束時間 − 所定休憩（本人の所定休憩 → 会社設定の休憩ルール）
-    const scheduledPerDay = calcScheduledMinutes(u.workStartTime, u.workEndTime, u.employmentType, {
-      userBreakMinutes: u.breakMinutes, setting: sched.setting,
-    })
 
     const workDays          = recs.filter((r) => r.clockIn).length
     const totalMin          = recs.reduce((s, r) => s + (r.workingMinutes ?? 0), 0)
-    const scheduledTotalMin = workDays * scheduledPerDay
+    const scheduledTotalMin = recs.filter((r) => r.clockIn).reduce((s, r) => s + scheduledMinutesForRecord(u, sched.setting, r), 0)
     const scheduleOf = (r: Rec) => resolveScheduleForDate({
       date: r.date, user: u, setting: sched.setting,
       isHoliday: sched.isHoliday(r.date), isHolidayWork: r.isHolidayWork, requests: sched.requestsOf(u.id, r.date),

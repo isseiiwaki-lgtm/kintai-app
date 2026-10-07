@@ -15,6 +15,7 @@ import {
   calcDefaultBreakMinutes,
   calcLegacyScheduledMinutes,
   calcMetrics,
+  calcScheduledMinutes,
   hhmmToUTCDate,
   isNormalOvertime,
   jstDayStartUTC,
@@ -143,6 +144,25 @@ export function resolveSwitches(saved: SavedSwitches | null | undefined, setting
   }
 }
 
+/**
+ * 記録の⑤スナップショットに従う本人の所定勤務時間（分）。
+ * ⑤OFF＝旧方式（法定休憩のみ）、⑤ON＝現在の方式（本人の所定休憩・会社設定）。
+ * 保存値が無い記録・記録が無い日は現在の設定（resolveSwitches と同じ）
+ */
+export function scheduledMinutesForRecord(
+  user: {
+    workStartTime?: string | null; workEndTime?: string | null; employmentType?: string | null; breakMinutes?: number | null
+  } | null | undefined,
+  setting: (SwitchSetting & { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number }) | null | undefined,
+  saved: SavedSwitches | null | undefined,
+): number {
+  const sw = resolveSwitches(saved, setting)
+  if (!sw.newCalc) return calcLegacyScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType)
+  return calcScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType, {
+    userBreakMinutes: user?.breakMinutes, setting,
+  })
+}
+
 // ---------------------------------------------------------------------------
 // 段0：その日の定時を決める
 // ---------------------------------------------------------------------------
@@ -162,7 +182,7 @@ function formatHHMM(mins: number): string {
  * 1. その日の breakMinutes に値がある（パートの休憩ボタン・承認済みの休憩申請）→ その値（0を含む）
  * 2. 値が無く、過去の休憩打刻（開始・終了）が両方ある → 打刻の差（休憩ボタン導入前の記録。再計算で実働が増えないように）
  * 3. パート → 0（休憩申請漏れの知らせの対象になりうる）
- * 4. 半休の日 → 0
+ * 4. ⑤OFF（旧方式）は半休の日も在席時間に法定休憩（5 の OFF と同じ）。⑤ON の半休の日 → 0
  * 5. 正社員 → 規定値。⑤ON（新しい計算方式）：本人の User.breakMinutes、無ければ会社設定の休憩ルールを定時の拘束時間に当てた値。
  *    ⑤OFF（旧方式。リリース2より前の規則）：在席時間（外出を除く）に法定休憩（6時間超45分・8時間超60分）を当てた値
  * 1・2 は事実（休憩ボタン・承認済みの休憩申請・早退申請の休憩の申告・過去の休憩打刻）なので、⑤ON/OFF どちらでも同じ
@@ -192,9 +212,10 @@ export function resolveBreakMinutes(p: {
     return Math.max(0, Math.floor((p.breakEnd.getTime() - p.breakStart.getTime()) / 60000))
   }
   if (p.employmentType === "part") return 0
-  if (p.halfDay) return 0
-  // ⑤OFF：旧方式。在席時間に法定休憩を当てる（定時・本人の所定休憩・会社設定は見ない）
+  // ⑤OFF：旧方式（a1d25ca）。在席時間に法定休憩を当てる（定時・本人の所定休憩・会社設定は見ない）。半休の日も同じ
   if (p.newCalc === false) return calcLegalBreak(Math.max(0, p.presenceMinutes ?? 0))
+  // ⑤ON：半休の日は 0（仕様）
+  if (p.halfDay) return 0
   // 定時なしの日（休日で、承認済みの休日出勤申請が無い日）：本人の所定休憩は使わず、在席時間に法定休憩を当てる（⑤ON/OFF 共通。
   // 休日は誰も確かめられないので、休憩は上長が承認した申請でだけ決まる。申請が無い間は在席時間の規定値）
   if (!p.daySchedule && p.presenceMinutes != null) return calcLegalBreak(Math.max(0, p.presenceMinutes))

@@ -4,8 +4,8 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { ProxyPunchForm } from "./_components/ProxyPunchForm"
-import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
-import { correctionLogIdSet, legacyOvertimeInput, pickEarlyStartTime, isRestDay, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
+import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
+import { scheduledMinutesForRecord, correctionLogIdSet, legacyOvertimeInput, pickEarlyStartTime, isRestDay, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
 import { correctionKey, loadApprovedCorrections, loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
@@ -139,9 +139,7 @@ export default async function UserApprovalPage({
   )
 
   // 所定勤務時間（分）: workStartTime/workEndTime から算出。未設定時は employmentType で fallback
-  const scheduledMinutes = calcScheduledMinutes(user.workStartTime, user.workEndTime, user.employmentType, {
-    userBreakMinutes: user.breakMinutes, setting: sched.setting,
-  })
+  // 所定勤務時間は記録の⑤スナップショットに従う（日ごとに決める）
 
   // レコードを日付キーでマップ
   const recordMap = new Map(
@@ -262,7 +260,7 @@ export default async function UserApprovalPage({
       isAbsent:    r.isAbsent,
       holidayWorkByProxy: r.holidayWorkByProxy,
       requestId:   requestMap.get(key) ?? null,
-      scheduledMinutes,
+      scheduledMinutes: scheduledMinutesForRecord(user, sched.setting, r),
       // 管理者の入力画面の選択肢（段6.5）：その日のスイッチ・定時・承認済みの申請
       timeConstraint: (() => {
         const approvedReqs = sched.requestsOf(userId, r.date)

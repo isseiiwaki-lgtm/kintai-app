@@ -106,11 +106,15 @@ describe("休憩の事実は ⑤ON/OFF どちらでも同じ", () => {
     expect(calc(r, ctx(FULL_830)).workingMinutes).toBe(370)
   })
 
-  it("半休の日は事実が無ければ 0（OFF でも）", () => {
-    expect(resolveBreakMinutes({
-      savedBreakMinutes: null, halfDay: "pm", employmentType: "full", userBreakMinutes: null,
-      workStartTime: "09:00", workEndTime: "17:30", daySchedule: { start: "09:00", end: "12:00" }, presenceMinutes: 400, newCalc: false,
-    })).toBe(0)
+  it("半休の日は事実が無ければ、ON は 0（仕様）・OFF は旧方式（在席時間に法定休憩。a1d25ca と同じ）", () => {
+    const base = {
+      savedBreakMinutes: null, halfDay: "pm" as const, employmentType: "full", userBreakMinutes: null,
+      workStartTime: "09:00", workEndTime: "17:30", daySchedule: { start: "09:00", end: "12:00" }, presenceMinutes: 400,
+    }
+    expect(resolveBreakMinutes({ ...base, newCalc: true })).toBe(0)
+    expect(resolveBreakMinutes({ ...base, newCalc: false })).toBe(45)
+    expect(resolveBreakMinutes({ ...base, newCalc: false, presenceMinutes: 500 })).toBe(60)
+    expect(resolveBreakMinutes({ ...base, newCalc: false, presenceMinutes: 300 })).toBe(0)
   })
 })
 

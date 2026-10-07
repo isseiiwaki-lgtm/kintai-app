@@ -3,10 +3,10 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
-import { breakAnswerMinutes, formatHHMMfromDate, calcScheduledMinutes, parseBreakRequestMinutes } from "@/lib/attendance"
+import { resolveEarlyLeaveBreakAnswer, breakAnswerMinutes, formatHHMMfromDate, parseBreakRequestMinutes } from "@/lib/attendance"
 import { holidayWorkDateError, recomputeDay } from "@/lib/clock-pipeline-db"
 import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
-import { findCorrectionLog, planFieldRevert, planInputRevert } from "@/lib/clock-pipeline"
+import { scheduledMinutesForRecord, findCorrectionLog, planFieldRevert, planInputRevert } from "@/lib/clock-pipeline"
 import { resolveRestKind, validateHolidayWorkTimes, validateRestDate } from "@/lib/holiday-work"
 
 export type ActionResult = { ok: true } | { ok: false; error: string }
@@ -372,9 +372,12 @@ async function applyRequestEffects(
   // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存（本人所定時間ベース。半休は所定時間の半分を四捨五入）
   if (req.type === "LEAVE" && detail?.leaveType === "paid") {
     const setting = await prisma.setting.findUnique({ where: { id: 1 } })
-    const scheduledMins = calcScheduledMinutes(req.user.workStartTime, req.user.workEndTime, req.user.employmentType, {
-      userBreakMinutes: req.user.breakMinutes, setting,
+    // 承認日の記録の⑤スナップショットに従う（記録が無い日は現在の設定）
+    const existingRec = await prisma.attendanceRecord.findUnique({
+      where: { userId_date: { userId: req.userId, date: req.targetDate } },
+      select: { switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true, switchNewCalc: true },
     })
+    const scheduledMins = scheduledMinutesForRecord(req.user, setting, existingRec)
     const halfDay = detail?.halfDay
     const paidMins = halfDay === "am" || halfDay === "pm" ? Math.round(scheduledMins / 2) : scheduledMins
     await prisma.attendanceRecord.upsert({
@@ -654,12 +657,11 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
         time:        formData.get("time")         as string,
       }
       // 早退申請の休憩の申告（空欄＝申告なし）。承認済みなら下で、休憩申請と同じしくみでその日の休憩に入れ直す
-      const rawBreak = ((formData.get("breakMinutes") as string | null) ?? "").trim()
-      if (detail.absenceType === "early" && rawBreak !== "") {
-        const m = parseBreakRequestMinutes(rawBreak)
-        if (m === null) return { ok: false, error: "休憩の分数が正しくありません（15分刻み）" }
-        detail.breakMinutes = String(m)
-      }
+      // 申告は正社員だけ（パートは申請者の雇用形態で判定し、送られてきても受け付けない）
+      const owner = before ? await prisma.user.findUnique({ where: { id: before.userId }, select: { employmentType: true } }) : null
+      const answer = resolveEarlyLeaveBreakAnswer(owner?.employmentType, detail.absenceType, formData.get("breakMinutes"))
+      if (!answer.ok) return { ok: false, error: "休憩の分数が正しくありません（15分刻み）" }
+      if (answer.minutes !== null) detail.breakMinutes = answer.minutes
       break
     }
     case "LEAVE":

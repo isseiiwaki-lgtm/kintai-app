@@ -100,7 +100,7 @@ export async function loadDayNotices(userId: string, today: Date): Promise<DayNo
           { type: "ABSENCE", status: { in: ["PENDING", "APPROVED"] } },
         ],
       },
-      select: { type: true, detail: true },
+      select: { type: true, status: true, detail: true },
     }),
   ])
   if (!record || !user) return { overtime, breakRecord: false, holidayWork: false, earlyLeave: null }
@@ -113,6 +113,7 @@ export async function loadDayNotices(userId: string, today: Date): Promise<DayNo
     overtime,
     earlyLeave: earlyLeaveNudgeTime({
       employmentType: user.employmentType, date: today, schedule, clockOut: record.clockOut,
+      hasApprovedHolidayWork: requests.some((r) => r.type === "HOLIDAY_WORK" && r.status === "APPROVED"),
       hasEarlyLeaveRequest: requests.some((r) => r.type === "ABSENCE" && (r.detail as { absenceType?: string } | null)?.absenceType === "early"),
     }),
     breakRecord: needsBreakRecordNotice({

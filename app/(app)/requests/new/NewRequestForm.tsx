@@ -24,6 +24,12 @@ function buildTimeOptions(startHour = 0, endHour = 23): { value: string; label: 
 
 const ALL_TIME_OPTIONS = buildTimeOptions(0, 23)
 
+// 初期時刻（退勤直後の知らせのリンクなど）が選択肢の範囲外でも、空欄で開かないよう選択肢に足す
+function withPresetOption(opts: { value: string; label: string }[], preset: string): { value: string; label: string }[] {
+  if (!/^d{2}:d{2}$/.test(preset) || opts.some((o) => o.value === preset)) return opts
+  return [...opts, { value: preset, label: preset }].sort((a, b) => a.value.localeCompare(b.value))
+}
+
 // 休憩申請の分数（0〜上限を15分刻み。0 は「休憩なし」の申請）
 const BREAK_MINUTE_OPTIONS = Array.from(
   { length: Math.floor(BREAK_REQUEST_MAX_MINUTES / BREAK_REQUEST_STEP_MINUTES) + 1 },
@@ -278,7 +284,7 @@ export function NewRequestForm({
               <label className="block text-xs font-medium text-gray-600 mb-1">時刻</label>
               <select name="time" required defaultValue={presetTime} className={selectClass}>
                 <option value="" disabled>-- 選択 --</option>
-                {buildTimeOptions(6, 20).map((o) => (
+                {withPresetOption(buildTimeOptions(6, 20), presetTime).map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>

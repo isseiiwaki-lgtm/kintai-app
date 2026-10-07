@@ -329,6 +329,22 @@ export function breakAnswerMinutes(req: { type: string; detail: unknown }): numb
   return null
 }
 
+/**
+ * 早退申請の休憩の申告（管理者の修正用）。正社員の早退だけが申告を持つ。パートは受け付けない（休憩ボタンがあるため）。
+ * 空欄＝申告なし。早退以外・パートでは常に申告なし（minutes: null）
+ */
+export function resolveEarlyLeaveBreakAnswer(
+  employmentType: string | null | undefined,
+  absenceType: string | null | undefined,
+  raw: unknown,
+): { ok: true; minutes: string | null } | { ok: false } {
+  if (absenceType !== "early" || employmentType === "part") return { ok: true, minutes: null }
+  const text = typeof raw === "string" ? raw.trim() : ""
+  if (text === "") return { ok: true, minutes: null }
+  const m = parseBreakRequestMinutes(text)
+  return m === null ? { ok: false } : { ok: true, minutes: String(m) }
+}
+
 /** 早退申請フォームへのリンク（退勤直後の知らせ用。対象日・種別・退勤時刻を入れておく） */
 export function earlyLeaveRequestHref(dateKey: string, time: string): string {
   return `/requests/new?type=ABSENCE&absenceType=early&date=${dateKey}&time=${time}`
@@ -348,9 +364,11 @@ export function earlyLeaveNudgeTime(p: {
   schedule: DaySchedule
   clockOut: Date | null
   hasEarlyLeaveRequest: boolean
+  /** 承認済みの休日出勤申請がある日（休憩は休日出勤申請で答えるので早退の促しは出さない） */
+  hasApprovedHolidayWork?: boolean
   stepMinutes?: number
 }): string | null {
-  if (p.employmentType === "part" || !p.schedule || !p.clockOut || p.hasEarlyLeaveRequest) return null
+  if (p.employmentType === "part" || !p.schedule || !p.clockOut || p.hasEarlyLeaveRequest || p.hasApprovedHolidayWork) return null
   const end = parseHHMM(p.schedule.end)
   if (end === null) return null
   const out = Math.floor((p.clockOut.getTime() - (p.date.getTime() - 9 * 60 * 60 * 1000)) / 60000)
