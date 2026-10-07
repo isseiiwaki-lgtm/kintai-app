@@ -1,10 +1,11 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
-import { isClockInCapped, isClockOutCapped, resolveInputTime, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, resolveDayMetrics, calcNightMinutes, storedBreakMinutes } from "@/lib/attendance"
+import { scheduledMinutesForRecord, isClockInCapped, isClockOutCapped, legacyOvertimeInput, resolveInputTime, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
+import { buildRestDayLabels, restDateMonthPrefixes } from "@/lib/holiday-work"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
 
@@ -40,6 +41,11 @@ function RawTime({ recorded, raw, hide }: { recorded: Date | null | undefined; r
   return <span className="block text-[10px] text-gray-400 leading-tight">実 {label}</span>
 }
 
+/** 休む日の行がラベルだけでよいか：記録が無い、または打刻の無い記録（欠勤記録だけ）。打刻があれば通常の行で出す */
+function isLabelOnlyRestDay(rec: { clockIn: Date | null; clockOut: Date | null; rawClockIn: Date | null; rawClockOut: Date | null } | undefined): boolean {
+  return !rec || !(rec.clockIn || rec.clockOut || rec.rawClockIn || rec.rawClockOut)
+}
+
 const WEEKDAY = ["日", "月", "火", "水", "木", "金", "土"]
 
 export default async function RecordsPage({ searchParams }: { searchParams: SearchParams }) {
@@ -57,7 +63,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
   const { firstDay, lastDay } = getClosingPeriod(year, month, closingDay)
 
-  const [records, user, correctionRequests, absenceRequests] = await Promise.all([
+  const [records, user, correctionRequests, absenceRequests, restDayRequests] = await Promise.all([
     prisma.attendanceRecord.findMany({
       where: { userId, date: { gte: firstDay, lte: lastDay } },
       orderBy: { date: "asc" },
@@ -80,7 +86,16 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
       select: { targetDate: true, status: true, detail: true },
       orderBy: { createdAt: "desc" },
     }),
+    // 振休・代休で休む日の行の表示用：休む日が期間内にある承認済みの休日出勤申請（休日出勤した日は期間の外のこともある）
+    prisma.request.findMany({
+      where: {
+        userId, type: "HOLIDAY_WORK", status: "APPROVED",
+        OR: restDateMonthPrefixes(firstDay, lastDay).map((p) => ({ detail: { path: ["restDate"], string_starts_with: p } })),
+      },
+      select: { targetDate: true, createdAt: true, detail: true },
+    }),
   ])
+  const restLabelMap = buildRestDayLabels(restDayRequests)
 
   // 日付文字列 → 打刻修正申請ステータス（最新のみ）
   const correctionMap = new Map<string, "PENDING" | "APPROVED" | "REJECTED">()
@@ -101,10 +116,11 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 
-  const scheduledMins = calcScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType)
-
   // 段0（休日・半休を反映した定時）の材料。保存値が無いときの遅刻・早退・残業の計算に使う
   const sched = await loadScheduleInputs([userId], firstDay, lastDay)
+  // 所定勤務時間 ＝ 拘束時間 − 所定休憩（本人の所定休憩 → 会社設定の休憩ルール）
+  // 記録の⑤スナップショットに従う（記録が無い日は現在の設定）
+  const scheduledMinsOf = (r: Parameters<typeof scheduledMinutesForRecord>[2]) => scheduledMinutesForRecord(user, sched.setting, r)
   // 段1の入力（打刻修正で直した日はその時刻）を出すための出退勤の変更履歴。④の併記判定に使う
   const changeLogs = await prisma.attendanceChangeLog.findMany({
     where: { recordId: { in: records.map((r) => r.id) }, fieldName: { in: ["clockIn", "clockOut"] } },
@@ -140,21 +156,11 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
       ? Math.round((rec.returnAt.getTime() - rec.goOutAt.getTime()) / 60000)
       : 0
 
-    // 休憩（分）
-    let breakMins: number
-    if (rec.breakStart && rec.breakEnd) {
-      // パート: 明示的な休憩
-      breakMins = Math.round((rec.breakEnd.getTime() - rec.breakStart.getTime()) / 60000)
-    } else if (rec.clockIn && rec.clockOut && rec.workingMinutes !== null) {
-      // フルタイム: 逆算（拘束時間 - 中抜け - 実労働）
-      const rawMins = Math.floor((rec.clockOut.getTime() - rec.clockIn.getTime()) / 60000)
-      breakMins = Math.max(0, rawMins - goOutMins - (rec.workingMinutes ?? 0))
-    } else {
-      breakMins = 0
-    }
+    // 休憩（分）：保存済みの値から（Excel と同じ storedBreakMinutes）。保存した実働が無い日は 0
+    const breakMins = storedBreakMinutes(rec) ?? 0
 
     // 残業・遅刻・早退: 保存値 or 記録時刻と定時の差から計算（CLOCK_PIPELINE 段4・段8。定時は段0の結果）
-    const { overtimeMinutes: overtime, lateMinutes: late, earlyLeaveMinutes: earlyLeave } = resolveDayMetrics(rec, schedule)
+    const { overtimeMinutes: overtime, lateMinutes: late, earlyLeaveMinutes: earlyLeave } = resolveDayMetrics(rec, schedule, legacyOvertimeInput(rec, sched.setting, user))
     // ④で打ち切った出勤（段2：早出申請の開始で切った）・退勤（段6）には実打刻を併記しない（一般社員の画面に④の内訳を出さない）。
     // 管理者が確定した時刻は④を通していないので対象外。退勤側は originalClockOut の有無に関係なく判定する
     const switches = resolveSwitches(rec, sched.setting)
@@ -267,11 +273,14 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
               const rec     = recordMap.get(`${dy}-${dm}-${d}`)
               const isWeekend = dow === 0 || dow === 6
               const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+              const restLabel = restLabelMap.get(dateStr) ?? null  // 振休・代休で休む日（欠勤に見せない）
               const data    = rec ? buildRowData(rec) : null
               const needsReview = data?.needsReview ?? false
               const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
               // 修正依頼リンクの表示条件: 要確認（遅刻早退申請で打ち消されていない理由が残る）かつ CORRECTION申請中でない
-              const showCorrection = needsReview && correctionStatus !== "PENDING"
+              // 休む日で打刻が無い行（欠勤記録だけある日も含む）は、ラベルだけ出す（状態バッジ・修正依頼は出さない）
+              const labelOnly = !!restLabel && isLabelOnlyRestDay(rec)
+              const showCorrection = needsReview && correctionStatus !== "PENDING" && !labelOnly
 
               return (
                 <tr
@@ -294,13 +303,16 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-700">{fmtDur(rec?.workingMinutes)}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-500">{data ? fmtDur(data.breakMins) : "--"}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-500">{data ? fmtDur(data.goOutMins) : "--"}</td>
-                  <td className="px-2 py-2 text-center font-mono text-xs text-gray-500">{rec?.clockIn ? fmtDur(scheduledMins) : "--"}</td>
+                  <td className="px-2 py-2 text-center font-mono text-xs text-gray-500">{rec?.clockIn ? fmtDur(scheduledMinsOf(rec)) : "--"}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-blue-600">{data ? fmtDur(data.overtime) : "--"}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-purple-600">{data ? fmtDur(data.night) : "--"}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-amber-600">{data ? fmtDur(data.late) : "--"}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-amber-600">{data ? fmtDur(data.earlyLeave) : "--"}</td>
                   <td className="px-3 py-2 text-center">
-                    {rec?.isAbsent ? (
+                    {restLabel && (
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700 whitespace-nowrap">{restLabel}</span>
+                    )}
+                    {labelOnly ? null : rec?.isAbsent && !restLabel ? (
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                     ) : rec ? (
                       (() => {
@@ -332,13 +344,17 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
           const dt      = new Date(Date.UTC(dy, dm - 1, d))
           const dow     = dt.getUTCDay()
           const rec     = recordMap.get(`${dy}-${dm}-${d}`)
-          if (!rec?.clockIn && !rec?.isAbsent) return null
           const dateStr = `${dy}-${String(dm).padStart(2, "0")}-${String(d).padStart(2, "0")}`
+          const restLabel = restLabelMap.get(dateStr) ?? null  // 振休・代休で休む日（PC の表と同じ。休む日は欠勤に見せない）
+          const showAbsent = !!rec?.isAbsent && !restLabel
+          // 休む日で打刻が無い日は、記録が無くても（欠勤記録だけでも）ラベルだけのカードを出す（PC の表と同じ）
+          const labelOnly = !!restLabel && isLabelOnlyRestDay(rec)
+          if (!labelOnly && (!rec || (!rec.clockIn && !showAbsent))) return null
           const data    = rec ? buildRowData(rec) : null
           const needsReview = data?.needsReview ?? false
           const correctionStatus = correctionMap.get(`${dy}-${dm}-${d}`) ?? null
           // 修正依頼ボタンの表示条件: 要確認（遅刻早退申請で打ち消されていない理由が残る）かつ CORRECTION申請中でない
-          const showCorrection = needsReview && correctionStatus !== "PENDING"
+          const showCorrection = needsReview && correctionStatus !== "PENDING" && !labelOnly
 
           return (
             <div key={dateStr} className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-3">
@@ -355,9 +371,12 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                       修正依頼
                     </Link>
                   )}
-                  {rec.isAbsent ? (
+                  {restLabel && (
+                    <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700 whitespace-nowrap">{restLabel}</span>
+                  )}
+                  {labelOnly ? null : showAbsent ? (
                     <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
-                  ) : (
+                  ) : rec && (
                     (() => {
                       const s = getDisplayStatus(rec.status, needsReview, correctionStatus, data?.reviewPending)
                       return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${s.className}`}>{s.label}</span>
@@ -365,7 +384,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   )}
                 </div>
               </div>
-              {!rec.isAbsent && (
+              {!showAbsent && !labelOnly && rec && (
                 <>
                   <div className="grid grid-cols-3 gap-2 text-center text-xs mb-1.5">
                     <div>
@@ -390,7 +409,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   <div className="grid grid-cols-4 gap-2 text-center text-xs text-gray-500">
                     <div>
                       <p className="text-gray-400">所定</p>
-                      <p className="font-mono">{fmtDur(scheduledMins)}</p>
+                      <p className="font-mono">{fmtDur(scheduledMinsOf(rec))}</p>
                     </div>
                     <div>
                       <p className="text-gray-400">残業</p>

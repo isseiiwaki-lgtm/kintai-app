@@ -5,6 +5,7 @@ import Link from "next/link"
 import { actionAdminUpdateRecord, actionBulkApprove, actionBulkLock, actionClearAdminEdit } from "../actions"
 import type { AdminTimeConstraint } from "@/lib/clock-pipeline"
 import { AdminTimeSelect } from "./AdminTimeSelect"
+import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES } from "@/config/attendance.config"
 
 type Rec = {
   id: string
@@ -17,6 +18,10 @@ type Rec = {
   hasAdminEdit: boolean        // 管理者の確定修正（段6.5）に取り消し先がある日。「管理者の修正を取り消す」を出す
   requestEndTime: string | null   // ④: 承認済み残業申請（最後に出した申請）の終了時刻。④OFF・申請なしは null
   noOvertimeRequest: boolean      // ④ON で残業申請が無いのに実打刻が定時を15分以上過ぎた日の目印
+  breakMinutes: number | null        // その日の休憩の合計（休憩ボタン・承認済みの休憩申請）
+  pendingBreakRequest: boolean       // 承認待ちの休憩申請がある日（まだ差し引いていない）
+  noBreakRecord: boolean             // パートの休憩申請漏れ（所定休憩が設定されているのに記録が無い／実働6時間超で記録が無い）の目印
+  noHolidayWorkRequest: boolean      // 休日に休日出勤申請が無いまま打刻があった日の目印
   breakStart: string | null
   breakEnd:   string | null
   goOutAt:    string | null
@@ -31,10 +36,20 @@ type Rec = {
   status:        string
   displayStatus: { label: string; className: string }
   isAbsent:      boolean
+  holidayWorkByProxy: boolean  // 代理打刻・管理者の編集で付けた休日出勤の印（休日出勤申請とは別）
   requestId:  string | null
   scheduledMinutes: number  // 所定勤務時間（分）
   timeConstraint: AdminTimeConstraint  // 管理者の入力画面の選択肢を決める、その日のスイッチ・定時・申請の条件（段6.5）
   isWeekend:  boolean
+  restLabel:  string | null   // 振休・代休で休む日の表示（「振休（10/12 出勤分）」）。休む日でなければ null
+}
+
+/** 休む日なのに勤怠記録が無い日のラベルだけの行 */
+type RestOnlyRow = { dateISO: string; dateLabel: string; restLabel: string; isWeekend: boolean }
+
+/** 打刻（出勤・退勤）が1つでもあるか。休む日の行で、欠勤記録だけの日（ラベルだけ出す日）と区別する */
+function hasPunch(rec: Pick<Rec, "clockIn" | "clockOut" | "rawClockIn" | "rawClockOut">): boolean {
+  return !!(rec.clockIn || rec.clockOut || rec.rawClockIn || rec.rawClockOut)
 }
 
 
@@ -42,6 +57,7 @@ const selectClass = "border border-gray-200 rounded px-2 py-1 text-xs font-mono 
 
 type Props = {
   records:     Rec[]
+  restOnlyRows?: RestOnlyRow[]
   firstDayISO: string
   lastDayISO:  string
   userId:      string
@@ -50,7 +66,7 @@ type Props = {
   approvedCount: number
 }
 
-export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAdmin, openCount, approvedCount }: Props) {
+export function UserDetailTable({ records, restOnlyRows = [], firstDayISO, lastDayISO, userId, isAdmin, openCount, approvedCount }: Props) {
   const [editRec, setEditRec]   = useState<Rec | null>(null)
   const [unrestricted, setUnrestricted] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -147,7 +163,24 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
             </tr>
           </thead>
           <tbody>
-            {records.map((rec) => {
+            {[
+              ...records.map((rec) => ({ dateISO: rec.dateISO, rec, rest: null as RestOnlyRow | null })),
+              ...restOnlyRows.map((rest) => ({ dateISO: rest.dateISO, rec: null as Rec | null, rest })),
+            ].sort((a, b) => a.dateISO.localeCompare(b.dateISO)).map(({ rec, rest }) => {
+              if (!rec && rest) {
+                // 記録の無い休む日：ラベルだけ（欠勤には見せない。編集・承認の対象にもしない）
+                return (
+                  <tr key={`rest-${rest.dateISO}`} className={`border-b border-gray-50 last:border-0 ${rest.isWeekend ? "bg-gray-50/60" : ""}`}>
+                    <td className="px-4 py-2.5 text-gray-700">{rest.dateLabel}</td>
+                    <td colSpan={10} className="px-3 py-2.5 text-center text-gray-300">—</td>
+                    <td className="px-3 py-2.5 text-center">
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700 whitespace-nowrap">{rest.restLabel}</span>
+                    </td>
+                    <td className="px-3 py-2.5"></td>
+                  </tr>
+                )
+              }
+              if (!rec) return null
               // 残業 ＝ 早出 ＋ 終業後（保存値、無ければ記録時刻と定時の差。サーバー側で計算済み。CLOCK_PIPELINE 段8）
               const overtimeMin = rec.overtimeMinutes
               return (
@@ -186,7 +219,21 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                   <td className="px-3 py-2.5 text-center font-mono text-gray-500 text-xs">
                     {rec.goOutMins === null ? "外出中" : rec.goOutMins > 0 ? fmtMin(rec.goOutMins) : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{fmtMin(rec.workingMinutes)}</td>
+                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">
+                    {fmtMin(rec.workingMinutes)}
+                    {rec.breakMinutes != null && (
+                      <span className="block text-[10px] text-gray-400 leading-tight">休憩 {rec.breakMinutes}分</span>
+                    )}
+                    {rec.pendingBreakRequest && (
+                      <span className="block text-[10px] text-amber-600 leading-tight" title="休憩申請は承認されるまで勤務時間から差し引きません">承認待ちの休憩申請あり</span>
+                    )}
+                    {rec.noBreakRecord && (
+                      <span className="block text-[10px] text-amber-600 leading-tight" title="パートで、所定休憩が設定されているか実働が6時間を超えているのに、休憩の記録がありません">休憩の記録なし</span>
+                    )}
+                    {rec.noHolidayWorkRequest && (
+                      <span className="block text-[10px] text-amber-600 leading-tight" title="休日に打刻がありますが、休日出勤申請がありません（定時なしのため遅刻・早退・残業は付きません）">休日出勤申請なし</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 text-center font-mono text-gray-400">
                     {rec.scheduledMinutes > 0 ? fmtMin(rec.scheduledMinutes) : "—"}
                   </td>
@@ -208,7 +255,10 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                       : <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-3 py-2.5 text-center">
-                    {rec.isAbsent ? (
+                    {rec.restLabel && (
+                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-700 whitespace-nowrap">{rec.restLabel}</span>
+                    )}
+                    {rec.restLabel && rec.isAbsent && !hasPunch(rec) ? null : rec.isAbsent && !rec.restLabel ? (
                       <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">欠勤</span>
                     ) : (
                       <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${rec.displayStatus.className}`}>
@@ -247,8 +297,6 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                 { name: "clockOut",   label: "退勤" },
                 { name: "goOutAt",    label: "外出" },
                 { name: "returnAt",   label: "戻り" },
-                { name: "breakStart", label: "休憩開始" },
-                { name: "breakEnd",   label: "休憩終了" },
               ].map(({ name, label }) => {
                 const current = editRec[name as keyof Rec] as string | null
                 return (
@@ -265,6 +313,21 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                   </div>
                 )
               })}
+              <div key={`break-${editRec.id}`} className="flex items-center justify-between">
+                <label className="text-xs text-gray-600 w-20">休憩（分）</label>
+                <select name="breakMinutes" defaultValue={editRec.breakMinutes != null ? String(editRec.breakMinutes) : ""} className={selectClass}>
+                  <option value="">変更なし</option>
+                  {editRec.breakMinutes != null && <option value="unset">未設定に戻す（規定値）</option>}
+                  {Array.from({ length: BREAK_REQUEST_MAX_MINUTES / BREAK_REQUEST_STEP_MINUTES + 1 }, (_, i) => i * BREAK_REQUEST_STEP_MINUTES).map((m) => (
+                    <option key={m} value={m}>{m}分</option>
+                  ))}
+                </select>
+              </div>
+              <label key={`proxy-${editRec.id}`} className="flex items-center gap-1.5 text-xs text-gray-600">
+                <input type="hidden" name="holidayWorkProxyField" value="1" />
+                <input type="checkbox" name="isHolidayWorkProxy" defaultChecked={editRec.holidayWorkByProxy} className="accent-blue-600" />
+                休日出勤（代理）
+              </label>
               <label className="flex items-center gap-1.5 text-xs text-gray-600">
                 <input type="checkbox" checked={unrestricted} onChange={(e) => setUnrestricted(e.target.checked)} className="accent-blue-600" />
                 制限なしで入力する（1分単位・全時間帯）

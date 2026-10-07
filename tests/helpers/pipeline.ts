@@ -23,7 +23,7 @@ export const SCHEDULE = { start: "09:00", end: "17:30" }
 
 /** スイッチの組み合わせ（①②③④） */
 export function sw(on: Partial<Record<keyof PipelineSwitches, boolean>> = {}): PipelineSwitches {
-  return { roundEarly: false, roundNear: false, roundQuarter: false, capOvertime: false, ...on }
+  return { roundEarly: false, roundNear: false, roundQuarter: false, capOvertime: false, newCalc: true, ...on }
 }
 
 /** 全スイッチ OFF */

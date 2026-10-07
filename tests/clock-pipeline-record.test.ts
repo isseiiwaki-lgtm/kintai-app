@@ -52,7 +52,7 @@ function rec(over: Record<string, unknown> = {}): RecordRow {
     clockIn: jst(9, 0), clockOut: jst(17, 30), rawClockIn: jst(9, 0), rawClockOut: jst(19, 51),
     goOutAt: null, returnAt: null, breakStart: null, breakEnd: null,
     lateMinutes: null, earlyLeaveMinutes: null, overtimeMinutes: null, workingMinutes: null,
-    switchRoundEarly: false, switchRoundNear: false, switchRoundQuarter: true, switchCapOvertime: true,
+    switchRoundEarly: false, switchRoundNear: false, switchRoundQuarter: true, switchCapOvertime: true, switchNewCalc: true,
     ...over,
   } as unknown as RecordRow
 }

@@ -4,8 +4,15 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
+import { parseBreakRequestMinutes } from "@/lib/attendance"
+import { holidayWorkDateError } from "@/lib/clock-pipeline-db"
+import { resolveRestKind, validateHolidayWorkTimes, validateRestDate } from "@/lib/holiday-work"
+import { restDateTakenError } from "@/lib/holiday-work-db"
 
-export async function actionCreateRequest(formData: FormData) {
+/** 申請の入力エラー（フォームに出す）。それ以外の失敗は例外 */
+export type CreateRequestResult = { ok: false; error: string } | void
+
+export async function actionCreateRequest(formData: FormData): Promise<CreateRequestResult> {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
   const userId = session.user.id
@@ -36,13 +43,60 @@ export async function actionCreateRequest(formData: FormData) {
       }
       break
     }
-    case "ABSENCE":
+    case "BREAK": {
+      // 休憩申請（60分超・押し忘れ用）。15分刻みの分数。承認されたらその日の休憩の合計（上書き）になる
+      const minutes = parseBreakRequestMinutes(formData.get("minutes"))
+      if (minutes === null) throw new Error("休憩の分数が正しくありません")
+      detail = { minutes: String(minutes) }
+      break
+    }
+    case "HOLIDAY_WORK": {
+      // 休日出勤申請：予定の開始〜終了・代わりに休む日（任意）。休む日を一緒に決めた＝振休、空欄＝後から決める代休
+      const startTime = formData.get("startTime") as string
+      const endTime = formData.get("endTime") as string
+      const restDate = ((formData.get("restDate") as string) ?? "").trim()
+      const timeErr = validateHolidayWorkTimes(startTime, endTime)
+      if (timeErr) throw new Error(timeErr)
+      // 休憩（分）は必須（0〜240・15分刻み。取らない場合は0）。承認されたときに初めてその日の休憩になる
+      const breakRaw = formData.get("breakMinutes")
+      const breakMinutes = breakRaw === null || breakRaw === "" ? null : parseBreakRequestMinutes(breakRaw)
+      if (breakMinutes === null) return { ok: false, error: "休憩（分）を15分刻みで選んでください（取らない場合は0分）" }
+      const restErr = validateRestDate(restDate, targetDate)
+      if (restErr) throw new Error(restErr)
+      // 休む日は1つの休日出勤申請にしかひも付けられない（審査中・承認済みの別の申請が持つ日は選べない）
+      const takenErr = await restDateTakenError(userId, restDate || undefined)
+      if (takenErr) return { ok: false, error: takenErr }
+      // 対象日が休日か（休日カレンダー・本人の休みの曜日）はサーバーでも確かめる。画面に出して申請させない
+      const dateErr = await holidayWorkDateError(userId, new Date(targetDate))
+      if (dateErr) return { ok: false, error: dateErr }
+      detail = { startTime, endTime, breakMinutes: String(breakMinutes) }
+      if (restDate) {
+        detail.restDate = restDate
+        detail.restKind = resolveRestKind({ nextRestDate: restDate, decidedWithRequest: true }) as string
+      }
+      break
+    }
+    case "ABSENCE": {
       detail = {
         absenceType: formData.get("absenceType") as string,
         time:        formData.get("time")         as string,
       }
+      // 正社員の早退申請は「休憩を取りましたか」が必須（0＝取らなかった／15分刻みの分数）。パート・遅刻・欠勤は聞かない
+      if (detail.absenceType === "early") {
+        const me = await prisma.user.findUnique({ where: { id: userId }, select: { employmentType: true } })
+        if (me?.employmentType !== "part") {
+          const minutes = parseBreakRequestMinutes(formData.get("breakMinutes"))
+          if (minutes === null) return { ok: false, error: "休憩を取ったかどうか（取った場合は15分刻みの分数）を選んでください" }
+          detail.breakMinutes = String(minutes)
+        }
+      }
       break
+    }
     case "LEAVE":
+      // 旧「振休申請」（LEAVE の substitute）は新規に受け付けない。休日出勤申請で振休・代休を決める（過去の申請の表示・管理者の修正は残す）
+      if (formData.get("leaveType") === "substitute") {
+        return { ok: false, error: "振休申請は廃止しました。休日出勤した日の「休日出勤申請」で、代わりに休む日を決めてください" }
+      }
       detail = {
         leaveType: formData.get("leaveType") as string,
         halfDay:   (formData.get("halfDay") as string) || "full",
@@ -77,7 +131,7 @@ export async function actionCreateRequest(formData: FormData) {
   await prisma.request.create({
     data: {
       userId,
-      type:       dbType as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER",
+      type:       dbType as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER" | "BREAK" | "HOLIDAY_WORK",
       targetDate: new Date(targetDate),
       reason,
       detail,

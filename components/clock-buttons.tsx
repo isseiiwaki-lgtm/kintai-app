@@ -7,18 +7,18 @@ import {
   actionClockOut,
   actionGoOut,
   actionReturn,
-  actionBreakStart,
-  actionBreakEnd,
+  actionSetBreak,
   actionSaveNote,
 } from "@/app/(app)/clock/actions"
+import { BREAK_BUTTON_MINUTES } from "@/config/attendance.config"
 
 type ClockRecord = {
   clockIn:    Date | null
   clockOut:   Date | null
   goOutAt:    Date | null
   returnAt:   Date | null
-  breakStart: Date | null
-  breakEnd:   Date | null
+  /** その日の休憩の合計（分）。パートの休憩ボタンで入る。null ＝ まだ押していない */
+  breakMinutes: number | null
   note?:      string | null
 }
 
@@ -33,13 +33,12 @@ function formatTime(dt: Date | null | undefined): string {
   return `${String(jst.getUTCHours()).padStart(2, "0")}:${String(jst.getUTCMinutes()).padStart(2, "0")}`
 }
 
-type WorkState = "initial" | "working" | "out" | "on_break" | "done"
+type WorkState = "initial" | "working" | "out" | "done"
 
 function getWorkState(r: ClockRecord | null): WorkState {
   if (!r?.clockIn)                       return "initial"
   if (r.clockOut)                        return "done"
   if (r.goOutAt && !r.returnAt)          return "out"
-  if (r.breakStart && !r.breakEnd)       return "on_break"
   return "working"
 }
 
@@ -122,10 +121,20 @@ export function ClockButtons({ record, employmentType }: Props) {
     { label: "外出",     value: formatTime(record?.goOutAt)    },
     { label: "戻り",     value: formatTime(record?.returnAt)   },
     ...(isPart ? [
-      { label: "休憩開始", value: formatTime(record?.breakStart) },
-      { label: "休憩終了", value: formatTime(record?.breakEnd)   },
+      { label: "休憩", value: record?.breakMinutes != null ? `${record.breakMinutes}分` : "--" },
     ] : []),
   ]
+  // 休憩ボタンは出勤後から押せる（退勤後も、押し忘れの訂正ができるよう押せる）
+  const canSetBreak = isPart && state !== "initial"
+  const [breakError, setBreakError] = useState<string | null>(null)
+  const setBreak = (m: number) => {
+    setBreakError(null)
+    startTransition(async () => {
+      const res = await actionSetBreak(m)
+      if (!res.ok) setBreakError(res.error)
+      router.refresh()
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -169,27 +178,52 @@ export function ClockButtons({ record, employmentType }: Props) {
                 onClick={() => run(actionClockOut)}
               />
             </div>
-            {/* 行2: 外出/戻り / 休憩 */}
-            <div className="grid grid-cols-2 gap-3">
-              <ClockBtn
-                label={state === "out" ? "戻り" : "外出"}
-                scheme="sub"
-                disabled={isPending || (state === "out" ? false : state !== "working")}
-                onClick={() => run(state === "out" ? actionReturn : actionGoOut)}
-              />
-              <ClockBtn
-                label={state === "on_break" ? "休憩終了" : "休憩開始"}
-                scheme="sub"
-                disabled={isPending || !isPart || (state === "on_break" ? false : state !== "working")}
-                onClick={() => run(state === "on_break" ? actionBreakEnd : actionBreakStart)}
-              />
-            </div>
+            {/* 行2: 外出 → 戻り */}
+            <ClockBtn
+              label={state === "out" ? "戻り" : "外出"}
+              scheme="sub"
+              disabled={isPending || (state === "out" ? false : state !== "working")}
+              onClick={() => run(state === "out" ? actionReturn : actionGoOut)}
+            />
           </div>
         )}
         {isPending && (
           <p className="text-center text-xs text-gray-400 mt-2">処理中...</p>
         )}
       </div>
+
+      {/* 休憩（パートのみ）：押した値がその日の休憩の合計（上書き）。承認は不要 */}
+      {isPart && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+          <h2 className="text-sm font-semibold text-gray-700 mb-1">休憩時間</h2>
+          <p className="text-xs text-gray-400 mb-3">その日の休憩がすべて終わってから押してください。押した値がその日の休憩の合計になります。</p>
+          <div className="grid grid-cols-5 gap-2">
+            {BREAK_BUTTON_MINUTES.map((m) => {
+              const selected = record?.breakMinutes === m
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  disabled={isPending || !canSetBreak}
+                  onClick={() => setBreak(m)}
+                  aria-pressed={selected}
+                  className={`py-3 rounded-lg text-sm font-semibold transition-colors ${
+                    !canSetBreak
+                      ? "bg-[#FCFCFC] text-gray-300 border border-gray-100 cursor-not-allowed"
+                      : selected
+                        ? "bg-[#6C757D] text-white shadow-[0_2px_8px_rgba(108,117,125,0.35)]"
+                        : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                  }`}
+                >
+                  {m}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-xs text-gray-400 mt-2">単位：分。60分を超える休憩・押し忘れは「申請」の休憩申請から出してください。</p>
+          {breakError && <p role="alert" className="text-xs text-red-600 mt-1">{breakError}</p>}
+        </div>
+      )}
 
       {/* 当日コメント（申請にならない当日事情の連絡用。管理者が承認画面で確認する） */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">

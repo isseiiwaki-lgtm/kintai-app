@@ -4,7 +4,8 @@
  *
  * 検知項目:
  *   1. missing_clock_out    — 出勤打刻あり・退勤打刻なし
- *   2. missing_break        — パートで6時間超勤務なのに休憩打刻なし（workingMinutes 過大計上の恐れ）
+ *   2. missing_break        — パートの休憩申請漏れ（所定休憩が設定されているのに休憩の記録が無い／実働6時間超で記録が無い。
+ *                             画面の知らせと同じ条件 needsBreakRecordNotice。審査中の休憩申請がある日は除く）
  *   3. null_working_minutes — 退勤済みなのに workingMinutes 未計算
  *   4. missing_return       — 外出打刻あり・戻り打刻なし
  *
@@ -17,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
+import { needsBreakRecordNotice } from "@/lib/attendance"
 
 // 一覧・承認・Excel と同じ除外基準（経営者レベル=管理系部署）
 const EXCLUDED_DEPARTMENTS = ["管理者", "管理職"]
@@ -77,12 +79,19 @@ export async function GET(req: NextRequest) {
       returnAt: true,
       breakStart: true,
       breakEnd: true,
+      breakMinutes: true,
       workingMinutes: true,
       user: {
-        select: { name: true, employeeCode: true, department: true, employmentType: true },
+        select: { name: true, employeeCode: true, department: true, employmentType: true, breakMinutes: true },
       },
     },
   })
+  // 審査中の休憩申請がある人（申請済みなので休憩の記録なしの知らせから外す）
+  const pendingBreak = await prisma.request.findMany({
+    where: { type: "BREAK", status: "PENDING", targetDate: target },
+    select: { userId: true },
+  })
+  const pendingBreakUsers = new Set(pendingBreak.map((q) => q.userId))
 
   const anomalies: Anomaly[] = []
   for (const r of records) {
@@ -113,18 +122,21 @@ export async function GET(req: NextRequest) {
     }
 
     if (r.clockIn && r.clockOut) {
-      // パートの休憩打刻漏れ（6時間超勤務で法定休憩が必要なのに手動打刻なし）
-      if (r.user.employmentType === "part" && (!r.breakStart || !r.breakEnd)) {
+      // パートの休憩申請漏れ（所定休憩が設定されているのに記録が無い／実働6時間超で記録が無い）。休憩の記録は休憩ボタン・承認済みの休憩申請
+      if (needsBreakRecordNotice({
+        employmentType: r.user.employmentType, userBreakMinutes: r.user.breakMinutes,
+        breakMinutes: r.breakMinutes, breakStart: r.breakStart, breakEnd: r.breakEnd,
+        clockIn: r.clockIn, clockOut: r.clockOut, goOutAt: r.goOutAt, returnAt: r.returnAt,
+        hasPendingBreakRequest: pendingBreakUsers.has(r.userId),
+      })) {
         const goOutMs = r.goOutAt && r.returnAt ? r.returnAt.getTime() - r.goOutAt.getTime() : 0
         const rawMinutes = Math.floor((r.clockOut.getTime() - r.clockIn.getTime() - goOutMs) / 60000)
-        if (rawMinutes > 360) {
-          anomalies.push({
-            ...who,
-            type: "missing_break",
-            label: "休憩打刻なし（パート・6時間超）",
-            detail: `在席${rawMinutes}分。パートは手動休憩打刻のみ控除のため workingMinutes 過大計上の恐れ`,
-          })
-        }
+        anomalies.push({
+          ...who,
+          type: "missing_break",
+          label: "休憩の記録なし（パート）",
+          detail: `在席${rawMinutes}分${(r.user.breakMinutes ?? 0) > 0 ? `・所定休憩${r.user.breakMinutes}分` : ""}。休憩の記録（休憩ボタン・休憩申請）が無く、休憩を差し引いていない`,
+        })
       }
 
       if (r.workingMinutes === null) {

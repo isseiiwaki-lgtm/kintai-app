@@ -6,8 +6,8 @@ import { calcReviewReasons, resolveEmployeeReview, buildLateEarlyStatusMap } fro
 import { resolveScheduleForDate } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
-import { OvertimeNotice } from "@/components/overtime-notice"
-import { shouldShowOvertimeNotice } from "@/lib/clock-out-cap"
+import { DayNoticeList } from "@/components/day-notices"
+import { loadDayNotices } from "@/lib/clock-out-cap"
 
 /** UTC の Date を JST の同じ日付の 00:00:00 UTC に変換 */
 function todayJST(): Date {
@@ -88,7 +88,8 @@ export default async function DashboardPage() {
   ])
 
   // 当日だけの注意表示（残業申請が無いのに定時を15分以上過ぎて退勤した日）。要確認の件数には入れない
-  const showOvertimeNotice = await shouldShowOvertimeNotice(userId, today)
+  // 残業申請なし・パートの休憩申請漏れ・休日出勤申請なし。どれも当日だけ
+  const dayNotices = await loadDayNotices(userId, today)
 
   const workDays     = monthRecords.length
   const totalMinutes = monthRecords.reduce((s: number, r: { workingMinutes: number | null }) => s + (r.workingMinutes ?? 0), 0)
@@ -157,7 +158,7 @@ export default async function DashboardPage() {
         </div>
       )}
 
-      {showOvertimeNotice && <OvertimeNotice />}
+      <DayNoticeList notices={dayNotices} />
 
       {/* 今日の打刻カード */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">

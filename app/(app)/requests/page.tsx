@@ -2,12 +2,15 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { actionCancelRequest } from "./actions"
+import { holidayWorkSummary, type HolidayWorkDetail } from "@/lib/holiday-work"
 
 const TYPE_LABEL: Record<string, string> = {
   OVERTIME:   "残業申請",
   ABSENCE:    "遅刻・早退",
   LEAVE:      "休暇申請",
   CORRECTION: "打刻修正",
+  BREAK:      "休憩申請",
+  HOLIDAY_WORK: "休日出勤申請",
   COMMENT:    "修正依頼",
   OTHER:      "その他",
 }
@@ -37,7 +40,9 @@ function detailSummary(type: string, detail: unknown): string {
       const scheduled = d.scheduledEndTime ? `（定時 ${d.scheduledEndTime}）` : ""
       return d.endTime ? `残業終了 ${d.endTime}${scheduled}` : ""
     }
-    case "ABSENCE":  return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
+    case "HOLIDAY_WORK": return holidayWorkSummary(d as HolidayWorkDetail)
+    case "BREAK":    return d.minutes != null ? `休憩 ${d.minutes}分` : ""
+    case "ABSENCE":  return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}${d.absenceType === "early" && d.breakMinutes != null ? `（休憩 ${d.breakMinutes}分）` : ""}`
     case "LEAVE": {
       const lt = d.leaveType === "substitute" ? "振休" : "有給"
       const hd = d.halfDay === "am" ? "（午前）" : d.halfDay === "pm" ? "（午後）" : ""

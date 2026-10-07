@@ -30,3 +30,10 @@ export function calcLegalBreak(rawMinutes: number): number {
   }
   return 0
 }
+
+/** パートの休憩ボタンで選べる分数（その日の休憩の合計。押した値で上書き） */
+export const BREAK_BUTTON_MINUTES = [0, 15, 30, 45, 60] as const
+
+/** 休憩申請（BREAK）で入力できる分数の刻みと上限（分）。0 は「休憩なし」の申請 */
+export const BREAK_REQUEST_STEP_MINUTES = 15
+export const BREAK_REQUEST_MAX_MINUTES = 240

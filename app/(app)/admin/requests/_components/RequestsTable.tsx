@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
+import { initialLeaveType, leaveTypeOptions } from "@/lib/leave-type"
+import { holidayWorkSummary, type HolidayWorkDetail } from "@/lib/holiday-work"
+import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 import {
   actionApproveRequest,
   actionForceApproveRequest,
@@ -15,6 +17,8 @@ const TYPE_LABEL: Record<string, string> = {
   ABSENCE:    "遅刻・早退",
   LEAVE:      "休暇申請",
   CORRECTION: "打刻修正",
+  BREAK:      "休憩申請",
+  HOLIDAY_WORK: "休日出勤申請",
   COMMENT:    "修正依頼",
   OTHER:      "その他",
 }
@@ -38,6 +42,12 @@ const TIME_OPTIONS = Array.from({ length: Math.floor((24 * 60) / REQUEST_TIME_ST
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 })
 
+// 休憩申請の分数（申請フォームと同じ刻み・上限）
+const BREAK_MINUTE_OPTIONS = Array.from(
+  { length: Math.floor(BREAK_REQUEST_MAX_MINUTES / BREAK_REQUEST_STEP_MINUTES) + 1 },
+  (_, i) => i * BREAK_REQUEST_STEP_MINUTES,
+)
+
 function detailSummary(type: string, detail: Record<string, string> | null): string {
   const d = detail
   if (!d) return ""
@@ -50,9 +60,13 @@ function detailSummary(type: string, detail: Record<string, string> | null): str
       const scheduled = d.scheduledEndTime ? `（定時 ${d.scheduledEndTime}）` : ""
       return d.endTime ? `残業終了 ${d.endTime}${scheduled}` : ""
     }
+    case "HOLIDAY_WORK":
+      return holidayWorkSummary(d as HolidayWorkDetail)
+    case "BREAK":
+      return d.minutes != null ? `休憩 ${d.minutes}分` : ""
     case "ABSENCE":
       if (d.absenceType === "absent") return "欠勤（全日）"
-      return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
+      return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}${d.absenceType === "early" && d.breakMinutes != null ? `（休憩 ${d.breakMinutes}分）` : ""}`
     case "LEAVE": {
       const lt = d.leaveType === "substitute" ? "振休" : "有給"
       const hd = d.halfDay === "am" ? "（午前）" : d.halfDay === "pm" ? "（午後）" : ""
@@ -93,7 +107,7 @@ export type ReqRow = {
   createdAt: string
   reason: string | null
   detail: Record<string, string> | null
-  user: { name: string | null; email: string }
+  user: { name: string | null; email: string; employmentType?: string | null }
   // 多段階承認（申請者の部署に承認経路がある場合のみ設定される）
   approvalDone?:  number | null // 消化済みステップ数
   approvalTotal?: number | null // 総ステップ数
@@ -107,6 +121,7 @@ type EditState = {
   targetDate: string
   reason: string
   detail: Record<string, string>
+  employmentType?: string | null // 申請者の雇用形態（パートには早退の休憩の申告を出さない）
 }
 
 type DeleteState = {
@@ -117,7 +132,7 @@ type DeleteState = {
 const inputClass = "w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:border-blue-400"
 const labelClass = "block text-xs text-gray-500 mb-1"
 
-function DetailFields({ type, detail }: { type: string; detail: Record<string, string> }) {
+function DetailFields({ type, detail, isPartTimer = false }: { type: string; detail: Record<string, string>; isPartTimer?: boolean }) {
   if (type === "OVERTIME" && detail.overtimeType === "earlyStart") {
     // 早出申請は開始時刻を直す（overtimeType はサーバー側で保持される）
     return (
@@ -141,6 +156,56 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
       </div>
     )
   }
+  if (type === "HOLIDAY_WORK") {
+    // 休日出勤申請：予定の開始〜終了と、代わりに休む日。休む日を後から入れると代休、申請と一緒に入っていたものは振休のまま（区別はサーバー側で決める）
+    const hadRestDate = !!detail.restDate
+    return (
+      <>
+        <div>
+          <label className={labelClass}>予定の開始時刻</label>
+          <select name="startTime" defaultValue={detail.startTime ?? ""} className={inputClass}>
+            <option value="">未設定</option>
+            {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>予定の終了時刻</label>
+          <select name="endTime" defaultValue={detail.endTime ?? ""} className={inputClass}>
+            <option value="">未設定</option>
+            {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>休憩（分）</label>
+          <select name="breakMinutes" defaultValue={detail.breakMinutes ?? ""} className={inputClass}>
+            {detail.breakMinutes === undefined && <option value="">申告なし（旧い申請）</option>}
+            {BREAK_MINUTE_OPTIONS.map(m => <option key={m} value={m}>{m === 0 ? "取らない（0分）" : `${m}分`}</option>)}
+          </select>
+          <p className="mt-1 text-[11px] text-gray-400">承認済みの申請を直すと、その日の休憩の合計も休憩申請と同じ順で入れ直します。</p>
+        </div>
+        <div>
+          <label className={labelClass}>休む日（{detail.restKind === "furikyu" ? "振休" : detail.restKind === "daikyu" ? "代休" : "未定"}）</label>
+          <input type="date" name="restDate" defaultValue={detail.restDate ?? ""} className={inputClass} />
+          <p className="mt-1 text-[11px] text-gray-400">
+            {hadRestDate
+              ? "日付を直しても、振休・代休の区別は変わりません。"
+              : "ここで休む日を入れると「代休」になります（申請と一緒に決めた休む日は「振休」）。"}
+          </p>
+        </div>
+      </>
+    )
+  }
+  if (type === "BREAK") {
+    // 休憩申請：その日の休憩の合計（分）。15分刻み・0〜上限
+    return (
+      <div>
+        <label className={labelClass}>休憩（分）</label>
+        <select name="minutes" defaultValue={detail.minutes ?? "0"} className={inputClass}>
+          {BREAK_MINUTE_OPTIONS.map(m => <option key={m} value={m}>{m}分</option>)}
+        </select>
+      </div>
+    )
+  }
   if (type === "ABSENCE") {
     return (
       <>
@@ -158,6 +223,16 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
             {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
+        {!isPartTimer && (
+        <div>
+          <label className={labelClass}>休憩の申告（早退のとき）</label>
+          <select name="breakMinutes" defaultValue={detail.breakMinutes ?? ""} className={inputClass}>
+            <option value="">申告なし</option>
+            {BREAK_MINUTE_OPTIONS.map(m => <option key={m} value={m}>{m === 0 ? "取らなかった（0分）" : `${m}分`}</option>)}
+          </select>
+          <p className="mt-1 text-[11px] text-gray-400">承認済みの申請を直すと、その日の休憩の合計も休憩申請と同じ順で入れ直します。</p>
+        </div>
+        )}
       </>
     )
   }
@@ -166,9 +241,10 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
       <>
         <div>
           <label className={labelClass}>休暇種別</label>
-          <select name="leaveType" defaultValue={detail.leaveType ?? "annual"} className={inputClass}>
-            <option value="annual">有給</option>
-            <option value="substitute">振休</option>
+          <select name="leaveType" defaultValue={initialLeaveType(detail.leaveType)} className={inputClass}>
+            {leaveTypeOptions(detail.leaveType).map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
           </select>
         </div>
         <div>
@@ -231,6 +307,7 @@ export function RequestsTable({
   const [actionError, setActionError]   = useState<string | null>(null)
 
   function openEdit(r: ReqRow) {
+    setActionError(null)
     setEditType(r.type)
     setEditTarget({
       id:         r.id,
@@ -238,6 +315,7 @@ export function RequestsTable({
       targetDate: toInputDate(r.targetDate),
       reason:     r.reason ?? "",
       detail:     r.detail ?? {},
+      employmentType: r.user.employmentType,
     })
   }
 
@@ -249,8 +327,10 @@ export function RequestsTable({
 
   function handleUpdate(formData: FormData) {
     if (!editTarget) return
+    setActionError(null)
     startTransition(async () => {
-      await actionUpdateRequest(editTarget.id, formData)
+      const res = await actionUpdateRequest(editTarget.id, formData)
+      if (!res.ok) { setActionError(res.error); return }
       setEditTarget(null)
     })
   }
@@ -473,12 +553,14 @@ export function RequestsTable({
                 <DetailFields
                   type={editType}
                   detail={editType === editTarget.type ? editTarget.detail : {}}
+                  isPartTimer={editTarget.employmentType === "part"}
                 />
               </div>
               <div>
                 <label className={labelClass}>理由</label>
                 <textarea name="reason" defaultValue={editTarget.reason} rows={3} className={inputClass} />
               </div>
+              {actionError && <p role="alert" className="text-xs text-red-600">{actionError}</p>}
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"

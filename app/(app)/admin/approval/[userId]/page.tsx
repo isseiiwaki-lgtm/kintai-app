@@ -4,9 +4,10 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { ProxyPunchForm } from "./_components/ProxyPunchForm"
-import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
-import { correctionLogIdSet, pickEarlyStartTime, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
+import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
+import { scheduledMinutesForRecord, correctionLogIdSet, legacyOvertimeInput, pickEarlyStartTime, isRestDay, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
 import { correctionKey, loadApprovedCorrections, loadScheduleInputs } from "@/lib/clock-pipeline-db"
+import { buildRestDayLabels, labelOnlyRestDates, restDateMonthPrefixes } from "@/lib/holiday-work"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
 type Params      = Promise<{ userId: string }>
@@ -54,7 +55,7 @@ export default async function UserApprovalPage({
   const prevLink  = `/admin/approval/${userId}?year=${prevYear}&month=${prevMonth}`
   const nextLink  = `/admin/approval/${userId}?year=${nextYear}&month=${nextMonth}`
 
-  const [user, records, requests, overtimeRequests] = await Promise.all([
+  const [user, records, requests, overtimeRequests, breakHolidayRequests, restDayRequests] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -79,7 +80,24 @@ export default async function UserApprovalPage({
       },
       select: { targetDate: true, type: true, status: true, createdAt: true, detail: true },
     }),
+    // 承認待ちの休憩申請・審査中か承認済みの休日出勤申請（「承認待ちの休憩申請あり」の表示と、休憩・休日出勤の知らせの判定に使う）
+    prisma.request.findMany({
+      where: {
+        userId, targetDate: { gte: firstDay, lte: lastDay },
+        OR: [{ type: "BREAK", status: "PENDING" }, { type: "HOLIDAY_WORK", status: { in: ["PENDING", "APPROVED"] } }],
+      },
+      select: { targetDate: true, type: true },
+    }),
+    // 振休・代休で休む日の行の表示用：休む日が期間内にある承認済みの休日出勤申請（/records・Excel と同じ buildRestDayLabels で作る）
+    prisma.request.findMany({
+      where: {
+        userId, type: "HOLIDAY_WORK", status: "APPROVED",
+        OR: restDateMonthPrefixes(firstDay, lastDay).map((p) => ({ detail: { path: ["restDate"], string_starts_with: p } })),
+      },
+      select: { targetDate: true, createdAt: true, detail: true },
+    }),
   ])
+  const restLabelMap = buildRestDayLabels(restDayRequests)
   const overtimeReqByDate = new Map<string, typeof overtimeRequests>()
   for (const q of overtimeRequests) {
     const k = q.targetDate.toISOString()
@@ -131,7 +149,7 @@ export default async function UserApprovalPage({
   )
 
   // 所定勤務時間（分）: workStartTime/workEndTime から算出。未設定時は employmentType で fallback
-  const scheduledMinutes = calcScheduledMinutes(user.workStartTime, user.workEndTime, user.employmentType)
+  // 所定勤務時間は記録の⑤スナップショットに従う（日ごとに決める）
 
   // レコードを日付キーでマップ
   const recordMap = new Map(
@@ -188,7 +206,7 @@ export default async function UserApprovalPage({
       workStartTime: schedule?.start ?? null, workEndTime: schedule?.end ?? null,
     })
     // 遅刻・早退・残業: 保存値があればそれ、無ければ記録時刻と定時の差から計算（段4・段8）
-    const metrics = resolveDayMetrics(r, schedule)
+    const metrics = resolveDayMetrics(r, schedule, legacyOvertimeInput(r, setting, user))
     const nightMinutes = calcNightMinutes(r.clockIn, r.clockOut)
     // ④（残業の申請上限）: 実打刻・申請終了・記録時刻の3つを管理者に見せる。一般社員の画面には出さない
     const dayOvertimeReqs = overtimeReqByDate.get(r.date.toISOString()) ?? []
@@ -200,6 +218,21 @@ export default async function UserApprovalPage({
       // 段0の定時（半休・休日を反映）。日をまたぐ退勤でも記録の日付の定時で判定する
       rawClockOut: r.rawClockOut, workEndTime: schedule?.end ?? null, date: r.date,
       hasOvertimeRequest: hasOvertimeRequest(dayOvertimeReqs), capEnabled,
+    })
+    // パートの休憩申請漏れ・休日出勤申請なしの目印（要確認には入れない。通知は飛ばさない）
+    const dayExtraReqs = breakHolidayRequests.filter((q) => q.targetDate.getTime() === r.date.getTime())
+    const pendingBreakRequest = dayExtraReqs.some((q) => q.type === "BREAK")
+    const noBreakRecord = needsBreakRecordNotice({
+      employmentType: user.employmentType, userBreakMinutes: user.breakMinutes,
+      breakMinutes: r.breakMinutes, breakStart: r.breakStart, breakEnd: r.breakEnd,
+      clockIn: r.clockIn, clockOut: r.clockOut, goOutAt: r.goOutAt, returnAt: r.returnAt,
+      hasPendingBreakRequest: pendingBreakRequest,
+    })
+    const noHolidayWorkRequest = needsHolidayWorkNotice({
+      isRestDay: isRestDay(r.date, user, sched.isHoliday(r.date)),
+      hasPunch: !!(r.clockIn || r.clockOut || r.rawClockIn || r.rawClockOut),
+      isHolidayWork: r.isHolidayWork,
+      hasHolidayWorkRequest: dayExtraReqs.some((q) => q.type === "HOLIDAY_WORK"),
     })
     const goOutMins =
       r.goOutAt && r.returnAt
@@ -216,6 +249,10 @@ export default async function UserApprovalPage({
       hasAdminEdit: canClearAdminEdit(r),
       requestEndTime,
       noOvertimeRequest,
+      breakMinutes: r.breakMinutes,
+      pendingBreakRequest,
+      noBreakRecord,
+      noHolidayWorkRequest,
       breakStart:  formatHHMM(r.breakStart),
       breakEnd:    formatHHMM(r.breakEnd),
       goOutAt:     formatHHMM(r.goOutAt),
@@ -231,8 +268,9 @@ export default async function UserApprovalPage({
       status:      r.status,
       displayStatus: getDisplayStatus(r.status, needsReview),
       isAbsent:    r.isAbsent,
+      holidayWorkByProxy: r.holidayWorkByProxy,
       requestId:   requestMap.get(key) ?? null,
-      scheduledMinutes,
+      scheduledMinutes: scheduledMinutesForRecord(user, sched.setting, r),
       // 管理者の入力画面の選択肢（段6.5）：その日のスイッチ・定時・承認済みの申請
       timeConstraint: (() => {
         const approvedReqs = sched.requestsOf(userId, r.date)
@@ -243,6 +281,21 @@ export default async function UserApprovalPage({
         }
       })(),
       isWeekend:   dow === 0 || dow === 6,
+      restLabel:   restLabelMap.get(`${dy}-${String(dm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`) ?? null,
+    }
+  })
+
+  // 休む日なのに勤怠記録が無い日：ラベルだけの行（編集・承認の対象ではない。出勤の打刻が要るときは上の代理打刻から）
+  const iso = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+  const restOnlyRows = labelOnlyRestDates(
+    restLabelMap, new Set(tableRows.map((r) => r.dateISO)), iso(firstDay), iso(lastDay),
+  ).map((dateISO) => {
+    const d = new Date(`${dateISO}T00:00:00Z`)
+    return {
+      dateISO,
+      dateLabel: `${d.getUTCMonth() + 1}/${d.getUTCDate()}（${WEEKDAY[d.getUTCDay()]}）`,
+      restLabel: restLabelMap.get(dateISO) ?? "",
+      isWeekend: d.getUTCDay() === 0 || d.getUTCDay() === 6,
     }
   })
 
@@ -277,6 +330,7 @@ export default async function UserApprovalPage({
 
       <UserDetailTable
         records={tableRows}
+        restOnlyRows={restOnlyRows}
         firstDayISO={firstDay.toISOString()}
         lastDayISO={lastDay.toISOString()}
         userId={userId}

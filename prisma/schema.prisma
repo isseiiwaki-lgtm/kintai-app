@@ -149,7 +149,8 @@ model AttendanceRecord {
   overtimeMinutes      Int?      // 残業分
   paidLeaveMinutes     Int?      // 有給取得時間（分）
   breakMinutes         Int?      // その日の休憩の分数（休憩ボタン・休憩申請の承認で入る）
-  isHolidayWork        Boolean   @default(false) // 休日出勤の印（代理打刻の休日出勤チェック。承認し直しても遅刻・早退を0に保つ）
+  isHolidayWork        Boolean   @default(false) // 休日出勤の印（代理打刻の休日出勤チェック・承認済みの休日出勤申請。承認し直しても遅刻・早退を0に保つ）
+  holidayWorkByProxy   Boolean   @default(false) // 印の出どころ：代理打刻の休日出勤チェックで付けた印。休日出勤申請の削除では外さない
   // 打刻時点のスイッチ状態（①〜④）。計算し直すときはこの保存値を使う（遡及しない）。null＝保存値なし（既存の記録）
   // 保存値なしの記録は「③④OFF・①②は現在値」として扱う（lib/clock-pipeline.ts resolveSwitches）
   // 管理者の確定修正（段6.5）。管理者の直接修正・代理打刻で入れた時刻。段0〜6の結果を最後に上書きする（丸め・④を通さない）
@@ -160,6 +161,7 @@ model AttendanceRecord {
   switchRoundNear      Boolean?  // ② roundNearClockTime
   switchRoundQuarter   Boolean?  // ③ roundQuarterHour
   switchCapOvertime    Boolean?  // ④ capOvertimeByRequest
+  switchNewCalc        Boolean?  // ⑤ newCalcMethod（休憩の規定値と残業の式。false＝旧方式）
   createdAt            DateTime  @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -250,6 +252,7 @@ model Setting {
   roundNearClockTime Boolean  @default(false) // 定時±14分以内→定時きっかり
   roundQuarterHour   Boolean  @default(false) // ③15分丸め（出勤切り上げ・退勤切り捨て。本人の定時起点）
   capOvertimeByRequest Boolean @default(false) // ④残業の申請上限（退勤の記録時刻を最後の承認済み残業申請の終了、無ければ定時で頭打ち）
+  newCalcMethod       Boolean  @default(false) // ⑤新しい計算方式（正社員の休憩の規定値＝定時から決める／残業＝早出＋終業後）。OFF＝旧方式。締め期間の初日にON
   lunchStartTime      String   @default("12:00") // 昼休憩の開始時刻。正社員の半休の境目を決めるためだけに使う（休憩控除の判定には使わない）
   legalHolidayWeekday Int      @default(0)       // 法定休日の曜日（0=日曜〜6=土曜）。仮置き（労務担当者に確認中）。休日出勤の担当が使う
   weekStartDay        Int      @default(0)       // 週の起算日（0=日曜〜6=土曜）。仮置き（労務担当者に確認中）。休日出勤の担当が使う

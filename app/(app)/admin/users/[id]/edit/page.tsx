@@ -1,3 +1,4 @@
+import { USER_BREAK_MAX_MINUTES, USER_BREAK_STEP_MINUTES } from "@/lib/user-validation"
 import { prisma } from "@/lib/prisma"
 import { notFound } from "next/navigation"
 import { actionUpdateUser } from "../../actions"
@@ -29,7 +30,7 @@ export default async function UserEditPage({ params }: { params: Params }) {
       id: true, name: true, email: true, companyEmail: true,
       employeeCode: true, jobTitle: true, hireDate: true, salaryCode: true,
       role: true, employmentType: true,
-      department: true, workStartTime: true, workEndTime: true,
+      department: true, workStartTime: true, workEndTime: true, breakMinutes: true,
       isActive: true,
       workSun: true, workMon: true, workTue: true,
       workWed: true, workThu: true, workFri: true, workSat: true,
@@ -146,6 +147,18 @@ export default async function UserEditPage({ params }: { params: Params }) {
                 {workTimes.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
+          </div>
+
+          {/* 所定休憩（任意）。空なら会社設定の休憩ルール（定時の拘束時間から）で求める */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">所定休憩（分・任意）</label>
+            <select name="breakMinutes" defaultValue={user.breakMinutes != null ? String(user.breakMinutes) : ""} className={selectCls}>
+              <option value="">未設定（会社設定から求める）</option>
+              {Array.from({ length: USER_BREAK_MAX_MINUTES / USER_BREAK_STEP_MINUTES + 1 }, (_, i) => i * USER_BREAK_STEP_MINUTES).map((m) => (
+                <option key={m} value={m}>{m}分</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-gray-400">所定の勤務時間（拘束時間 − 所定休憩）と、正社員の休憩の規定値に使います。パートの休憩は休憩ボタン・休憩申請で記録します。</p>
           </div>
 
           {/* 所定出勤曜日 */}

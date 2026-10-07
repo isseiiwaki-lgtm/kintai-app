@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { actionAdminCreateRecord } from "../actions"
 import type { AdminTimeConstraint } from "@/lib/clock-pipeline"
 import { AdminTimeSelect } from "./AdminTimeSelect"
+import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES } from "@/config/attendance.config"
 
 // constraint: その日のスイッチ（現在の設定）・定時・承認済みの申請。時刻の選択肢を決める（段6.5）
 export type MissingDate = { iso: string; label: string; constraint: AdminTimeConstraint }
@@ -16,8 +17,6 @@ const TIME_FIELDS: { name: string; label: string; required?: boolean }[] = [
   { name: "clockOut",   label: "退勤" },
   { name: "goOutAt",    label: "外出" },
   { name: "returnAt",   label: "戻り" },
-  { name: "breakStart", label: "休憩開始" },
-  { name: "breakEnd",   label: "休憩終了" },
 ]
 
 /**
@@ -119,6 +118,17 @@ export function ProxyPunchForm({
                 />
               </div>
             ))}
+
+
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-1">休憩（分）</label>
+                <select name="breakMinutes" defaultValue="" className={`${selectClass} w-[88px]`}>
+                  <option value="">未設定</option>
+                  {Array.from({ length: BREAK_REQUEST_MAX_MINUTES / BREAK_REQUEST_STEP_MINUTES + 1 }, (_, i) => i * BREAK_REQUEST_STEP_MINUTES).map((m) => (
+                    <option key={m} value={m}>{m}分</option>
+                  ))}
+                </select>
+              </div>
 
             <label className="flex items-center gap-1.5 text-xs text-gray-600 pb-1.5">
               <input type="checkbox" checked={unrestricted} onChange={(e) => setUnrestricted(e.target.checked)} className="accent-blue-600" />

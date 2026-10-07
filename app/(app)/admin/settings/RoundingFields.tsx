@@ -7,6 +7,7 @@ type Props = {
   roundNearClockTime:   boolean
   roundQuarterHour:     boolean
   capOvertimeByRequest: boolean
+  newCalcMethod:        boolean
 }
 
 const checkClass = "mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -22,6 +23,7 @@ export function RoundingFields(props: Props) {
   const [near, setNear]       = useState(props.roundNearClockTime)
   const [quarter, setQuarter] = useState(props.roundQuarterHour)
   const [cap, setCap]         = useState(props.capOvertimeByRequest)
+  const [newCalc, setNewCalc] = useState(props.newCalcMethod)
 
   return (
     <>
@@ -107,6 +109,32 @@ export function RoundingFields(props: Props) {
               残業申請が無い日は定時です（早出申請は対象外）。実打刻は書き換えず、勤務時間・遅刻・早退・残業は記録時刻から計算します。
               残業申請が退勤後に承認・削除されたときは、記録時刻を計算し直します。
               月の途中で切り替えると同じ月に旧方式と新方式が混ざるため、締め期間の初日に切り替えてください
+            </p>
+          </div>
+        </label>
+      </div>
+
+      {/* 新しい計算方式 */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+        <h2 className="text-sm font-semibold text-gray-800 mb-1">新しい計算方式</h2>
+        <p className="text-xs text-gray-400 mb-4">
+          丸め・残業の上限とは別のスイッチです。切り替えは切り替え後の打刻にだけ効きます（それ以前の記録は、記録ごとに保存した方式のまま変わりません）。
+        </p>
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="checkbox" name="newCalcMethod"
+            checked={newCalc}
+            onChange={(e) => setNewCalc(e.target.checked)}
+            value="true"
+            className={checkClass}
+          />
+          <div>
+            <p className="text-sm text-gray-700 font-medium">⑤ 新しい計算方式（正社員の休憩の規定値と残業の式）</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              ON：正社員の休憩の規定値は定時の拘束時間から決め（例 8:30〜17:30 → 60分）、残業は「早出＋定時後」で数えます。
+              OFF（旧方式）：休憩の規定値は在席時間から決め（6時間超45分・8時間超60分）、残業は「実働 − 所定勤務時間」で数えます。
+              休憩ボタン・承認済みの休憩申請・早退申請の休憩の申告があれば、どちらの方式でもその値を使います。
+              月の途中で切り替えると同じ月に旧方式と新方式が混ざるため、締め期間の初日にONにしてください
             </p>
           </div>
         </label>

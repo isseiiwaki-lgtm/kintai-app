@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from "vitest"
 import { calcWorkingMinutes, calcScheduledMinutes } from "../lib/attendance"
-import { computeClockPipeline } from "../lib/clock-pipeline"
+import { computeClockPipeline, resolveBreakMinutes } from "../lib/clock-pipeline"
 import { OFF } from "./helpers/pipeline"
 
 /** JST の日付・時刻から UTC の Date を作る（サーバーアクションの toUTC と同じ） */
@@ -39,9 +39,16 @@ function proxyPunch(opts: {
     clockOut: out.clockOut,
     goOutAt:    t(opts.goOutAt),
     returnAt:   t(opts.returnAt),
-    breakStart: t(opts.breakStart),
-    breakEnd:   t(opts.breakEnd),
-    employmentType: opts.employmentType,
+    // 段7：休憩分数（過去の休憩打刻は打刻の差、無ければ パート0／正社員は定時の拘束時間から求めた規定値）
+    breakMinutes: resolveBreakMinutes({
+      savedBreakMinutes: null,
+      breakStart: t(opts.breakStart), breakEnd: t(opts.breakEnd),
+      halfDay: null, employmentType: opts.employmentType, userBreakMinutes: null,
+      workStartTime: opts.workStartTime, workEndTime: opts.workEndTime, daySchedule: schedule, isRestDay: !!opts.isHolidayWork,
+      presenceMinutes: out.clockIn && out.clockOut
+        ? Math.floor((out.clockOut.getTime() - out.clockIn.getTime() - (t(opts.goOutAt) && t(opts.returnAt) ? t(opts.returnAt)!.getTime() - t(opts.goOutAt)!.getTime() : 0)) / 60000)
+        : null,
+    }),
   })
   return {
     workingMinutes,
@@ -67,7 +74,7 @@ describe("代理打刻の集計値", () => {
 
   it("(b') 同じ打刻でも休日出勤チェックなしなら遅刻90分・早退150分（フラグが効いていることの裏取り）", () => {
     expect(proxyPunch({ dateISO: "2026-08-02", clockIn: "10:00", clockOut: "15:00", ...FULL }))
-      .toEqual({ workingMinutes: 300, lateMinutes: 90, earlyLeaveMinutes: 150, overtimeMinutes: 0 })
+      .toEqual({ workingMinutes: 240, lateMinutes: 90, earlyLeaveMinutes: 150, overtimeMinutes: 0 }) // 定時の日の正社員は拘束時間（9h）から規定の休憩60分を引く（段7）
   })
 
   it("(e) パートは休憩打刻がなければ法定休憩を控除しない。残業は定時との差なので 0（実働−所定の差し引きではない）", () => {
@@ -85,12 +92,12 @@ describe("代理打刻の集計値", () => {
     }).workingMinutes).toBe(375)
   })
 
-  it("フルタイムは外出時間を除いた在席時間で法定休憩を判定する（6h境界）", () => {
-    // 09:00〜16:00（420分）から外出60分を引くと360分ちょうど＝6h超えないので控除0
+  it("フルタイムの休憩は在席時間ではなく定時の拘束時間から決める（段7。8:30〜17:30＝9h → 60分）", () => {
+    // 09:00〜16:00（420分）− 外出60分 − 規定の休憩60分 ＝ 300分（従来は在席360分の法定判定で控除0だった）
     expect(proxyPunch({
       dateISO: "2026-07-28", clockIn: "09:00", clockOut: "16:00",
       goOutAt: "12:00", returnAt: "13:00", ...FULL,
-    }).workingMinutes).toBe(360)
+    }).workingMinutes).toBe(300)
   })
 
   it("退勤未入力なら実働は未確定（null）", () => {
@@ -102,7 +109,7 @@ describe("代理打刻の集計値", () => {
     expect(jst("2026-07-28", "00:00").toISOString()).toBe("2026-07-27T15:00:00.000Z")
   })
 
-  it("所定勤務時間（calcScheduledMinutes）は従来どおり（休憩控除後の所定。残業の計算には使わない）", () => {
+  it("所定勤務時間（calcScheduledMinutes）＝ 拘束時間 − 所定休憩（残業の計算には使わない）", () => {
     expect(calcScheduledMinutes("08:30", "17:30", "full")).toBe(480)
   })
 })

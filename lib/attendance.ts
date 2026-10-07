@@ -3,7 +3,7 @@
  * 承認・締め時に AttendanceRecord へ保存する集計値を計算する
  */
 
-import { calcLegalBreak } from "@/config/attendance.config"
+import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, calcLegalBreak } from "@/config/attendance.config"
 
 function toJST(dt: Date): Date {
   return new Date(dt.getTime() + 9 * 60 * 60 * 1000)
@@ -21,8 +21,56 @@ function parseHHMM(s: string | null | undefined): number | null {
   return h * 60 + m
 }
 
-/** 本人所定勤務時間（分）。workStartTime/workEndTime 未設定時は雇用形態でfallback */
+/**
+ * 本人の休憩の長さ（分）：本人の User.breakMinutes → 無ければ会社設定の休憩時間控除ルール（Setting の break1 系・break2 系）を
+ * 定時の拘束時間に当てた値。会社設定が無いときは法定休憩（config の BREAK_RULES）。段7の正社員の規定値・所定勤務時間・半休の昼休憩が使う。
+ */
+export function calcDefaultBreakMinutes(
+  p: { userBreakMinutes: number | null | undefined; workStartTime: string | null; workEndTime: string | null },
+  setting?: { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number } | null,
+): number {
+  if (p.userBreakMinutes != null) return p.userBreakMinutes
+  const s = parseHHMM(p.workStartTime)
+  const e = parseHHMM(p.workEndTime)
+  if (s === null || e === null || e <= s) return 0
+  const span = e - s
+  if (!setting) return calcLegalBreak(span)
+  if (span > setting.break2Threshold) return setting.break2Minutes
+  if (span > setting.break1Threshold) return setting.break1Minutes
+  return 0
+}
+
+/**
+ * 本人所定勤務時間（分）＝ 拘束時間（定時の終業−始業）− 所定休憩。workStartTime/workEndTime 未設定時は雇用形態でfallback
+ * 所定休憩は本人の breakMinutes、無ければ会社設定の休憩ルール（calcDefaultBreakMinutes と同じ決め方）。
+ * 例：野木さん（パート 9:00-15:00・所定休憩60）→ 300分。半休は所定の半分（150分）
+ */
 export function calcScheduledMinutes(
+  workStartTime: string | null | undefined,
+  workEndTime:   string | null | undefined,
+  employmentType: string | null | undefined,
+  breakOpts?: {
+    userBreakMinutes?: number | null
+    setting?: { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number } | null
+  },
+): number {
+  const startMins = parseHHMM(workStartTime)
+  const endMins   = parseHHMM(workEndTime)
+  if (startMins !== null && endMins !== null && endMins > startMins) {
+    const brk = calcDefaultBreakMinutes(
+      { userBreakMinutes: breakOpts?.userBreakMinutes, workStartTime: workStartTime ?? null, workEndTime: workEndTime ?? null },
+      breakOpts?.setting,
+    )
+    return Math.max(0, endMins - startMins - brk)
+  }
+  return employmentType === "full" ? 480 : 0
+}
+
+/**
+ * 旧方式（⑤OFF）の本人所定勤務時間（分）＝ 拘束時間（定時の終業−始業）− 法定休憩（6時間超45分・8時間超60分）。
+ * 本番 a1d25ca の calcScheduledMinutes と同じ。本人の休憩設定・会社設定は見ない。未設定は雇用形態で fallback（正社員480・他0）
+ */
+export function calcLegacyScheduledMinutes(
   workStartTime: string | null | undefined,
   workEndTime:   string | null | undefined,
   employmentType: string | null | undefined,
@@ -37,8 +85,8 @@ export function calcScheduledMinutes(
 }
 
 /**
- * 実働時間（分）を計算する。外出時間を除いた在席時間から休憩を控除する。
- * part は実際の休憩打刻を、それ以外は法定休憩を控除する（既存の打刻・承認処理と同じ規則）。
+ * 実働時間（分）を計算する。外出時間を除いた在席時間から、段7で決めた休憩分数を控除する。
+ * 休憩分数は resolveBreakMinutes（lib/clock-pipeline.ts）が決める。ここでは雇用形態・休憩打刻を見ない。
  * 出勤または退勤が欠けている場合は null（未確定）。
  */
 export function calcWorkingMinutes({
@@ -46,29 +94,48 @@ export function calcWorkingMinutes({
   clockOut,
   goOutAt,
   returnAt,
-  breakStart,
-  breakEnd,
-  employmentType,
+  breakMinutes,
 }: {
   clockIn:    Date | null
   clockOut:   Date | null
   goOutAt:    Date | null
   returnAt:   Date | null
-  breakStart: Date | null
-  breakEnd:   Date | null
-  employmentType: string | null | undefined
+  breakMinutes: number
 }): number | null {
   if (!clockIn || !clockOut) return null
 
   const totalMs = clockOut.getTime() - clockIn.getTime()
   const goOutMs = goOutAt && returnAt ? returnAt.getTime() - goOutAt.getTime() : 0
   const rawMinutes = Math.floor((totalMs - goOutMs) / 60000)
+  return Math.max(0, rawMinutes - breakMinutes)
+}
 
-  if (employmentType === "part") {
-    const breakMs = breakStart && breakEnd ? breakEnd.getTime() - breakStart.getTime() : 0
-    return Math.max(0, rawMinutes - Math.floor(breakMs / 60000))
+/**
+ * 保存済みの値から、その日の休憩（分）を求める（/records と Excel の休憩列で共通）。
+ * 実働（workingMinutes）を保存した日の休憩は、その実働と食い違わないよう保存値から決める：
+ *   breakMinutes → 過去の休憩打刻（開始・終了）→ 逆算（在席時間 − 外出 − 実働）
+ * 保存した実働が無い日は null（呼び出し側が resolveBreakMinutes で決める）
+ */
+export function storedBreakMinutes(rec: {
+  breakMinutes: number | null
+  breakStart: Date | null
+  breakEnd: Date | null
+  clockIn: Date | null
+  clockOut: Date | null
+  goOutAt: Date | null
+  returnAt: Date | null
+  workingMinutes: number | null
+}): number | null {
+  if (rec.breakMinutes != null) return rec.breakMinutes
+  if (rec.breakStart && rec.breakEnd) {
+    return Math.round((rec.breakEnd.getTime() - rec.breakStart.getTime()) / 60000)
   }
-  return Math.max(0, rawMinutes - calcLegalBreak(rawMinutes))
+  if (rec.clockIn && rec.clockOut && rec.workingMinutes != null) {
+    const goOutMins = rec.goOutAt && rec.returnAt ? Math.round((rec.returnAt.getTime() - rec.goOutAt.getTime()) / 60000) : 0
+    const rawMins = Math.floor((rec.clockOut.getTime() - rec.clockIn.getTime()) / 60000)
+    return Math.max(0, rawMins - goOutMins - rec.workingMinutes)
+  }
+  return null
 }
 
 /** その日の定時（CLOCK_PIPELINE 段0の結果）。null ＝ 定時なし（休日など）。遅刻・早退・残業は付けない */
@@ -232,6 +299,130 @@ export function calcReviewReasons({
 export function calcNeedsReview(args: Parameters<typeof calcReviewReasons>[0]): boolean {
   const r = calcReviewReasons(args)
   return r.late || r.early || r.missingOut
+}
+
+/**
+ * 休憩申請（BREAK）の分数を検証して数値にする。15分刻み・0〜上限。不正なら null。
+ * 0 は「休憩なし」の申請（例：社員が休憩を取らなかった日）として有効
+ */
+export function parseBreakRequestMinutes(v: unknown): number | null {
+  if (typeof v !== "string" && typeof v !== "number") return null
+  const s = String(v).trim()
+  if (!/^\d{1,3}$/.test(s)) return null
+  const n = Number(s)
+  if (n % BREAK_REQUEST_STEP_MINUTES !== 0 || n > BREAK_REQUEST_MAX_MINUTES) return null
+  return n
+}
+
+/**
+ * 休憩の申告がある申請か。あれば申告の分数を返す（無ければ null）。
+ * - 休憩申請（BREAK）：detail.minutes
+ * - 早退申請（ABSENCE・absenceType=early）：detail.breakMinutes（正社員が申請時に答える「休憩を取りましたか」。0＝取らなかった）
+ * - 休日出勤申請（HOLIDAY_WORK）：detail.breakMinutes（必須の「休憩（分）」。旧い申請は無し＝申告なし）
+ * 承認されると、どちらも同じしくみ（承認前の値 prevBreakMinutes・適用順 breakAppliedAt）でその日の breakMinutes に入る
+ */
+export function breakAnswerMinutes(req: { type: string; detail: unknown }): number | null {
+  const d = (req.detail ?? {}) as { minutes?: unknown; breakMinutes?: unknown; absenceType?: unknown }
+  if (req.type === "BREAK") return parseBreakRequestMinutes(d.minutes)
+  if (req.type === "ABSENCE" && d.absenceType === "early" && d.breakMinutes !== undefined) return parseBreakRequestMinutes(d.breakMinutes)
+  if (req.type === "HOLIDAY_WORK" && d.breakMinutes !== undefined) return parseBreakRequestMinutes(d.breakMinutes)
+  return null
+}
+
+/**
+ * 早退申請の休憩の申告（管理者の修正用）。正社員の早退だけが申告を持つ。パートは受け付けない（休憩ボタンがあるため）。
+ * 空欄＝申告なし。早退以外・パートでは常に申告なし（minutes: null）
+ */
+export function resolveEarlyLeaveBreakAnswer(
+  employmentType: string | null | undefined,
+  absenceType: string | null | undefined,
+  raw: unknown,
+): { ok: true; minutes: string | null } | { ok: false } {
+  if (absenceType !== "early" || employmentType === "part") return { ok: true, minutes: null }
+  const text = typeof raw === "string" ? raw.trim() : ""
+  if (text === "") return { ok: true, minutes: null }
+  const m = parseBreakRequestMinutes(text)
+  return m === null ? { ok: false } : { ok: true, minutes: String(m) }
+}
+
+/** 早退申請フォームへのリンク（退勤直後の知らせ用。対象日・種別・退勤時刻を入れておく） */
+export function earlyLeaveRequestHref(dateKey: string, time: string): string {
+  return `/requests/new?type=ABSENCE&absenceType=early&date=${dateKey}&time=${time}`
+}
+
+/**
+ * 定時前に退勤した正社員への「早退申請を出してください」の知らせの判定。
+ * 出すなら申請フォームの初期時刻（退勤時刻を申請の刻みで切り下げた HH:MM）、出さないなら null。
+ * - パートは対象外（休憩ボタンがあるため）／定時なしの日（休日など）は対象外
+ * - 退勤が定時の終業より前／その日の早退申請（審査中・承認済み）がまだ無い
+ * 当日だけ出す（呼び出し側が当日を渡す）。要確認の状態・件数には入れない
+ */
+export function earlyLeaveNudgeTime(p: {
+  employmentType: string | null | undefined
+  /** 記録の日付（JST の暦日の UTC 0時）。日をまたぐ退勤を早退と取り違えないために使う */
+  date: Date
+  schedule: DaySchedule
+  clockOut: Date | null
+  hasEarlyLeaveRequest: boolean
+  /** 承認済みの休日出勤申請がある日（休憩は休日出勤申請で答えるので早退の促しは出さない） */
+  hasApprovedHolidayWork?: boolean
+  stepMinutes?: number
+}): string | null {
+  if (p.employmentType === "part" || !p.schedule || !p.clockOut || p.hasEarlyLeaveRequest || p.hasApprovedHolidayWork) return null
+  const end = parseHHMM(p.schedule.end)
+  if (end === null) return null
+  const out = Math.floor((p.clockOut.getTime() - (p.date.getTime() - 9 * 60 * 60 * 1000)) / 60000)
+  if (out >= end || out < 0) return null
+  const step = p.stepMinutes ?? 15
+  const floored = Math.floor(out / step) * step
+  return `${String(Math.floor(floored / 60)).padStart(2, "0")}:${String(floored % 60).padStart(2, "0")}`
+}
+
+/** 6時間（分）。パートの休憩申請漏れの判定（実働がこれを超えたら休憩の記録が要る） */
+const BREAK_NOTICE_WORK_MINUTES = 360
+
+/**
+ * パートの休憩申請漏れの判定（CLOCK_PIPELINE「知らせる」）。次のどちらかで、休憩の記録が無い日
+ * ① 所定休憩（User.breakMinutes）が設定されている（0より大きい）
+ * ② 実働（外出を除く在席時間）が6時間を超えた
+ * 休憩の記録 ＝ その日の breakMinutes（休憩ボタン・承認済みの休憩申請。0分を含む）か、過去の休憩打刻（開始・終了）。
+ * 審査中の休憩申請がある日は、申請済みなので出さない。退勤まで済んだ日だけ判定する。要確認の状態・件数には入れない
+ */
+export function needsBreakRecordNotice(p: {
+  employmentType: string | null | undefined
+  userBreakMinutes: number | null | undefined
+  breakMinutes: number | null | undefined
+  breakStart?: Date | null
+  breakEnd?: Date | null
+  clockIn: Date | null
+  clockOut: Date | null
+  goOutAt?: Date | null
+  returnAt?: Date | null
+  hasPendingBreakRequest?: boolean
+}): boolean {
+  if (p.employmentType !== "part") return false
+  if (!p.clockIn || !p.clockOut) return false
+  if (p.breakMinutes != null || (p.breakStart && p.breakEnd)) return false
+  if (p.hasPendingBreakRequest) return false
+  if ((p.userBreakMinutes ?? 0) > 0) return true
+  const goOutMs = p.goOutAt && p.returnAt ? p.returnAt.getTime() - p.goOutAt.getTime() : 0
+  const presence = Math.floor((p.clockOut.getTime() - p.clockIn.getTime() - goOutMs) / 60000)
+  return presence > BREAK_NOTICE_WORK_MINUTES
+}
+
+/**
+ * 休日出勤申請が無いまま休日に打刻があった日の判定（CLOCK_PIPELINE「知らせる」）
+ * - 休日（休日カレンダー・本人の休みの曜日）で、打刻がある
+ * - 休日出勤の印（承認済みの休日出勤申請・代理打刻の休日出勤チェック）が無く、審査中・承認済みの休日出勤申請も無い
+ * 要確認の状態・件数には入れない
+ */
+export function needsHolidayWorkNotice(p: {
+  isRestDay: boolean
+  hasPunch: boolean
+  isHolidayWork: boolean
+  hasHolidayWorkRequest: boolean
+}): boolean {
+  return p.isRestDay && p.hasPunch && !p.isHolidayWork && !p.hasHolidayWorkRequest
 }
 
 type RequestStatus = "PENDING" | "APPROVED" | "REJECTED"
@@ -414,6 +605,11 @@ export function resolveDayMetrics(
     overtimeMinutes: number | null
   },
   schedule: DaySchedule,
+  /**
+   * ⑤旧方式（記録に保存した⑤がOFF）の残業の求め方。保存値が無い日の画面計算にだけ使う。
+   * 省略は新しい式（早出＋終業後）。workingMinutes は保存した実働、legacyScheduledMinutes は calcLegacyScheduledMinutes
+   */
+  legacy?: { workingMinutes: number | null; legacyScheduledMinutes: number },
 ): { lateMinutes: number; earlyLeaveMinutes: number; overtimeMinutes: number } {
   const metrics = calcMetrics({
     clockIn: rec.clockIn,
@@ -424,7 +620,11 @@ export function resolveDayMetrics(
   return {
     lateMinutes: rec.lateMinutes ?? metrics.lateMinutes,
     earlyLeaveMinutes: rec.earlyLeaveMinutes ?? metrics.earlyLeaveMinutes,
-    overtimeMinutes: rec.overtimeMinutes ?? metrics.overtimeMinutes,
+    overtimeMinutes: rec.overtimeMinutes ?? (legacy
+      ? (schedule && legacy.workingMinutes != null && legacy.legacyScheduledMinutes > 0
+          ? Math.max(0, legacy.workingMinutes - legacy.legacyScheduledMinutes)
+          : 0)
+      : metrics.overtimeMinutes),
   }
 }
 
