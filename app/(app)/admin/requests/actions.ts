@@ -7,6 +7,7 @@ import { formatHHMMfromDate, calcScheduledMinutes, parseBreakRequestMinutes } fr
 import { recomputeDay } from "@/lib/clock-pipeline-db"
 import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
 import { findCorrectionLog, planFieldRevert, planInputRevert } from "@/lib/clock-pipeline"
+import { resolveRestKind, validateHolidayWorkTimes, validateRestDate } from "@/lib/holiday-work"
 
 export type ActionResult = { ok: true } | { ok: false; error: string }
 
@@ -62,6 +63,39 @@ async function syncBreakFromApprovedRequests(userId: string, date: Date) {
     if (m !== null) { minutes = m; break }
   }
   await prisma.attendanceRecord.update({ where: { id: rec.id }, data: { breakMinutes: minutes } })
+  await recomputeDay(userId, date)
+  revalidatePath("/records")
+}
+
+/**
+ * その日の休日出勤の印（AttendanceRecord.isHolidayWork）を、承認済みの休日出勤申請があるかどうかに合わせ、
+ * 打刻パイプラインで計算し直す（段0：承認済みの申請の開始〜終了がその日の定時になる）。
+ * - 承認済みの休日出勤申請がある日 → 印を付ける（記録が無ければ作る。打刻の前に承認されることが多い）
+ * - 無くなった日（削除・日付や種別の変更）→ 印を外す。打刻も何も入っていない空の記録は消す
+ * 締め済みの日は呼ぶ前に拒否すること（lockedCorrectionError / isLockedDay）。
+ * 代理打刻の休日出勤チェックで付けた印も、申請の削除では外れる（印の出どころは区別しない）
+ */
+async function syncHolidayWorkMark(userId: string, date: Date) {
+  const count = await prisma.request.count({ where: { userId, type: "HOLIDAY_WORK", status: "APPROVED", targetDate: date } })
+  const rec = await prisma.attendanceRecord.findUnique({ where: { userId_date: { userId, date } } })
+  if (count > 0) {
+    if (rec) {
+      if (!rec.isHolidayWork) await prisma.attendanceRecord.update({ where: { id: rec.id }, data: { isHolidayWork: true } })
+    } else {
+      await prisma.attendanceRecord.create({ data: { userId, date, isHolidayWork: true } })
+    }
+  } else if (rec) {
+    if (rec.isHolidayWork) await prisma.attendanceRecord.update({ where: { id: rec.id }, data: { isHolidayWork: false } })
+    const empty =
+      !rec.clockIn && !rec.clockOut && !rec.rawClockIn && !rec.rawClockOut && !rec.goOutAt && !rec.returnAt &&
+      !rec.breakStart && !rec.breakEnd && rec.breakMinutes == null && !rec.note && !rec.isAbsent &&
+      !rec.paidLeaveMinutes && rec.status === "OPEN"
+    if (empty) {
+      await prisma.attendanceRecord.delete({ where: { id: rec.id } })
+      revalidatePath("/records")
+      return
+    }
+  }
   await recomputeDay(userId, date)
   revalidatePath("/records")
 }
@@ -235,6 +269,12 @@ async function applyRequestEffects(
       await recomputeDay(req.userId, req.targetDate)
       revalidatePath("/records")
     }
+  }
+
+  // 休日出勤申請の承認時: その日に休日出勤の印を付け（記録が無ければ作る）、打刻パイプラインで計算し直す
+  // （段0：申請の開始〜終了がその日の定時の代わりになる。出勤・退勤どちらが先でも同じ結果になる）
+  if (req.type === "HOLIDAY_WORK") {
+    await syncHolidayWorkMark(req.userId, req.targetDate)
   }
 
   // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存（本人所定時間ベース。半休は所定時間の半分を四捨五入）
@@ -488,6 +528,25 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
       detail = { minutes: String(minutes) }
       break
     }
+    case "HOLIDAY_WORK": {
+      const startTime = formData.get("startTime") as string
+      const endTime = formData.get("endTime") as string
+      const restDate = ((formData.get("restDate") as string) ?? "").trim()
+      const timeErr = validateHolidayWorkTimes(startTime, endTime)
+      if (timeErr) return { ok: false, error: timeErr }
+      const restErr = validateRestDate(restDate, targetDate)
+      if (restErr) return { ok: false, error: restErr }
+      // 振休か代休かは「いつ決めたか」。すでに区別が決まっていれば変えず、休む日を初めて足すのは管理者の操作＝代休
+      const prev = before?.type === "HOLIDAY_WORK" ? beforeDetail : {}
+      detail = { startTime, endTime }
+      if (restDate) {
+        detail.restDate = restDate
+        detail.restKind = resolveRestKind({
+          prevRestDate: prev.restDate, prevRestKind: prev.restKind, nextRestDate: restDate, decidedWithRequest: false,
+        }) as string
+      }
+      break
+    }
     case "ABSENCE":
       detail = {
         absenceType: formData.get("absenceType") as string,
@@ -503,19 +562,27 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
       break
   }
 
-  // 承認済みの休憩申請が絡む修正は、記録の休憩分数を書き換えるので、締め済みの日は拒否する（修正前・修正後どちらの日も）
-  const breakInvolved = before?.status === "APPROVED" && (before.type === "BREAK" || type === "BREAK")
-  if (before && breakInvolved) {
-    const newDate = new Date(targetDate)
-    if ((await isLockedDay(before.userId, before.targetDate)) || (await isLockedDay(before.userId, newDate))) {
-      return { ok: false, error: "締め済みの日の休憩申請は修正できません（締め解除してから修正してください）" }
+  // 承認済みの休憩申請・休日出勤申請の修正は、記録（休憩分数・休日出勤の印・定時）を書き換えるので、締め済みの日は拒否する
+  // （修正前・修正後どちらの日も）。記録に影響しない修正（休日出勤の「休む日」だけを後から足す・直すなど）は締め済みの日でも通す
+  const newTargetDate = new Date(targetDate)
+  const recordAffected = (kind: string) => {
+    if (!before || before.status !== "APPROVED" || (before.type !== kind && type !== kind)) return false
+    if (before.type !== type || before.targetDate.getTime() !== newTargetDate.getTime()) return true
+    return JSON.stringify([beforeDetail.minutes, beforeDetail.startTime, beforeDetail.endTime]) !==
+      JSON.stringify([detail.minutes, detail.startTime, detail.endTime])
+  }
+  const breakInvolved = recordAffected("BREAK")
+  const holidayWorkInvolved = recordAffected("HOLIDAY_WORK")
+  if (before && (breakInvolved || holidayWorkInvolved)) {
+    if ((await isLockedDay(before.userId, before.targetDate)) || (await isLockedDay(before.userId, newTargetDate))) {
+      return { ok: false, error: `締め済みの日の${breakInvolved ? "休憩申請" : "休日出勤申請"}は修正できません（締め解除してから修正してください）` }
     }
   }
 
   await prisma.request.update({
     where: { id },
     data: {
-      type:       type as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER" | "BREAK",
+      type:       type as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER" | "BREAK" | "HOLIDAY_WORK",
       targetDate: new Date(targetDate),
       reason,
       detail,
@@ -535,9 +602,15 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
   // 承認済みの休憩申請の分数・日付・種別を直したら、修正前・修正後の日の休憩分数を承認済みの申請から出し直す
   if (before && breakInvolved) {
     await syncBreakFromApprovedRequests(before.userId, before.targetDate)
-    const newDate = new Date(targetDate)
-    if (newDate.getTime() !== before.targetDate.getTime()) {
-      await syncBreakFromApprovedRequests(before.userId, newDate)
+    if (newTargetDate.getTime() !== before.targetDate.getTime()) {
+      await syncBreakFromApprovedRequests(before.userId, newTargetDate)
+    }
+  }
+  // 承認済みの休日出勤申請の時刻・日付・種別を直したら、修正前・修正後の日の印と記録時刻を出し直す
+  if (before && holidayWorkInvolved) {
+    await syncHolidayWorkMark(before.userId, before.targetDate)
+    if (newTargetDate.getTime() !== before.targetDate.getTime()) {
+      await syncHolidayWorkMark(before.userId, newTargetDate)
     }
   }
   revalidatePath("/admin/requests")
@@ -561,6 +634,10 @@ export async function actionDeleteRequest(id: string): Promise<ActionResult> {
   // 承認済みの休憩申請を削除するときは、記録を書き換えるので締め済みの日は拒否する
   if (req?.status === "APPROVED" && req.type === "BREAK" && (await isLockedDay(req.userId, req.targetDate))) {
     return { ok: false, error: "締め済みの日の休憩申請は削除できません（締め解除してから削除してください）" }
+  }
+  // 承認済みの休日出勤申請を削除するときも、印と定時が変わるので締め済みの日は拒否する
+  if (req?.status === "APPROVED" && req.type === "HOLIDAY_WORK" && (await isLockedDay(req.userId, req.targetDate))) {
+    return { ok: false, error: "締め済みの日の休日出勤申請は削除できません（締め解除してから削除してください）" }
   }
   if (req?.status === "APPROVED" && req.type === "ABSENCE") {
     const detail = req.detail as Record<string, string> | null
@@ -588,6 +665,10 @@ export async function actionDeleteRequest(id: string): Promise<ActionResult> {
   // 承認済みの休憩申請を削除したら、その日の休憩分数を残りの承認済みの申請から出し直す（無ければ空に戻す）
   if (req?.status === "APPROVED" && req.type === "BREAK") {
     await syncBreakFromApprovedRequests(req.userId, req.targetDate)
+  }
+  // 承認済みの休日出勤申請を削除したら、休日出勤の印を外して（ほかに承認済みの申請が無ければ）打刻パイプラインで計算し直す
+  if (req?.status === "APPROVED" && req.type === "HOLIDAY_WORK") {
+    await syncHolidayWorkMark(req.userId, req.targetDate)
   }
 
   // 承認済みの残業・早出・休暇（半休）申請を削除したら、入力から外れるので記録を打刻パイプラインで計算し直す

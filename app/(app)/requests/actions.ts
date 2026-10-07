@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { parseBreakRequestMinutes } from "@/lib/attendance"
+import { resolveRestKind, validateHolidayWorkTimes, validateRestDate } from "@/lib/holiday-work"
 
 export async function actionCreateRequest(formData: FormData) {
   const session = await auth()
@@ -42,6 +43,22 @@ export async function actionCreateRequest(formData: FormData) {
       const minutes = parseBreakRequestMinutes(formData.get("minutes"))
       if (minutes === null) throw new Error("休憩の分数が正しくありません")
       detail = { minutes: String(minutes) }
+      break
+    }
+    case "HOLIDAY_WORK": {
+      // 休日出勤申請：予定の開始〜終了・代わりに休む日（任意）。休む日を一緒に決めた＝振休、空欄＝後から決める代休
+      const startTime = formData.get("startTime") as string
+      const endTime = formData.get("endTime") as string
+      const restDate = ((formData.get("restDate") as string) ?? "").trim()
+      const timeErr = validateHolidayWorkTimes(startTime, endTime)
+      if (timeErr) throw new Error(timeErr)
+      const restErr = validateRestDate(restDate, targetDate)
+      if (restErr) throw new Error(restErr)
+      detail = { startTime, endTime }
+      if (restDate) {
+        detail.restDate = restDate
+        detail.restKind = resolveRestKind({ nextRestDate: restDate, decidedWithRequest: true }) as string
+      }
       break
     }
     case "ABSENCE":
@@ -85,7 +102,7 @@ export async function actionCreateRequest(formData: FormData) {
   await prisma.request.create({
     data: {
       userId,
-      type:       dbType as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER" | "BREAK",
+      type:       dbType as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER" | "BREAK" | "HOLIDAY_WORK",
       targetDate: new Date(targetDate),
       reason,
       detail,

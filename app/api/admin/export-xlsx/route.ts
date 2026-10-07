@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { resolveDayMetrics } from "@/lib/attendance"
+import { fmtRestDate } from "@/lib/holiday-work"
 import { pickHalfDay, resolveBreakMinutes, resolveScheduleForDate } from "@/lib/clock-pipeline"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly, effectiveChangedFields } from "@/lib/export-format"
@@ -32,7 +33,7 @@ const HEADERS = [
   "法定休日出勤\n（時間内）", "法定休日出勤\n（時間外）",
   "法定休日出勤\n（時間内（深夜））", "法定休日出勤\n（時間外(深夜)）",
   "休日出勤\n（時間内）", "休日出勤\n（時間内（深夜））", "休日出勤\n（時間外）", "休日出勤\n（時間外（深夜））",
-  "有給休暇\n（日）", "有給休暇\n（時間）", "特別休暇\n（有給）", "特別休暇\n（無給）", "振休",
+  "有給休暇\n（日）", "有給休暇\n（時間）", "特別休暇\n（有給）", "特別休暇\n（無給）", "振休", "代休",
   "遅刻／早退", "欠勤", "出勤", "退勤", "変更出勤", "変更退勤",
 ]
 
@@ -44,7 +45,7 @@ const COL_WIDTHS = [
   10, 10,             // 深夜2列
   14, 14, 16, 16,     // 法定休日4列
   14, 16, 14, 16,     // 休日出勤4列
-  8,  8, 10, 10,  6,  // 有給日・有給時間・特別有給・特別無給・振休
+  8,  8, 10, 10,  6,  6, // 有給日・有給時間・特別有給・特別無給・振休・代休
   14, 6,  7,  7,  8,  8, // 遅刻早退〜変更退勤
 ]
 
@@ -150,7 +151,7 @@ export async function GET(req: NextRequest) {
     const paidMinutesTotal = user.attendanceRecords.reduce((sum, r) => sum + (r.paidLeaveMinutes ?? 0), 0)
 
     // --- 情報ヘッダー（2行）---
-    sheet.mergeCells("A1:AG1")
+    sheet.mergeCells("A1:AH1")
     const titleCell = sheet.getCell("A1")
     titleCell.value = "個人別日別勤務報告書"
     titleCell.font = { bold: true, size: 13, name: "Arial" }
@@ -199,7 +200,14 @@ export async function GET(req: NextRequest) {
 
     // 申請マップ（dateKey → { type, detail }）
     const leaveMap = new Map<string, { type: string; detail: unknown }>()
+    // 休日出勤申請（承認済み）：日付 → 代わりに休む日と振休・代休の区別（休日出勤の日の行に出す）
+    const holidayWorkMap = new Map<string, { restDate?: string; restKind?: string }>()
     for (const req of user.requests) {
+      if (req.type === "HOLIDAY_WORK") {
+        const d = req.detail as { restDate?: string; restKind?: string } | null
+        holidayWorkMap.set(req.targetDate.toISOString().slice(0, 10), { restDate: d?.restDate, restKind: d?.restKind })
+        continue
+      }
       leaveMap.set(req.targetDate.toISOString().slice(0, 10), {
         type: req.type, detail: req.detail,
       })
@@ -215,6 +223,7 @@ export async function GET(req: NextRequest) {
       const rec = recordMap.get(dateKey)
       const holidayName = holidayMap.get(dateKey) ?? ""
       const leave = leaveMap.get(dateKey)
+      const holidayWork = holidayWorkMap.get(dateKey)
       const dayOfWeek = dayDate.getUTCDay()
       const isHoliday = !!holidayName || dayOfWeek === 0 || dayOfWeek === 6
 
@@ -288,7 +297,7 @@ export async function GET(req: NextRequest) {
         rec ? (STATUS_LABEL[rec.status] ?? rec.status) : "", // 承認
         rec?.clockIn ? "○" : "",                // 勤務
         holidayName,                             // 休日
-        "",                                      // 振替日
+        holidayWork?.restDate && holidayWork.restKind !== "daikyu" ? fmtRestDate(holidayWork.restDate) : "", // 振替日（振休：休日出勤の日の行に、代わりに休む日）
         fmtWorkRange(rec?.clockIn, rec?.clockOut), // 勤務時間（記録時刻の時間帯 09:00-15:00）
         fmtMin(regular),                         // 時間内
         fmtMin(breakMinutes),                    // 休憩時間
@@ -301,6 +310,7 @@ export async function GET(req: NextRequest) {
         paidLeaveDays, paidLeaveTime,            // 有給日・時間
         specialPaid, specialUnpaid,              // 特別休暇
         subLeave,                                // 振休
+        holidayWork?.restDate && holidayWork.restKind === "daikyu" ? fmtRestDate(holidayWork.restDate) : "", // 代休（休日出勤の日の行に、後から決めた休む日）
         lateEarly,                               // 遅刻／早退（遅 0:30 早 1:00 形式）
         absent,                                  // 欠勤
         fmtRawPunch(rec?.rawClockIn),            // 出勤（実打刻。無い日は空欄）
@@ -316,7 +326,7 @@ export async function GET(req: NextRequest) {
         cell.font = { size: 9, name: "Arial" }
         cell.border = thinBorder()
         // 数値・時間列は中央揃え
-        if (colNum >= 6 && colNum <= 29) {
+        if (colNum >= 6 && colNum <= 30) {
           cell.alignment = { horizontal: "center" }
         } else if (colNum === 1 || colNum === 2 || colNum === 3) {
           cell.alignment = { horizontal: "center" }

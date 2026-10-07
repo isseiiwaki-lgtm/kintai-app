@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { holidayWorkSummary, type HolidayWorkDetail } from "@/lib/holiday-work"
 import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 import {
   actionApproveRequest,
@@ -16,6 +17,7 @@ const TYPE_LABEL: Record<string, string> = {
   LEAVE:      "休暇申請",
   CORRECTION: "打刻修正",
   BREAK:      "休憩申請",
+  HOLIDAY_WORK: "休日出勤申請",
   COMMENT:    "修正依頼",
   OTHER:      "その他",
 }
@@ -57,6 +59,8 @@ function detailSummary(type: string, detail: Record<string, string> | null): str
       const scheduled = d.scheduledEndTime ? `（定時 ${d.scheduledEndTime}）` : ""
       return d.endTime ? `残業終了 ${d.endTime}${scheduled}` : ""
     }
+    case "HOLIDAY_WORK":
+      return holidayWorkSummary(d as HolidayWorkDetail)
     case "BREAK":
       return d.minutes != null ? `休憩 ${d.minutes}分` : ""
     case "ABSENCE":
@@ -148,6 +152,37 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
           {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
       </div>
+    )
+  }
+  if (type === "HOLIDAY_WORK") {
+    // 休日出勤申請：予定の開始〜終了と、代わりに休む日。休む日を後から入れると代休、申請と一緒に入っていたものは振休のまま（区別はサーバー側で決める）
+    const hadRestDate = !!detail.restDate
+    return (
+      <>
+        <div>
+          <label className={labelClass}>予定の開始時刻</label>
+          <select name="startTime" defaultValue={detail.startTime ?? ""} className={inputClass}>
+            <option value="">未設定</option>
+            {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>予定の終了時刻</label>
+          <select name="endTime" defaultValue={detail.endTime ?? ""} className={inputClass}>
+            <option value="">未設定</option>
+            {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className={labelClass}>休む日（{detail.restKind === "furikyu" ? "振休" : detail.restKind === "daikyu" ? "代休" : "未定"}）</label>
+          <input type="date" name="restDate" defaultValue={detail.restDate ?? ""} className={inputClass} />
+          <p className="mt-1 text-[11px] text-gray-400">
+            {hadRestDate
+              ? "日付を直しても、振休・代休の区別は変わりません。"
+              : "ここで休む日を入れると「代休」になります（申請と一緒に決めた休む日は「振休」）。"}
+          </p>
+        </div>
+      </>
     )
   }
   if (type === "BREAK") {
