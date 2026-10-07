@@ -1,7 +1,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
+import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, storedBreakMinutes } from "@/lib/attendance"
 import { isClockInCapped, isClockOutCapped, resolveInputTime, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
@@ -142,21 +142,8 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
       ? Math.round((rec.returnAt.getTime() - rec.goOutAt.getTime()) / 60000)
       : 0
 
-    // 休憩（分）
-    let breakMins: number
-    if (rec.breakMinutes != null) {
-      // その日の休憩の合計（休憩ボタン・承認済みの休憩申請。段7）
-      breakMins = rec.breakMinutes
-    } else if (rec.breakStart && rec.breakEnd) {
-      // 休憩ボタン導入前の記録: 過去の休憩打刻
-      breakMins = Math.round((rec.breakEnd.getTime() - rec.breakStart.getTime()) / 60000)
-    } else if (rec.clockIn && rec.clockOut && rec.workingMinutes !== null) {
-      // フルタイム: 逆算（拘束時間 - 中抜け - 実労働）
-      const rawMins = Math.floor((rec.clockOut.getTime() - rec.clockIn.getTime()) / 60000)
-      breakMins = Math.max(0, rawMins - goOutMins - (rec.workingMinutes ?? 0))
-    } else {
-      breakMins = 0
-    }
+    // 休憩（分）：保存済みの値から（Excel と同じ storedBreakMinutes）。保存した実働が無い日は 0
+    const breakMins = storedBreakMinutes(rec) ?? 0
 
     // 残業・遅刻・早退: 保存値 or 記録時刻と定時の差から計算（CLOCK_PIPELINE 段4・段8。定時は段0の結果）
     const { overtimeMinutes: overtime, lateMinutes: late, earlyLeaveMinutes: earlyLeave } = resolveDayMetrics(rec, schedule)

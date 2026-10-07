@@ -46,7 +46,7 @@ export async function actionAdminUpdateRecord(
   if (current.status === "LOCKED") return { ok: false, error: "締め済みの日のため修正できません（締め解除してから修正してください）" }
 
   // 変更するフィールドのみ data に含める（空値は元値を維持）
-  const data: Record<string, Date | string | number> = { status: "APPROVED" }
+  const data: Record<string, Date | string | number | null> = { status: "APPROVED" }
   const logs: { fieldName: string; oldValue: string | null; newValue: string | null }[] = []
 
   for (const name of timeFields) {
@@ -72,9 +72,15 @@ export async function actionAdminUpdateRecord(
     }
   }
 
-  // 休憩（分）：その日の休憩の合計。空なら変えない。休憩ボタン・休憩申請の承認と同じ breakMinutes を直接書く（段7）
+  // 休憩（分）：その日の休憩の合計。空なら変えない。休憩ボタン・休憩申請の承認と同じ breakMinutes を直接書く（段7）。
+  // "unset" は「未設定に戻す」（breakMinutes を空にして段7の規定値に戻す。「変更なし」とは別）
   const breakInput = (formData.get("breakMinutes") as string | null) ?? ""
-  if (breakInput !== "") {
+  if (breakInput === "unset") {
+    if (current.breakMinutes != null) {
+      data.breakMinutes = null
+      logs.push({ fieldName: "breakMinutes", oldValue: String(current.breakMinutes), newValue: null })
+    }
+  } else if (breakInput !== "") {
     const minutes = parseBreakRequestMinutes(breakInput)
     if (minutes === null) return { ok: false, error: "休憩の分数が正しくありません（15分刻み）" }
     if (current.breakMinutes !== minutes) {
@@ -250,13 +256,18 @@ export async function actionAdminCreateRecord(
   const breakStart = values.breakStart ?? null
   const breakEnd   = values.breakEnd   ?? null
 
-  // 休憩（分）：その日の休憩の合計（任意）。空なら未設定（段7の規定値）
+  // 休憩（分）：その日の休憩の合計（任意）。空なら未設定（段7の規定値）。
+  // すでに記録がある日（休憩申請の承認・休日出勤申請の事前承認で作られた空の記録）で空のままなら、入っている値を消さずに残す
   const breakInput = (formData.get("breakMinutes") as string | null) ?? ""
   const breakMinutes = breakInput === "" ? null : parseBreakRequestMinutes(breakInput)
   if (breakInput !== "" && breakMinutes === null) return { ok: false, error: "休憩の分数が正しくありません（15分刻み）" }
 
-  // 休日出勤: 所定時刻を持たない日なので定時なし（遅刻・早退は計上しない）
-  const isHolidayWork = formData.get("isHolidayWork") === "on"
+  // 休日出勤: 所定時刻を持たない日なので定時なし（遅刻・早退は計上しない）。
+  // チェックが入っていなくても、すでに印がある日（承認済みの休日出勤申請など）は印を外さない。
+  // チェックを入れたときだけ「代理打刻で付けた印」（holidayWorkByProxy）にする（休日出勤申請を削除しても外れない）
+  const holidayChecked = formData.get("isHolidayWork") === "on"
+  const isHolidayWork = holidayChecked || !!existing?.isHolidayWork
+  const holidayWorkByProxy = holidayChecked || !!existing?.holidayWorkByProxy
 
   // 記録時刻は入力した時刻を仮置きし、保存後に打刻パイプラインが出し直す
   const data = {
@@ -267,10 +278,11 @@ export async function actionAdminCreateRecord(
     adminClockOut: clockOut,
     breakStart,
     breakEnd,
-    breakMinutes,
+    breakMinutes: breakInput === "" && existing ? existing.breakMinutes : breakMinutes,
     goOutAt,
     returnAt,
     isHolidayWork,
+    holidayWorkByProxy,
     status: "APPROVED" as const,
   }
 

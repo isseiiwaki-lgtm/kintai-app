@@ -149,7 +149,8 @@ model AttendanceRecord {
   overtimeMinutes      Int?      // 残業分
   paidLeaveMinutes     Int?      // 有給取得時間（分）
   breakMinutes         Int?      // その日の休憩の分数（休憩ボタン・休憩申請の承認で入る）
-  isHolidayWork        Boolean   @default(false) // 休日出勤の印（代理打刻の休日出勤チェック。承認し直しても遅刻・早退を0に保つ）
+  isHolidayWork        Boolean   @default(false) // 休日出勤の印（代理打刻の休日出勤チェック・承認済みの休日出勤申請。承認し直しても遅刻・早退を0に保つ）
+  holidayWorkByProxy   Boolean   @default(false) // 印の出どころ：代理打刻の休日出勤チェックで付けた印。休日出勤申請の削除では外さない
   // 打刻時点のスイッチ状態（①〜④）。計算し直すときはこの保存値を使う（遡及しない）。null＝保存値なし（既存の記録）
   // 保存値なしの記録は「③④OFF・①②は現在値」として扱う（lib/clock-pipeline.ts resolveSwitches）
   // 管理者の確定修正（段6.5）。管理者の直接修正・代理打刻で入れた時刻。段0〜6の結果を最後に上書きする（丸め・④を通さない）

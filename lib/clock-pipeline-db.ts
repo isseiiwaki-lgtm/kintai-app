@@ -15,6 +15,7 @@ import { prisma } from "@/lib/prisma"
 import { calcWorkingMinutes } from "@/lib/attendance"
 import {
   computeClockPipeline,
+  isRestDay,
   pickHalfDay,
   resolveBreakMinutes,
   resolveInputTime,
@@ -226,6 +227,25 @@ export async function recomputeDay(userId: string, date: Date, opts: RecomputeOp
   const rec = await prisma.attendanceRecord.findUnique({ where: { userId_date: { userId, date } } })
   if (!rec) return
   await recomputeRecords(userId, [rec], opts)
+}
+
+/**
+ * 休日出勤申請の対象日が休日か（休日カレンダー・本人の休みの曜日）をサーバーで確かめる。休日でなければエラーメッセージ。
+ * 振替で労働日になった休日の除外は、振替の記録がまだ無いので見ていない（isRestDay の isSubstituteWorkday）。
+ * 申請時と承認時（画面の入力だけに頼らない）、管理者の修正で日付を変えたときに使う
+ */
+export async function holidayWorkDateError(userId: string, date: Date): Promise<string | null> {
+  const [user, holiday] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true },
+    }),
+    prisma.holiday.findUnique({ where: { date }, select: { id: true } }),
+  ])
+  if (!user) return "対象ユーザーが見つかりません"
+  return isRestDay(date, user, !!holiday)
+    ? null
+    : "休日出勤申請は休日（休日カレンダー・本人の休みの曜日）の日だけ出せます。対象日を確かめてください"
 }
 
 /** loadApprovedCorrections の結果の引き方（日付・項目ごと） */

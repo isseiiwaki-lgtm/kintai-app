@@ -120,7 +120,9 @@ export function NewRequestForm({
       fd.set("type", "ABSENCE")
       fd.set("absenceType", "absent")
     }
-    await actionCreateRequest(fd)
+    const res = await actionCreateRequest(fd)
+    // サーバーの入力チェックで断られたとき（成功時は redirect されてここに戻らない）
+    if (res && !res.ok) { setFormError(res.error); setPending(false) }
   }
 
   return (

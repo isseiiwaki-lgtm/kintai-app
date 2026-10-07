@@ -5,9 +5,13 @@ import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { parseBreakRequestMinutes } from "@/lib/attendance"
+import { holidayWorkDateError } from "@/lib/clock-pipeline-db"
 import { resolveRestKind, validateHolidayWorkTimes, validateRestDate } from "@/lib/holiday-work"
 
-export async function actionCreateRequest(formData: FormData) {
+/** 申請の入力エラー（フォームに出す）。それ以外の失敗は例外 */
+export type CreateRequestResult = { ok: false; error: string } | void
+
+export async function actionCreateRequest(formData: FormData): Promise<CreateRequestResult> {
   const session = await auth()
   if (!session?.user?.id) throw new Error("Unauthorized")
   const userId = session.user.id
@@ -54,6 +58,9 @@ export async function actionCreateRequest(formData: FormData) {
       if (timeErr) throw new Error(timeErr)
       const restErr = validateRestDate(restDate, targetDate)
       if (restErr) throw new Error(restErr)
+      // 対象日が休日か（休日カレンダー・本人の休みの曜日）はサーバーでも確かめる。画面に出して申請させない
+      const dateErr = await holidayWorkDateError(userId, new Date(targetDate))
+      if (dateErr) return { ok: false, error: dateErr }
       detail = { startTime, endTime }
       if (restDate) {
         detail.restDate = restDate

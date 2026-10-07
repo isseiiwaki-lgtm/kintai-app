@@ -286,6 +286,7 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                 <label className="text-xs text-gray-600 w-20">休憩（分）</label>
                 <select name="breakMinutes" defaultValue={editRec.breakMinutes != null ? String(editRec.breakMinutes) : ""} className={selectClass}>
                   <option value="">変更なし</option>
+                  {editRec.breakMinutes != null && <option value="unset">未設定に戻す（規定値）</option>}
                   {Array.from({ length: BREAK_REQUEST_MAX_MINUTES / BREAK_REQUEST_STEP_MINUTES + 1 }, (_, i) => i * BREAK_REQUEST_STEP_MINUTES).map((m) => (
                     <option key={m} value={m}>{m}分</option>
                   ))}

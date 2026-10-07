@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => {
   return {
     store,
     recompute: vi.fn(async () => {}),
+    holidayFind: vi.fn(async () => null),
     recordFind: vi.fn(),
     recordCreate: vi.fn(),
     recordUpdate: vi.fn(),
@@ -40,7 +41,8 @@ vi.mock("@/lib/prisma", () => ({
     },
     approval: { create: mocks.approvalCreate, findMany: mocks.approvalFindMany },
     approvalRoute: { findMany: mocks.routeFindMany },
-    user: { findUnique: async () => null },
+    user: { findUnique: async () => ({ workSun: false, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: false }) },
+    holiday: { findUnique: mocks.holidayFind },
     setting: { findUnique: async () => null },
   },
 }))
@@ -204,6 +206,25 @@ describe("承認・削除・修正（サーバーアクション）", () => {
     expect(mocks.recompute).toHaveBeenCalledWith("u1", SAT)
   })
 
+  it("承認：対象日が休日でなければ拒否する（平日・休日カレンダーに無い日）。承認の記録も作らない", async () => {
+    const WED = new Date(Date.UTC(2026, 9, 7))
+    mocks.requestFind.mockResolvedValue(pendingReq({ targetDate: WED }))
+    mocks.recordFind.mockResolvedValue(null)
+    const res = await actionApproveRequest("q1")
+    expect(res.ok).toBe(false)
+    expect(!res.ok && res.error).toContain("休日")
+    expect(mocks.approvalCreate).not.toHaveBeenCalled()
+    expect(mocks.recordCreate).not.toHaveBeenCalled()
+  })
+
+  it("承認：平日でも休日カレンダーにある日は承認できる", async () => {
+    const WED = new Date(Date.UTC(2026, 9, 7))
+    mocks.holidayFind.mockResolvedValueOnce({ id: 1 } as never)
+    mocks.requestFind.mockResolvedValue(pendingReq({ targetDate: WED }))
+    mocks.recordFind.mockResolvedValue(null)
+    expect(await actionApproveRequest("q1")).toEqual({ ok: true })
+  })
+
   it("承認：締め済み（LOCKED）の日は承認を拒否し、承認の記録も申請の状態も変えない", async () => {
     mocks.requestFind.mockResolvedValue(pendingReq())
     mocks.recordFind.mockResolvedValue({ id: "r1", status: "LOCKED" })
@@ -224,6 +245,18 @@ describe("承認・削除・修正（サーバーアクション）", () => {
     expect(res).toEqual({ ok: true })
     expect(mocks.recordUpdate).toHaveBeenCalledWith({ where: { id: "r1" }, data: { isHolidayWork: false } })
     expect(mocks.recordDelete).toHaveBeenCalledWith({ where: { id: "r1" } })
+  })
+
+  it("削除：代理打刻のチェックで付けた印（holidayWorkByProxy）は外さず、記録も消さない", async () => {
+    mocks.requestFind.mockResolvedValue(pendingReq({ status: "APPROVED", approvals: [] }))
+    mocks.requestCount.mockResolvedValue(0)
+    mocks.recordFind.mockResolvedValue({
+      id: "r1", status: "OPEN", isHolidayWork: true, holidayWorkByProxy: true, clockIn: null, clockOut: null, rawClockIn: null, rawClockOut: null,
+      goOutAt: null, returnAt: null, breakStart: null, breakEnd: null, breakMinutes: null, note: null, isAbsent: false, paidLeaveMinutes: null,
+    })
+    await actionDeleteRequest("q1")
+    expect(mocks.recordUpdate).not.toHaveBeenCalled()
+    expect(mocks.recordDelete).not.toHaveBeenCalled()
   })
 
   it("削除：打刻のある日は印を外して計算し直す（記録は残す）", async () => {
@@ -259,6 +292,26 @@ describe("承認・削除・修正（サーバーアクション）", () => {
     const call = mocks.requestUpdate.mock.calls[0][0] as { data: { detail: Record<string, string> } }
     expect(call.data.detail).toEqual({ startTime: "09:00", endTime: "15:00", restDate: "2026-10-14", restKind: "daikyu" })
     expect(mocks.recompute).not.toHaveBeenCalled()
+  })
+
+  it("修正：まだ審査中の休日出勤申請に管理者が休む日を足す → 申請と一緒に決めた扱い＝振休。処理済みのあとに足すなら代休", async () => {
+    mocks.requestFind.mockResolvedValue(pendingReq({ status: "PENDING" }))
+    await actionUpdateRequest("q1", editForm({ restDate: "2026-10-14" }))
+    const call = mocks.requestUpdate.mock.calls[0][0] as { data: { detail: Record<string, string> } }
+    expect(call.data.detail.restKind).toBe("furikyu")
+
+    vi.clearAllMocks()
+    mocks.requestFind.mockResolvedValue(pendingReq({ status: "REJECTED" }))
+    await actionUpdateRequest("q1", editForm({ restDate: "2026-10-14" }))
+    const call2 = mocks.requestUpdate.mock.calls[0][0] as { data: { detail: Record<string, string> } }
+    expect(call2.data.detail.restKind).toBe("daikyu")
+  })
+
+  it("修正：種別・日付を変えて休日でない日にするとエラーで保存しない", async () => {
+    mocks.requestFind.mockResolvedValue(pendingReq({ status: "PENDING" }))
+    const res = await actionUpdateRequest("q1", editForm({ targetDate: "2026-10-07" }))
+    expect(res.ok).toBe(false)
+    expect(mocks.requestUpdate).not.toHaveBeenCalled()
   })
 
   it("修正：申請と一緒に決めた休む日（振休）は、日付を直しても振休のまま", async () => {

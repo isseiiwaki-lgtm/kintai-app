@@ -166,6 +166,19 @@ export function resolveBreakMinutes(p: {
 export function pickHolidayWorkSchedule(
   requests: { type: string; status: string; createdAt: Date; detail?: unknown }[],
 ): { start: string; end: string } | null {
+  const req = pickHolidayWorkRequest(requests)
+  if (!req) return null
+  const d = req.detail as { startTime: string; endTime: string }
+  return { start: d.startTime.padStart(5, "0"), end: d.endTime.padStart(5, "0") }
+}
+
+/**
+ * その日に有効な休日出勤申請（承認済みで開始・終了が正しいもののうち、最後に出した申請）。
+ * 段0の定時（pickHolidayWorkSchedule）と Excel の「休む日」「振休・代休」の列が、同じ申請を選ぶための共通の選び方
+ */
+export function pickHolidayWorkRequest<T extends { type: string; status: string; createdAt: Date; detail?: unknown }>(
+  requests: T[],
+): T | null {
   const ok = (v: unknown): v is string => typeof v === "string" && /^\d{1,2}:\d{2}$/.test(v)
   const list = requests
     .filter((r) => r.type === "HOLIDAY_WORK" && r.status === "APPROVED")
@@ -174,9 +187,7 @@ export function pickHolidayWorkSchedule(
       return ok(d?.startTime) && ok(d?.endTime)
     })
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-  if (list.length === 0) return null
-  const d = list[0].detail as { startTime: string; endTime: string }
-  return { start: d.startTime.padStart(5, "0"), end: d.endTime.padStart(5, "0") }
+  return list[0] ?? null
 }
 
 export type ScheduleParams = {

@@ -6,9 +6,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
-import { resolveDayMetrics } from "@/lib/attendance"
+import { resolveDayMetrics, storedBreakMinutes } from "@/lib/attendance"
 import { fmtRestDate } from "@/lib/holiday-work"
-import { pickHalfDay, resolveBreakMinutes, resolveScheduleForDate } from "@/lib/clock-pipeline"
+import { pickHalfDay, pickHolidayWorkRequest, resolveBreakMinutes, resolveScheduleForDate } from "@/lib/clock-pipeline"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly, effectiveChangedFields } from "@/lib/export-format"
 import ExcelJS from "exceljs"
@@ -200,14 +200,9 @@ export async function GET(req: NextRequest) {
 
     // 申請マップ（dateKey → { type, detail }）
     const leaveMap = new Map<string, { type: string; detail: unknown }>()
-    // 休日出勤申請（承認済み）：日付 → 代わりに休む日と振休・代休の区別（休日出勤の日の行に出す）
-    const holidayWorkMap = new Map<string, { restDate?: string; restKind?: string }>()
     for (const req of user.requests) {
-      if (req.type === "HOLIDAY_WORK") {
-        const d = req.detail as { restDate?: string; restKind?: string } | null
-        holidayWorkMap.set(req.targetDate.toISOString().slice(0, 10), { restDate: d?.restDate, restKind: d?.restKind })
-        continue
-      }
+      // 休日出勤申請は日ごとに pickHolidayWorkRequest（段0の定時と同じ選び方）で拾う。休憩申請は休暇の分類に関係ない
+      if (req.type === "HOLIDAY_WORK" || req.type === "BREAK") continue
       leaveMap.set(req.targetDate.toISOString().slice(0, 10), {
         type: req.type, detail: req.detail,
       })
@@ -223,7 +218,6 @@ export async function GET(req: NextRequest) {
       const rec = recordMap.get(dateKey)
       const holidayName = holidayMap.get(dateKey) ?? ""
       const leave = leaveMap.get(dateKey)
-      const holidayWork = holidayWorkMap.get(dateKey)
       const dayOfWeek = dayDate.getUTCDay()
       const isHoliday = !!holidayName || dayOfWeek === 0 || dayOfWeek === 6
 
@@ -245,14 +239,21 @@ export async function GET(req: NextRequest) {
 
       // 段0：その日の定時（休日は定時なし・半休は前半/後半・承認済みの休日出勤申請はその開始〜終了）。承認済みの LEAVE から半休を拾う
       const dayRequests = user.requests.filter((q) => q.targetDate.toISOString().slice(0, 10) === dateKey)
+      // 休日出勤申請（承認済み）：代わりに休む日と振休・代休の区別（休日出勤の日の行に出す）。段0と同じ申請を選ぶ
+      const holidayWorkReq = pickHolidayWorkRequest(dayRequests)
+      const holidayWork = holidayWorkReq
+        ? (holidayWorkReq.detail as { restDate?: string; restKind?: string } | null) ?? undefined
+        : undefined
       const schedule = resolveScheduleForDate({
         date: dayDate, user, setting,
         isHoliday: !!holidayName, isHolidayWork: rec?.isHolidayWork,
         requests: dayRequests,
       })
       if (rec?.clockIn && rec?.clockOut) {
-        // 段7：休憩分数は勤務時間の計算（打刻パイプライン）と同じ関数で決める。保存した勤務時間があればそれを優先する
-        breakMinutes = resolveBreakMinutes({
+        // 段7：保存した実働がある日は、その実働と食い違わないよう保存値から決める（/records と同じ storedBreakMinutes）。
+        // 保存した実働が無い日（承認前など）は、勤務時間の計算（打刻パイプライン）と同じ関数で決める
+        const stored = rec.workingMinutes != null ? storedBreakMinutes(rec) : null
+        breakMinutes = stored ?? resolveBreakMinutes({
           savedBreakMinutes: rec.breakMinutes,
           breakStart: rec.breakStart, breakEnd: rec.breakEnd,
           halfDay: pickHalfDay(dayRequests),
