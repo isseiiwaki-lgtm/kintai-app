@@ -21,6 +21,7 @@ type Rec = {
   workingMinutes:    number | null
   lateMinutes:       number
   earlyLeaveMinutes: number
+  overtimeMinutes:   number   // 残業（早出＋終業後）
   nightMinutes:      number
   goOutMins:         number | null   // null = 外出中
   note:          string | null   // 当日コメント（本人が打刻画面で入力）
@@ -138,7 +139,8 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
           </thead>
           <tbody>
             {records.map((rec) => {
-              const overtimeMin = Math.max(0, (rec.workingMinutes ?? 0) - rec.scheduledMinutes)
+              // 残業 ＝ 早出 ＋ 終業後（保存値、無ければ記録時刻と定時の差。サーバー側で計算済み。CLOCK_PIPELINE 段8）
+              const overtimeMin = rec.overtimeMinutes
               return (
                 <tr
                   key={rec.dateISO}

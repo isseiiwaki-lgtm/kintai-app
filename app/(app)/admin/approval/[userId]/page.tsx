@@ -4,7 +4,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { ProxyPunchForm } from "./_components/ProxyPunchForm"
-import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
+import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
+import { resolveScheduleForDate } from "@/lib/clock-pipeline"
+import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
 type Params      = Promise<{ userId: string }>
@@ -57,7 +59,8 @@ export default async function UserApprovalPage({
       where: { id: userId },
       select: {
         id: true, name: true, email: true, department: true,
-        employmentType: true, workStartTime: true, workEndTime: true,
+        employmentType: true, workStartTime: true, workEndTime: true, breakMinutes: true,
+        workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       },
     }),
     prisma.attendanceRecord.findMany({
@@ -85,6 +88,9 @@ export default async function UserApprovalPage({
   }
 
   if (!user) notFound()
+
+  // 段0：その日の定時（休日は定時なし・半休は前半/後半）。遅刻・早退・残業・要確認の判定に使う
+  const sched = await loadScheduleInputs([userId], firstDay, lastDay)
 
   // 申請を日付キーでマップ
   const requestMap = new Map(
@@ -133,16 +139,16 @@ export default async function UserApprovalPage({
     const dd  = jst.getUTCDate()
     const dow = jst.getUTCDay()
     const key = `${dy}-${dm}-${dd}`
+    const schedule = resolveScheduleForDate({
+      date: r.date, user, setting: sched.setting,
+      isHoliday: sched.isHoliday(r.date), isHolidayWork: r.isHolidayWork, requests: sched.requestsOf(userId, r.date),
+    })
     const needsReview = calcNeedsReview({
       clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today: todayUTC,
-      workStartTime: user.workStartTime, workEndTime: user.workEndTime,
+      workStartTime: schedule?.start ?? null, workEndTime: schedule?.end ?? null,
     })
-    const metrics = calcMetrics({
-      clockIn: r.clockIn, clockOut: r.clockOut,
-      workingMinutes: r.workingMinutes,
-      workStartTime: user.workStartTime, workEndTime: user.workEndTime,
-      scheduledMinutes,
-    })
+    // 遅刻・早退・残業: 保存値があればそれ、無ければ記録時刻と定時の差から計算（段4・段8）
+    const metrics = resolveDayMetrics(r, schedule)
     const nightMinutes = calcNightMinutes(r.clockIn, r.clockOut)
     // ④（残業の申請上限）: 実打刻・申請終了・記録時刻の3つを管理者に見せる。一般社員の画面には出さない
     const dayOvertimeReqs = overtimeReqByDate.get(r.date.toISOString()) ?? []
@@ -170,9 +176,10 @@ export default async function UserApprovalPage({
       goOutAt:     formatHHMM(r.goOutAt),
       returnAt:    formatHHMM(r.returnAt),
       workingMinutes:    r.workingMinutes,
-      // 休日出勤の日は遅刻・早退を0で表示（代理打刻で入れた値と承認処理の保存値に合わせる）
-      lateMinutes:       r.isHolidayWork ? 0 : metrics.lateMinutes,
-      earlyLeaveMinutes: r.isHolidayWork ? 0 : metrics.earlyLeaveMinutes,
+      // 休日出勤の日・休日は定時なしなので0（resolveScheduleForDate が null を返す）
+      lateMinutes:       metrics.lateMinutes,
+      earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+      overtimeMinutes:   metrics.overtimeMinutes,
       nightMinutes,
       goOutMins,
       note:        r.note,

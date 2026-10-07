@@ -7,7 +7,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { calcLegalBreak } from "@/config/attendance.config"
-import { resolveLateEarlyMinutes } from "@/lib/attendance"
+import { resolveDayMetrics } from "@/lib/attendance"
+import { resolveScheduleForDate } from "@/lib/clock-pipeline"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly } from "@/lib/export-format"
 import ExcelJS from "exceljs"
@@ -83,7 +84,8 @@ export async function GET(req: NextRequest) {
     select: {
       id: true, name: true, email: true,
       department: true, employeeCode: true, employmentType: true, salaryCode: true,
-      workStartTime: true, workEndTime: true,
+      workStartTime: true, workEndTime: true, breakMinutes: true,
+      workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       attendanceRecords: {
         where: { date: { gte: firstDay, lte: lastDay } },
         orderBy: { date: "asc" },
@@ -96,7 +98,7 @@ export async function GET(req: NextRequest) {
           type: { in: ["LEAVE", "ABSENCE"] },
           status: "APPROVED",
         },
-        select: { targetDate: true, type: true, detail: true },
+        select: { targetDate: true, type: true, status: true, createdAt: true, detail: true },
       },
     },
   })
@@ -243,12 +245,19 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      const overtime   = rec?.overtimeMinutes ?? Math.max(0, workingMinutes - 480)
+      // 段0：その日の定時（休日は定時なし・半休は前半/後半）。承認済みの LEAVE から半休を拾う
+      const schedule = resolveScheduleForDate({
+        date: dayDate, user, setting,
+        isHoliday: !!holidayName, isHolidayWork: rec?.isHolidayWork,
+        requests: user.requests.filter((q) => q.targetDate.toISOString().slice(0, 10) === dateKey),
+      })
+      // 残業・遅刻・早退: 保存値が無い日（承認前）は画面と同じく記録時刻と定時の差から計算する（段4・段8）
+      const dayMetrics = rec
+        ? resolveDayMetrics(rec, schedule)
+        : { lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: 0 }
+      const overtime   = dayMetrics.overtimeMinutes
       const regular    = Math.max(0, workingMinutes - overtime)
-      // 遅刻・早退: 保存値が無い日（承認前）は画面と同じく記録時刻から計算する
-      const lateEarlyMins = rec
-        ? resolveLateEarlyMinutes(rec, user)
-        : { lateMinutes: 0, earlyLeaveMinutes: 0 }
+      const lateEarlyMins = dayMetrics
       const lateEarly  = fmtLateEarly(lateEarlyMins.lateMinutes, lateEarlyMins.earlyLeaveMinutes) // 遅 0:30 / 早 2:00（文字列・集計不可）
 
       // 休暇申請の分類

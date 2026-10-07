@@ -1,7 +1,9 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcNeedsReview, hasOvertimeRequest, needsOvertimeRequestNotice } from "@/lib/attendance"
+import { calcNeedsReview, hasOvertimeRequest, needsOvertimeRequestNotice, resolveDayMetrics } from "@/lib/attendance"
+import { resolveScheduleForDate } from "@/lib/clock-pipeline"
+import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -47,10 +49,14 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     orderBy: { employeeCode: "asc" },
     select: {
       id: true, name: true, email: true, employmentType: true, department: true,
-      workStartTime: true, workEndTime: true,
+      workStartTime: true, workEndTime: true, breakMinutes: true,
+      workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       attendanceRecords: {
         where: { date: { gte: firstDay, lte: lastDay } },
-        select: { workingMinutes: true, clockIn: true, clockOut: true, rawClockOut: true, date: true, status: true },
+        select: {
+          workingMinutes: true, clockIn: true, clockOut: true, rawClockOut: true, date: true, status: true,
+          isHolidayWork: true, lateMinutes: true, earlyLeaveMinutes: true, overtimeMinutes: true,
+        },
       },
     },
   })
@@ -74,6 +80,9 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
 
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 
+  // 段0：その日の定時（休日は定時なし・半休は前半/後半）。残業・要確認の判定に使う
+  const sched = await loadScheduleInputs(users.map((u: { id: string }) => u.id), firstDay, lastDay)
+
   function parseHHMM(s: string | null | undefined): number | null {
     if (!s) return null
     const [h, m] = s.split(":").map(Number)
@@ -94,7 +103,10 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     approvedDays: number
     noOvertimeRequestDays: number
   }
-  type Rec = { clockIn: Date | null; clockOut: Date | null; rawClockOut: Date | null; date: Date; workingMinutes: number | null; status: string }
+  type Rec = {
+    clockIn: Date | null; clockOut: Date | null; rawClockOut: Date | null; date: Date; workingMinutes: number | null; status: string
+    isHolidayWork: boolean; lateMinutes: number | null; earlyLeaveMinutes: number | null; overtimeMinutes: number | null
+  }
   const rows: Row[] = users.map((u: typeof users[number]) => {
     const recs = u.attendanceRecords as Rec[]
     const startM = parseHHMM(u.workStartTime)
@@ -106,13 +118,19 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     const workDays          = recs.filter((r) => r.clockIn).length
     const totalMin          = recs.reduce((s, r) => s + (r.workingMinutes ?? 0), 0)
     const scheduledTotalMin = workDays * scheduledPerDay
-    const overtimeMin       = recs.reduce((s, r) => s + Math.max(0, (r.workingMinutes ?? 0) - scheduledPerDay), 0)
-    const unapprovedDays    = recs.filter((r) =>
-      r.status === "OPEN" && calcNeedsReview({
+    const scheduleOf = (r: Rec) => resolveScheduleForDate({
+      date: r.date, user: u, setting: sched.setting,
+      isHoliday: sched.isHoliday(r.date), isHolidayWork: r.isHolidayWork, requests: sched.requestsOf(u.id, r.date),
+    })
+    // 残業 ＝ 早出 ＋ 終業後（保存値があればそれ。CLOCK_PIPELINE 段8）
+    const overtimeMin       = recs.reduce((s, r) => s + resolveDayMetrics(r, scheduleOf(r)).overtimeMinutes, 0)
+    const unapprovedDays    = recs.filter((r) => {
+      const sc = scheduleOf(r)
+      return r.status === "OPEN" && calcNeedsReview({
         clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today: todayUTC,
-        workStartTime: u.workStartTime, workEndTime: u.workEndTime,
+        workStartTime: sc?.start ?? null, workEndTime: sc?.end ?? null,
       }) || r.status === "SUBMITTED"
-    ).length
+    }).length
     const approvedDays      = recs.filter((r) => r.status === "APPROVED" || r.status === "LOCKED").length
     // 残業申請が無いのに実打刻が定時を15分以上過ぎた日（④ON のみ。通知は飛ばさず、件数の目印だけ）
     const noOvertimeRequestDays = recs.filter((r) =>

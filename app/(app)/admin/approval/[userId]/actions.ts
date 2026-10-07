@@ -3,8 +3,8 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
-import { calcMetrics, formatHHMMfromDate, calcScheduledMinutes, calcWorkingMinutes } from "@/lib/attendance"
-import { calcLegalBreak } from "@/config/attendance.config"
+import { formatHHMMfromDate } from "@/lib/attendance"
+import { recomputeDay } from "@/lib/clock-pipeline-db"
 import { approveRecordsWithMetrics } from "@/lib/approve-records"
 
 async function checkRole() {
@@ -64,64 +64,6 @@ export async function actionAdminUpdateRecord(
     }
   }
 
-  // 承認時の集計値を計算
-  const newClockIn    = (data.clockIn    as Date | undefined) ?? current.clockIn
-  const newClockOut   = (data.clockOut   as Date | undefined) ?? current.clockOut
-  const newGoOutAt    = (data.goOutAt    as Date | undefined) ?? current.goOutAt
-  const newReturnAt   = (data.returnAt   as Date | undefined) ?? current.returnAt
-  const newBreakStart = (data.breakStart as Date | undefined) ?? current.breakStart
-  const newBreakEnd   = (data.breakEnd   as Date | undefined) ?? current.breakEnd
-
-  // workingMinutes を再計算
-  let newWorkingMinutes: number | null = current.workingMinutes
-  if (newClockIn && newClockOut) {
-    const totalMs    = newClockOut.getTime() - newClockIn.getTime()
-    const goOutMs    = newGoOutAt && newReturnAt
-      ? newReturnAt.getTime() - newGoOutAt.getTime()
-      : 0
-    const rawMinutes = Math.floor((totalMs - goOutMs) / 60000)
-
-    if (current.user.employmentType === "part") {
-      const breakMs = newBreakStart && newBreakEnd
-        ? newBreakEnd.getTime() - newBreakStart.getTime()
-        : 0
-      newWorkingMinutes = Math.max(0, rawMinutes - Math.floor(breakMs / 60000))
-    } else {
-      newWorkingMinutes = Math.max(0, rawMinutes - calcLegalBreak(rawMinutes))
-    }
-    data.workingMinutes = newWorkingMinutes
-  }
-
-  // 所定時間（休憩控除済み）
-  const { workStartTime, workEndTime, employmentType } = current.user
-  const scheduledMins = (() => {
-    const parseHHMM = (s: string | null) => {
-      if (!s) return null
-      const [h, m] = s.split(":").map(Number)
-      return h * 60 + m
-    }
-    const s = parseHHMM(workStartTime)
-    const e = parseHHMM(workEndTime)
-    if (s !== null && e !== null && e > s) {
-      const raw = e - s
-      return raw - calcLegalBreak(raw)
-    }
-    return employmentType === "full" ? 480 : 0
-  })()
-
-  const metrics = calcMetrics({
-    clockIn:          newClockIn,
-    clockOut:         newClockOut,
-    workingMinutes:   newWorkingMinutes,
-    workStartTime,
-    workEndTime,
-    scheduledMinutes: scheduledMins,
-  })
-  // 休日出勤の日は所定時刻を持たないため、遅刻・早退は0のまま保つ（代理打刻で立てた印）
-  data.lateMinutes       = current.isHolidayWork ? 0 : metrics.lateMinutes
-  data.earlyLeaveMinutes = current.isHolidayWork ? 0 : metrics.earlyLeaveMinutes
-  data.overtimeMinutes   = metrics.overtimeMinutes
-
   await prisma.$transaction([
     prisma.attendanceRecord.update({ where: { id: recordId }, data }),
     ...logs.map((log) =>
@@ -130,6 +72,10 @@ export async function actionAdminUpdateRecord(
       })
     ),
   ])
+
+  // 入力した時刻（変更履歴の新しい値）が段1の入力になる。記録時刻・勤務時間・遅刻・早退・残業は打刻パイプラインが出し直す
+  // （保存した記録は承認済みなので遅刻・早退も保存される）。スイッチ状態は記録に保存済みの値を使う
+  await recomputeDay(current.userId, current.date)
 
   revalidatePath("/admin/approval")
   revalidatePath("/admin/attendance")
@@ -200,27 +146,10 @@ export async function actionAdminCreateRecord(
   const breakStart = values.breakStart ?? null
   const breakEnd   = values.breakEnd   ?? null
 
-  // workingMinutes（既存の管理者編集と同じ規則。part は実休憩打刻、full は法定休憩を控除）
-  const workingMinutes = calcWorkingMinutes({
-    clockIn, clockOut, goOutAt, returnAt, breakStart, breakEnd,
-    employmentType: user.employmentType,
-  })
+  // 休日出勤: 所定時刻を持たない日なので定時なし（遅刻・早退は計上しない）
+  const isHolidayWork = formData.get("isHolidayWork") === "on"
 
-  const scheduledMins = calcScheduledMinutes(user.workStartTime, user.workEndTime, user.employmentType)
-  const metrics = calcMetrics({
-    clockIn,
-    clockOut,
-    workingMinutes,
-    workStartTime: user.workStartTime,
-    workEndTime:   user.workEndTime,
-    scheduledMinutes: scheduledMins,
-  })
-
-  // 休日出勤: 所定時刻を持たない日なので遅刻・早退は計上しない
-  const isHolidayWork    = formData.get("isHolidayWork") === "on"
-  const lateMinutes      = isHolidayWork ? 0 : metrics.lateMinutes
-  const earlyLeaveMinutes = isHolidayWork ? 0 : metrics.earlyLeaveMinutes
-
+  // 記録時刻は入力した時刻を仮置きし、保存後に打刻パイプラインが出し直す
   const data = {
     clockIn,
     clockOut,
@@ -228,10 +157,6 @@ export async function actionAdminCreateRecord(
     breakEnd,
     goOutAt,
     returnAt,
-    workingMinutes,
-    lateMinutes,
-    earlyLeaveMinutes,
-    overtimeMinutes: metrics.overtimeMinutes,
     isHolidayWork,
     status: "APPROVED" as const,
   }
@@ -252,6 +177,10 @@ export async function actionAdminCreateRecord(
       })),
     })
   })
+
+  // 代理打刻の時刻（変更履歴の新しい値）が段1の入力。記録時刻・勤務時間・遅刻・早退・残業は打刻パイプラインが出し直す。
+  // 休日出勤の印がある日は定時なし（遅刻・早退は付かない）。スイッチ状態はこの時点の設定を保存する（代理打刻の保存時が「打刻時点」）
+  await recomputeDay(userId, date, { snapshot: "ifMissing" })
 
   revalidatePath("/admin/approval")
   revalidatePath("/admin/attendance")
