@@ -116,6 +116,18 @@ const inputClass = "w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-
 const labelClass = "block text-xs text-gray-500 mb-1"
 
 function DetailFields({ type, detail }: { type: string; detail: Record<string, string> }) {
+  if (type === "OVERTIME" && detail.overtimeType === "earlyStart") {
+    // 早出申請は開始時刻を直す（overtimeType はサーバー側で保持される）
+    return (
+      <div>
+        <label className={labelClass}>開始時刻</label>
+        <select name="startTime" defaultValue={detail.startTime ?? ""} className={inputClass}>
+          <option value="">未設定</option>
+          {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+    )
+  }
   if (type === "OVERTIME") {
     return (
       <div>

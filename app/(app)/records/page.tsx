@@ -1,7 +1,9 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, calcMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
+import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
+import { isClockOutCapped, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -30,8 +32,9 @@ function fmtDur(min: number | null | undefined): string {
 }
 
 /** 生打刻（丸め前）が記録時刻と異なる場合のみ小さく併記する */
-function RawTime({ recorded, raw }: { recorded: Date | null | undefined; raw: Date | null | undefined }) {
-  if (!recorded || !raw) return null
+// hide: ④（申請の時刻での打ち切り）で削った退勤には併記しない（一般社員の画面に④で削った内訳を出さない）
+function RawTime({ recorded, raw, hide }: { recorded: Date | null | undefined; raw: Date | null | undefined; hide?: boolean }) {
+  if (hide || !recorded || !raw) return null
   const label = formatTime(raw)
   if (label === formatTime(recorded)) return null
   return <span className="block text-[10px] text-gray-400 leading-tight">実 {label}</span>
@@ -61,7 +64,10 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
     }),
     prisma.user.findUnique({
       where: { id: userId },
-      select: { workStartTime: true, workEndTime: true, employmentType: true },
+      select: {
+        workStartTime: true, workEndTime: true, employmentType: true, breakMinutes: true,
+        workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
+      },
     }),
     prisma.request.findMany({
       where: { userId, type: "CORRECTION", targetDate: { gte: firstDay, lte: lastDay } },
@@ -97,16 +103,27 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
   const scheduledMins = calcScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType)
 
+  // 段0（休日・半休を反映した定時）の材料。保存値が無いときの遅刻・早退・残業の計算に使う
+  const sched = await loadScheduleInputs([userId], firstDay, lastDay)
+
   type Rec = typeof records[number]
 
   // 各レコードの表示用計算値を返す
   function buildRowData(rec: Rec) {
+    // 段0：その日の定時（休日は定時なし・半休は前半/後半）。要確認の遅刻・早退の判定もこの定時で行う
+    const dayRequests = sched.requestsOf(userId, rec.date)
+    const schedule = user
+      ? resolveScheduleForDate({
+          date: rec.date, user, setting: sched.setting,
+          isHoliday: sched.isHoliday(rec.date), isHolidayWork: rec.isHolidayWork, requests: dayRequests,
+        })
+      : null
     // 要確認の理由（遅刻・早退・退勤漏れ）を、遅刻早退申請の種別ごとに打ち消す。ホーム・修正依頼ボタンと同じ判定
     const review = rec.status === "OPEN"
       ? resolveEmployeeReview(
           calcReviewReasons({
             clockIn: rec.clockIn, clockOut: rec.clockOut, date: rec.date, today: todayUTC,
-            workStartTime: user?.workStartTime ?? null, workEndTime: user?.workEndTime ?? null,
+            workStartTime: schedule?.start ?? null, workEndTime: schedule?.end ?? null,
           }),
           lateEarlyMap.get(dateKey(rec.date)),
         )
@@ -131,30 +148,22 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
       breakMins = 0
     }
 
-    // 残業・遅刻・早退: 格納値 or on-the-fly 計算
-    const metrics = calcMetrics({
-      clockIn: rec.clockIn, clockOut: rec.clockOut,
-      workingMinutes: rec.workingMinutes,
-      workStartTime: user?.workStartTime ?? null,
-      workEndTime: user?.workEndTime ?? null,
-      scheduledMinutes: scheduledMins,
+    // 残業・遅刻・早退: 保存値 or 記録時刻と定時の差から計算（CLOCK_PIPELINE 段4・段8。定時は段0の結果）
+    const { overtimeMinutes: overtime, lateMinutes: late, earlyLeaveMinutes: earlyLeave } = resolveDayMetrics(rec, schedule)
+    // ④で打ち切った退勤には実打刻を併記しない（修正した退勤は実打刻が入力ではないので従来どおり）
+    const outCapped = !rec.originalClockOut && isClockOutCapped({
+      recordedClockIn: rec.clockIn, rawClockOut: rec.rawClockOut, schedule,
+      switches: resolveSwitches(rec, sched.setting), requests: dayRequests,
     })
-    const overtime   = rec.overtimeMinutes    ?? metrics.overtimeMinutes
-    const late       = rec.lateMinutes        ?? metrics.lateMinutes
-    const earlyLeave = rec.earlyLeaveMinutes  ?? metrics.earlyLeaveMinutes
     const night      = calcNightMinutes(rec.clockIn, rec.clockOut)
 
-    return { needsReview, reviewPending: review.pending, goOutMins, breakMins, overtime, late, earlyLeave, night }
+    return { needsReview, reviewPending: review.pending, goOutMins, breakMins, overtime, late, earlyLeave, night, outCapped }
   }
 
   // 月次サマリー
   const workDays     = records.filter((r: Rec) => r.clockIn).length
   const totalMinutes = records.reduce((s: number, r: Rec) => s + (r.workingMinutes ?? 0), 0)
-  const totalOvertime = records.reduce((s: number, r: Rec) => {
-    const m = calcMetrics({ clockIn: r.clockIn, clockOut: r.clockOut, workingMinutes: r.workingMinutes,
-      workStartTime: user?.workStartTime ?? null, workEndTime: user?.workEndTime ?? null, scheduledMinutes: scheduledMins })
-    return s + (r.overtimeMinutes ?? m.overtimeMinutes)
-  }, 0)
+  const totalOvertime = records.reduce((s: number, r: Rec) => s + buildRowData(r).overtime, 0)
 
   const prevMonth = month === 1 ? 12 : month - 1
   const prevYear  = month === 1 ? year - 1 : year
@@ -267,7 +276,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   </td>
                   <td className={`px-2 py-2 text-center font-mono text-xs ${needsReview && !rec?.clockOut && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
                     {formatTime(rec?.clockOut)}
-                    <RawTime recorded={rec?.clockOut} raw={rec?.rawClockOut} />
+                    <RawTime recorded={rec?.clockOut} raw={rec?.rawClockOut} hide={data?.outCapped} />
                   </td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-700">{fmtDur(rec?.workingMinutes)}</td>
                   <td className="px-2 py-2 text-center font-mono text-xs text-gray-500">{data ? fmtDur(data.breakMins) : "--"}</td>
@@ -357,7 +366,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                       <p className="text-gray-400">退勤</p>
                       <p className={`font-mono ${needsReview && !rec.clockOut && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-800"}`}>
                         {formatTime(rec.clockOut)}
-                        <RawTime recorded={rec.clockOut} raw={rec.rawClockOut} />
+                        <RawTime recorded={rec.clockOut} raw={rec.rawClockOut} hide={data?.outCapped} />
                       </p>
                     </div>
                     <div>
