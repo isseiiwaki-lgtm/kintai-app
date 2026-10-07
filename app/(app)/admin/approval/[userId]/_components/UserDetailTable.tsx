@@ -2,7 +2,9 @@
 
 import { useState, useTransition } from "react"
 import Link from "next/link"
-import { actionAdminUpdateRecord, actionBulkApprove, actionBulkLock } from "../actions"
+import { actionAdminUpdateRecord, actionBulkApprove, actionBulkLock, actionClearAdminEdit } from "../actions"
+import type { AdminTimeConstraint } from "@/lib/clock-pipeline"
+import { AdminTimeSelect } from "./AdminTimeSelect"
 
 type Rec = {
   id: string
@@ -12,6 +14,9 @@ type Rec = {
   clockOut:   string | null
   rawClockIn:  string | null   // 生打刻（丸め前）。丸めと差がある日のみ併記表示
   rawClockOut: string | null
+  hasAdminEdit: boolean        // 管理者の確定修正（段6.5）に取り消し先がある日。「管理者の修正を取り消す」を出す
+  requestEndTime: string | null   // ④: 承認済み残業申請（最後に出した申請）の終了時刻。④OFF・申請なしは null
+  noOvertimeRequest: boolean      // ④ON で残業申請が無いのに実打刻が定時を15分以上過ぎた日の目印
   breakStart: string | null
   breakEnd:   string | null
   goOutAt:    string | null
@@ -19,6 +24,7 @@ type Rec = {
   workingMinutes:    number | null
   lateMinutes:       number
   earlyLeaveMinutes: number
+  overtimeMinutes:   number   // 残業（早出＋終業後）
   nightMinutes:      number
   goOutMins:         number | null   // null = 外出中
   note:          string | null   // 当日コメント（本人が打刻画面で入力）
@@ -27,20 +33,10 @@ type Rec = {
   isAbsent:      boolean
   requestId:  string | null
   scheduledMinutes: number  // 所定勤務時間（分）
+  timeConstraint: AdminTimeConstraint  // 管理者の入力画面の選択肢を決める、その日のスイッチ・定時・申請の条件（段6.5）
   isWeekend:  boolean
 }
 
-
-function buildTimeOptions() {
-  const opts: string[] = []
-  for (let h = 0; h <= 23; h++) {
-    for (const m of [0, 15, 30, 45]) {
-      opts.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`)
-    }
-  }
-  return opts
-}
-const TIME_OPTIONS = buildTimeOptions()
 
 const selectClass = "border border-gray-200 rounded px-2 py-1 text-xs font-mono w-[72px] focus:outline-none focus:ring-1 focus:ring-blue-500"
 
@@ -56,10 +52,14 @@ type Props = {
 
 export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAdmin, openCount, approvedCount }: Props) {
   const [editRec, setEditRec]   = useState<Rec | null>(null)
+  const [unrestricted, setUnrestricted] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [editError, setEditError] = useState<string | null>(null)
 
   function handleEdit(rec: Rec) {
     if (rec.status === "LOCKED") return
+    setUnrestricted(false)
+    setEditError(null)
     setEditRec(rec)
   }
 
@@ -68,7 +68,19 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
     if (!editRec) return
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      await actionAdminUpdateRecord(editRec.id, editRec.dateISO, fd)
+      const res = await actionAdminUpdateRecord(editRec.id, editRec.dateISO, fd)
+      if (!res.ok) { setEditError(res.error); return }
+      setEditRec(null)
+    })
+  }
+
+  // 管理者の確定修正（出勤・退勤）を取り消し、その日をパイプラインで計算し直す
+  function handleClearAdminEdit() {
+    if (!editRec) return
+    if (!window.confirm(`${editRec.dateLabel} の管理者の修正（出勤・退勤）を取り消しますか？\n1つ前の時刻（実打刻・打刻修正・代理打刻の時刻）に戻して計算し直します。`)) return
+    startTransition(async () => {
+      const res = await actionClearAdminEdit(editRec.id)
+      if (!res.ok) { setEditError(res.error); return }
       setEditRec(null)
     })
   }
@@ -136,7 +148,8 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
           </thead>
           <tbody>
             {records.map((rec) => {
-              const overtimeMin = Math.max(0, (rec.workingMinutes ?? 0) - rec.scheduledMinutes)
+              // 残業 ＝ 早出 ＋ 終業後（保存値、無ければ記録時刻と定時の差。サーバー側で計算済み。CLOCK_PIPELINE 段8）
+              const overtimeMin = rec.overtimeMinutes
               return (
                 <tr
                   key={rec.dateISO}
@@ -157,6 +170,17 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                     {rec.clockOut ?? "—"}
                     {rec.rawClockOut && rec.rawClockOut !== rec.clockOut && (
                       <span className="block text-[10px] text-gray-400 leading-tight">実 {rec.rawClockOut}</span>
+                    )}
+                    {rec.requestEndTime && (
+                      <span className="block text-[10px] text-gray-400 leading-tight">申請終了 {rec.requestEndTime}</span>
+                    )}
+                    {rec.noOvertimeRequest && (
+                      <span
+                        className="block text-[10px] text-amber-600 leading-tight"
+                        title="残業申請が無いのに、実打刻が定時を15分以上過ぎています（退勤の記録は定時で頭打ち）"
+                      >
+                        申請なし
+                      </span>
                     )}
                   </td>
                   <td className="px-3 py-2.5 text-center font-mono text-gray-500 text-xs">
@@ -228,18 +252,36 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
               ].map(({ name, label }) => {
                 const current = editRec[name as keyof Rec] as string | null
                 return (
-                  <div key={name} className="flex items-center justify-between">
+                  <div key={`${name}-${unrestricted}`} className="flex items-center justify-between">
                     <label className="text-xs text-gray-600 w-20">{label}</label>
-                    <select name={name} defaultValue={current ?? ""} className={selectClass}>
-                      <option value="">—</option>
-                      {TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
+                    <AdminTimeSelect
+                      name={name}
+                      kind={name === "clockIn" ? "clockIn" : name === "clockOut" ? "clockOut" : "other"}
+                      constraint={editRec.timeConstraint}
+                      unrestricted={unrestricted}
+                      current={current}
+                      className={selectClass}
+                    />
                   </div>
                 )
               })}
+              <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                <input type="checkbox" checked={unrestricted} onChange={(e) => setUnrestricted(e.target.checked)} className="accent-blue-600" />
+                制限なしで入力する（1分単位・全時間帯）
+              </label>
+              <p className="text-[10px] text-gray-400">※ 出勤・退勤は、その日のスイッチ（丸め・申請上限）に合う時刻だけを表示しています。入力した出勤・退勤は丸め・上限を通さず、そのまま記録されます</p>
               <p className="text-xs text-amber-600 mt-2">※ 保存すると状態が「承認済」になります</p>
+              {editRec.hasAdminEdit && (
+                <button
+                  type="button"
+                  onClick={handleClearAdminEdit}
+                  disabled={isPending}
+                  className="w-full py-1.5 border border-red-300 text-xs text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-40"
+                >
+                  管理者の修正を取り消す
+                </button>
+              )}
+              {editError && <p role="alert" className="text-xs text-red-600">{editError}</p>}
               <div className="flex gap-2 pt-1">
                 <button
                   type="button"

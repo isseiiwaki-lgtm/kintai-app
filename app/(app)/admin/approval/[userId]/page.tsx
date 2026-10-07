@@ -4,7 +4,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { ProxyPunchForm } from "./_components/ProxyPunchForm"
-import { calcNeedsReview, getDisplayStatus, calcMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
+import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
+import { correctionLogIdSet, pickEarlyStartTime, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
+import { correctionKey, loadApprovedCorrections, loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
 type Params      = Promise<{ userId: string }>
@@ -52,12 +54,13 @@ export default async function UserApprovalPage({
   const prevLink  = `/admin/approval/${userId}?year=${prevYear}&month=${prevMonth}`
   const nextLink  = `/admin/approval/${userId}?year=${nextYear}&month=${nextMonth}`
 
-  const [user, records, requests] = await Promise.all([
+  const [user, records, requests, overtimeRequests] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
         id: true, name: true, email: true, department: true,
-        employmentType: true, workStartTime: true, workEndTime: true,
+        employmentType: true, workStartTime: true, workEndTime: true, breakMinutes: true,
+        workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       },
     }),
     prisma.attendanceRecord.findMany({
@@ -68,9 +71,56 @@ export default async function UserApprovalPage({
       where: { userId, targetDate: { gte: firstDay, lte: lastDay } },
       select: { id: true, targetDate: true },
     }),
+    // 残業申請（申請中・承認済）。④の上限（申請終了）と「申請なし」の目印に使う
+    prisma.request.findMany({
+      where: {
+        userId, type: "OVERTIME", status: { in: ["PENDING", "APPROVED"] },
+        targetDate: { gte: firstDay, lte: lastDay },
+      },
+      select: { targetDate: true, type: true, status: true, createdAt: true, detail: true },
+    }),
   ])
+  const overtimeReqByDate = new Map<string, typeof overtimeRequests>()
+  for (const q of overtimeRequests) {
+    const k = q.targetDate.toISOString()
+    overtimeReqByDate.set(k, [...(overtimeReqByDate.get(k) ?? []), q])
+  }
 
   if (!user) notFound()
+
+  // 段0：その日の定時（休日は定時なし・半休は前半/後半）。遅刻・早退・残業・要確認の判定に使う
+  const sched = await loadScheduleInputs([userId], firstDay, lastDay)
+
+  // 「管理者の修正を取り消す」を出す日の判定材料（admin 列がある日の出退勤の変更履歴と、承認済みの打刻修正）
+  const adminRecordIds = records.filter((r) => r.adminClockIn || r.adminClockOut).map((r) => r.id)
+  const [adminLogs, corrections] = await Promise.all([
+    adminRecordIds.length === 0 ? Promise.resolve([]) : prisma.attendanceChangeLog.findMany({
+      where: { recordId: { in: adminRecordIds }, fieldName: { in: ["clockIn", "clockOut"] } },
+      select: { id: true, recordId: true, fieldName: true, oldValue: true, newValue: true, changedAt: true, revertsLogId: true },
+    }),
+    loadApprovedCorrections(userId, firstDay, lastDay),
+  ])
+  /** 取り消すものがある日か（出勤・退勤のどちらかに取り消し先があり、特定できない項目が無い。actionClearAdminEdit と同じ判定） */
+  const canClearAdminEdit = (r: (typeof records)[number]): boolean => {
+    const recLogs = adminLogs.filter((l) => l.recordId === r.id)
+    const firstLogAt = proxyFirstLogAt(recLogs)
+    const kinds = ([
+      { field: "clockIn", admin: r.adminClockIn, raw: r.rawClockIn },
+      { field: "clockOut", admin: r.adminClockOut, raw: r.rawClockOut },
+    ] as const).flatMap((t) => {
+      if (!t.admin) return []
+      const logs = recLogs.filter((l) => l.fieldName === t.field)
+      return [planAdminRevert({
+        date: r.date, raw: t.raw, admin: t.admin, logs,
+        correctionLogIds: correctionLogIdSet(logs, corrections.get(correctionKey(r.date, t.field)) ?? []),
+        dayHasRawPunch: !!(r.rawClockIn || r.rawClockOut),
+        firstLogAt,
+      }).kind]
+    })
+    // 片方でも特定できない項目があると取り消し処理は全体を拒否するため、ボタンも出さない
+    if (kinds.includes("unidentified")) return false
+    return kinds.some((k) => k !== "none")
+  }
 
   // 申請を日付キーでマップ
   const requestMap = new Map(
@@ -105,9 +155,19 @@ export default async function UserApprovalPage({
     .map((d) => {
       const dm = d.getUTCMonth() + 1
       const dd = d.getUTCDate()
+      const approvedReqs = sched.requestsOf(userId, d)
       return {
         iso:   `${d.getUTCFullYear()}-${String(dm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`,
         label: `${dm}/${dd}（${WEEKDAY[d.getUTCDay()]}）`,
+        // 代理打刻はこの時点の設定のスイッチで保存される。選択肢もそれに合わせる（段6.5）
+        constraint: {
+          schedule: resolveScheduleForDate({
+            date: d, user, setting: sched.setting, isHoliday: sched.isHoliday(d), requests: approvedReqs,
+          }),
+          switches: switchesFromSetting(setting),
+          earlyStartTime: pickEarlyStartTime(approvedReqs),
+          overtimeCapEnd: pickOvertimeCapEnd(approvedReqs),
+        },
       }
     })
 
@@ -119,17 +179,28 @@ export default async function UserApprovalPage({
     const dd  = jst.getUTCDate()
     const dow = jst.getUTCDay()
     const key = `${dy}-${dm}-${dd}`
+    const schedule = resolveScheduleForDate({
+      date: r.date, user, setting: sched.setting,
+      isHoliday: sched.isHoliday(r.date), isHolidayWork: r.isHolidayWork, requests: sched.requestsOf(userId, r.date),
+    })
     const needsReview = calcNeedsReview({
       clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today: todayUTC,
-      workStartTime: user.workStartTime, workEndTime: user.workEndTime,
+      workStartTime: schedule?.start ?? null, workEndTime: schedule?.end ?? null,
     })
-    const metrics = calcMetrics({
-      clockIn: r.clockIn, clockOut: r.clockOut,
-      workingMinutes: r.workingMinutes,
-      workStartTime: user.workStartTime, workEndTime: user.workEndTime,
-      scheduledMinutes,
-    })
+    // 遅刻・早退・残業: 保存値があればそれ、無ければ記録時刻と定時の差から計算（段4・段8）
+    const metrics = resolveDayMetrics(r, schedule)
     const nightMinutes = calcNightMinutes(r.clockIn, r.clockOut)
+    // ④（残業の申請上限）: 実打刻・申請終了・記録時刻の3つを管理者に見せる。一般社員の画面には出さない
+    const dayOvertimeReqs = overtimeReqByDate.get(r.date.toISOString()) ?? []
+    // ④の判定は、その日の記録に保存したスイッチ状態で行う（④を後から ON にしても、④OFF で保存した過去の日には出さない）
+    const switches = resolveSwitches(r, setting)
+    const capEnabled = switches.capOvertime
+    const requestEndTime = capEnabled ? pickOvertimeCapEnd(dayOvertimeReqs) : null
+    const noOvertimeRequest = needsOvertimeRequestNotice({
+      // 段0の定時（半休・休日を反映）。日をまたぐ退勤でも記録の日付の定時で判定する
+      rawClockOut: r.rawClockOut, workEndTime: schedule?.end ?? null, date: r.date,
+      hasOvertimeRequest: hasOvertimeRequest(dayOvertimeReqs), capEnabled,
+    })
     const goOutMins =
       r.goOutAt && r.returnAt
         ? Math.round((r.returnAt.getTime() - r.goOutAt.getTime()) / 60000)
@@ -142,13 +213,18 @@ export default async function UserApprovalPage({
       clockOut:    formatHHMM(r.clockOut),
       rawClockIn:  formatHHMM(r.rawClockIn),
       rawClockOut: formatHHMM(r.rawClockOut),
+      hasAdminEdit: canClearAdminEdit(r),
+      requestEndTime,
+      noOvertimeRequest,
       breakStart:  formatHHMM(r.breakStart),
       breakEnd:    formatHHMM(r.breakEnd),
       goOutAt:     formatHHMM(r.goOutAt),
       returnAt:    formatHHMM(r.returnAt),
       workingMinutes:    r.workingMinutes,
+      // 休日出勤の日・休日は定時なしなので0（resolveScheduleForDate が null を返す）
       lateMinutes:       metrics.lateMinutes,
       earlyLeaveMinutes: metrics.earlyLeaveMinutes,
+      overtimeMinutes:   metrics.overtimeMinutes,
       nightMinutes,
       goOutMins,
       note:        r.note,
@@ -157,6 +233,15 @@ export default async function UserApprovalPage({
       isAbsent:    r.isAbsent,
       requestId:   requestMap.get(key) ?? null,
       scheduledMinutes,
+      // 管理者の入力画面の選択肢（段6.5）：その日のスイッチ・定時・承認済みの申請
+      timeConstraint: (() => {
+        const approvedReqs = sched.requestsOf(userId, r.date)
+        return {
+          schedule, switches,
+          earlyStartTime: pickEarlyStartTime(approvedReqs),
+          overtimeCapEnd: pickOvertimeCapEnd(approvedReqs),
+        }
+      })(),
       isWeekend:   dow === 0 || dow === 6,
     }
   })

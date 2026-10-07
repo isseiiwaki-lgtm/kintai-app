@@ -19,11 +19,16 @@ export async function actionSaveSetting(formData: FormData) {
   const break2Minutes      = Number(formData.get("break2Minutes"))
   const roundEarlyClockIn  = formData.get("roundEarlyClockIn") === "true"
   const roundNearClockTime = formData.get("roundNearClockTime") === "true"
+  const roundQuarterHour   = formData.get("roundQuarterHour") === "true"
+  const capOvertimeByRequest = formData.get("capOvertimeByRequest") === "true"
+  // 昼休憩の開始時刻（正社員の半休の境目。HH:MM 以外は既定値）
+  const lunchRaw = String(formData.get("lunchStartTime") ?? "")
+  const lunchStartTime = /^([01]\d|2[0-3]):[0-5]\d$/.test(lunchRaw) ? lunchRaw : "12:00"
 
   await prisma.setting.upsert({
     where:  { id: 1 },
-    update: { closingDay, break1Threshold, break1Minutes, break2Threshold, break2Minutes, roundEarlyClockIn, roundNearClockTime },
-    create: { id: 1, closingDay, break1Threshold, break1Minutes, break2Threshold, break2Minutes, roundEarlyClockIn, roundNearClockTime },
+    update: { closingDay, break1Threshold, break1Minutes, break2Threshold, break2Minutes, roundEarlyClockIn, roundNearClockTime, roundQuarterHour, capOvertimeByRequest, lunchStartTime },
+    create: { id: 1, closingDay, break1Threshold, break1Minutes, break2Threshold, break2Minutes, roundEarlyClockIn, roundNearClockTime, roundQuarterHour, capOvertimeByRequest, lunchStartTime },
   })
 
   revalidatePath("/admin/settings")

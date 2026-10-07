@@ -3,9 +3,131 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
-import { formatHHMMfromDate, applyRounding, calcScheduledMinutes } from "@/lib/attendance"
-import { calcLegalBreak } from "@/config/attendance.config"
+import { formatHHMMfromDate, calcScheduledMinutes } from "@/lib/attendance"
+import { recomputeDay } from "@/lib/clock-pipeline-db"
 import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
+import { findCorrectionLog, planFieldRevert, planInputRevert } from "@/lib/clock-pipeline"
+
+export type ActionResult = { ok: true } | { ok: false; error: string }
+
+/** 打刻修正で直せる項目 */
+const CORRECTION_FIELDS = ["clockIn", "clockOut", "goOutAt", "returnAt", "breakStart", "breakEnd"]
+
+/** "HH:MM"（JST）を、その記録の日付（UTC 0時＝JST の暦日）の UTC の時刻にする */
+function hhmmOnDate(date: Date, hhmm: string): Date {
+  const [hh, mm] = hhmm.split(":").map(Number)
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), hh - 9, mm))
+}
+
+/**
+ * 打刻修正の承認は記録時刻を書き換えるので、対象の日が締め済み（LOCKED）なら拒否する。
+ * 承認の操作を始める前に呼ぶ（承認の記録・申請の状態も変えない）
+ */
+async function lockedCorrectionError(req: { type: string; userId: string; targetDate: Date }): Promise<string | null> {
+  if (req.type !== "CORRECTION") return null
+  const rec = await prisma.attendanceRecord.findUnique({
+    where: { userId_date: { userId: req.userId, date: req.targetDate } },
+    select: { status: true },
+  })
+  return rec?.status === "LOCKED"
+    ? "締め済みの日の打刻修正は承認できません（締め解除してから承認してください）"
+    : null
+}
+
+/**
+ * 承認済みの打刻修正申請を削除するとき、記録を修正前の時刻に戻して打刻パイプラインで計算し直す。
+ *
+ * 「修正前」の決め方
+ * - 出勤・退勤：その修正の変更履歴を取り除いた入力（1つ前の有効な打刻修正があればその時刻、無ければ実打刻）。
+ *   変更履歴に「項目: 修正した時刻 → 戻した時刻（無ければ空＝取り消しの印）」を1件書く（履歴は消さない）。
+ *   書いた履歴は revertsLogId で取り消した履歴を指す。取り消し済みの履歴は、あとの取り消しの戻し先に数えない
+ *   （同じ項目の修正を2件とも削除したとき、古いほうの時刻が残らず実打刻に戻る）。
+ *   あとの修正・管理者の編集が同じ項目に入っている場合は、それが優先なので入力は動かさない（取り消し済みの印だけ書く）。
+ *   実打刻も他の修正も無い日は、承認時に変更履歴へ残した「修正前の値」を記録時刻の列へ戻す（無ければ空）。
+ *   先に取り消した修正があれば、その履歴をさかのぼった値（例：9:00 → 8:50 と直した2件を、9:00 → 8:50 の順に消すと空に戻る）
+ * - 外出・戻り・休憩：承認時に変更履歴へ残した「修正前の値」（先に取り消した修正があれば、その前の値）を列へ戻す。
+ *   特定できなければ削除を拒否する
+ * - 承認の変更履歴の見つけ方は findCorrectionLog を参照（承認の記録が無い 2026-07-06 より前の承認は、申請の作成以後で
+ *   同じ時刻の最も早い履歴）。変更履歴に操作の種別が無いための規則
+ * 締め済み（LOCKED）の日は拒否する
+ */
+async function revertApprovedCorrection(
+  req: { id: string; userId: string; targetDate: Date; detail: unknown; createdAt: Date; approvals: { actedAt: Date }[] },
+  changedById: string,
+): Promise<ActionResult> {
+  const detail = req.detail as Record<string, string> | null
+  const field = detail?.targetField
+  const correctedTime = detail?.correctedTime
+  if (!field || !correctedTime || !CORRECTION_FIELDS.includes(field)) return { ok: true }
+
+  const rec = await prisma.attendanceRecord.findUnique({
+    where: { userId_date: { userId: req.userId, date: req.targetDate } },
+  })
+  if (!rec) return { ok: true }
+  if (rec.status === "LOCKED") {
+    return { ok: false, error: "締め済みの日の打刻修正は削除できません（締め解除してから削除してください）" }
+  }
+
+  const logs = await prisma.attendanceChangeLog.findMany({
+    where: { recordId: rec.id, fieldName: field },
+    select: { id: true, oldValue: true, newValue: true, changedAt: true, revertsLogId: true },
+  })
+  // 承認の記録が無い申請は、同じ項目・同じ時刻の先に作成された申請と履歴を取り合わないよう1対1で照合する（findCorrectionLog 参照）
+  let earlierSameTime: Date[] = []
+  if (req.approvals.length === 0) {
+    const sibs = await prisma.request.findMany({
+      where: {
+        userId: req.userId, type: "CORRECTION", status: "APPROVED", targetDate: req.targetDate,
+        id: { not: req.id }, createdAt: { lte: req.createdAt }, approvals: { none: { action: "APPROVED" } },
+      },
+      select: { id: true, detail: true, createdAt: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    })
+    earlierSameTime = sibs
+      .filter((q) => {
+        const d = q.detail as Record<string, string> | null
+        return d?.targetField === field && d?.correctedTime === correctedTime
+          && (q.createdAt.getTime() < req.createdAt.getTime() || q.id < req.id)
+      })
+      .map((q) => q.createdAt)
+  }
+  const matched = findCorrectionLog(logs, correctedTime, req.approvals.map((a) => a.actedAt), req.createdAt, earlierSameTime)
+
+  const data: Record<string, Date | null> = {}
+  let logNewValue: string | null
+  if (field === "clockIn" || field === "clockOut") {
+    // 承認の変更履歴が見つからなければ、入力は動かさない
+    if (!matched) return { ok: true }
+    const raw = field === "clockIn" ? rec.rawClockIn : rec.rawClockOut
+    const plan = planInputRevert({ date: rec.date, raw, logs, removeId: matched.id })
+    logNewValue = plan.logNewValue
+    if (plan.noInput) data[field] = plan.noInputValue ? hhmmOnDate(rec.date, plan.noInputValue) : null
+  } else {
+    if (!matched) {
+      return { ok: false, error: "修正前の値を特定できないため削除できません。勤怠の編集で直してから削除してください" }
+    }
+    const plan = planFieldRevert({ logs, removeId: matched.id })
+    logNewValue = plan.value
+    if (plan.changeColumn) data[field] = plan.value ? hhmmOnDate(rec.date, plan.value) : null
+  }
+
+  // 勤務時間・残業・遅刻・早退は古い値が残らないよう空にし、このあとの計算し直しで出し直す
+  await prisma.$transaction([
+    prisma.attendanceRecord.update({
+      where: { id: rec.id },
+      data: { ...data, workingMinutes: null, overtimeMinutes: null, lateMinutes: null, earlyLeaveMinutes: null },
+    }),
+    prisma.attendanceChangeLog.create({
+      data: {
+        recordId: rec.id, changedById, changedAt: new Date(), fieldName: field,
+        oldValue: correctedTime, newValue: logNewValue, revertsLogId: matched.id,
+      },
+    }),
+  ])
+  await recomputeDay(req.userId, req.targetDate)
+  revalidatePath("/records")
+  return { ok: true }
+}
 
 async function checkAdmin() {
   const session = await auth()
@@ -61,6 +183,13 @@ async function applyRequestEffects(
     revalidatePath("/records")
   }
 
+  // 残業・早出申請の承認時: 承認済みの申請が入力に加わるので、その日の記録時刻・残業を打刻パイプラインで計算し直す
+  // （残業申請 ＝ ④の上限、早出申請 ＝ 段2の有効な開始。出勤・退勤どちらが先でも同じ結果になる）
+  if (req.type === "OVERTIME") {
+    await recomputeDay(req.userId, req.targetDate)
+    revalidatePath("/records")
+  }
+
   // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存（本人所定時間ベース。半休は所定時間の半分を四捨五入）
   if (req.type === "LEAVE" && detail?.leaveType === "paid") {
     const scheduledMins = calcScheduledMinutes(req.user.workStartTime, req.user.workEndTime, req.user.employmentType)
@@ -71,6 +200,8 @@ async function applyRequestEffects(
       update: { paidLeaveMinutes: paidMins },
       create: { userId: req.userId, date: req.targetDate, paidLeaveMinutes: paidMins },
     })
+    // 半休は段0の定時が変わる（正社員は昼休憩を除いた前半か後半）ので、打刻のある日は計算し直す
+    if (halfDay === "am" || halfDay === "pm") await recomputeDay(req.userId, req.targetDate)
     revalidatePath("/records")
   }
 
@@ -100,32 +231,8 @@ async function applyRequestEffects(
         updateData.originalClockOut = existing.clockOut
       }
 
-      // 修正後の値で workingMinutes を再計算
-      if (existing) {
-        const newClockIn  = field === "clockIn"  ? correctedAt : existing.clockIn
-        const newClockOut = field === "clockOut" ? correctedAt : existing.clockOut
-        const newGoOutAt  = field === "goOutAt"  ? correctedAt : existing.goOutAt
-        const newReturnAt = field === "returnAt" ? correctedAt : existing.returnAt
-        const newBreakStart = field === "breakStart" ? correctedAt : existing.breakStart
-        const newBreakEnd   = field === "breakEnd"   ? correctedAt : existing.breakEnd
-
-        if (newClockIn && newClockOut) {
-          const totalMs  = newClockOut.getTime() - newClockIn.getTime()
-          const goOutMs  = newGoOutAt && newReturnAt
-            ? newReturnAt.getTime() - newGoOutAt.getTime()
-            : 0
-          const rawMinutes = Math.floor((totalMs - goOutMs) / 60000)
-
-          if (req.user.employmentType === "part") {
-            const breakMs = newBreakStart && newBreakEnd
-              ? newBreakEnd.getTime() - newBreakStart.getTime()
-              : 0
-            updateData.workingMinutes = Math.max(0, rawMinutes - Math.floor(breakMs / 60000))
-          } else {
-            updateData.workingMinutes = Math.max(0, rawMinutes - calcLegalBreak(rawMinutes))
-          }
-        }
-      }
+      // 修正後の記録時刻・勤務時間・残業は、保存のあとで打刻パイプラインが出し直す
+      // （修正した時刻は変更履歴の「新しい値」として段1の入力になり、以降の段の丸めがかかる）
 
       const oldValue = existing ? formatHHMMfromDate(existing[field as keyof typeof existing] as Date | null) : null
 
@@ -162,16 +269,28 @@ async function applyRequestEffects(
           })
         })
       }
+      // 修正前に出退勤（記録時刻・実打刻）がすべて空だった日（新設した記録を含む）は、この時点のスイッチ状態を保存する。
+      // 出退勤がすでにある記録は保存値をそのまま使う（遡及しない）
+      const hadNoPunch = !existing || (!existing.clockIn && !existing.clockOut && !existing.rawClockIn && !existing.rawClockOut)
+      await recomputeDay(req.userId, req.targetDate, hadNoPunch ? { snapshot: "ifMissing" } : {})
       revalidatePath("/records")
     }
   }
+
+  // 全休以外の半休（LEAVE の halfDay）は段0の定時が変わる。有給以外の休暇の半休もここで計算し直す
+  if (req.type === "LEAVE" && detail?.leaveType !== "paid" && (detail?.halfDay === "am" || detail?.halfDay === "pm")) {
+    await recomputeDay(req.userId, req.targetDate)
+    revalidatePath("/records")
+  }
 }
 
-export async function actionApproveRequest(id: string) {
+export async function actionApproveRequest(id: string): Promise<ActionResult> {
   const { userId: changedById, role } = await checkAdmin()
 
   const req = await findRequest(id)
-  if (!req || req.status !== "PENDING") return
+  if (!req || req.status !== "PENDING") return { ok: true }
+  const locked = await lockedCorrectionError(req)
+  if (locked) return { ok: false, error: locked }
 
   const route = await findRoute(req.user.department)
 
@@ -182,7 +301,7 @@ export async function actionApproveRequest(id: string) {
       select: { step: true, action: true },
     })
     const cur = getCurrentStep(route, approvals)
-    if (cur === null) return // 全ステップ消化済み（通常到達しない）
+    if (cur === null) return { ok: true } // 全ステップ消化済み（通常到達しない）
     if (role !== "ADMIN" && !isStepApprover(route, cur, changedById)) {
       throw new Error("Forbidden: 現在の承認ステップの担当者ではありません")
     }
@@ -192,7 +311,7 @@ export async function actionApproveRequest(id: string) {
     if (!isFinalStep(route, cur)) {
       // 中間承認: 申請は PENDING のまま次ステップの承認待ち
       revalidatePath("/admin/requests")
-      return
+      return { ok: true }
     }
   } else {
     // 経路未設定の部署: 従来の一段階承認（監査用にログは残す）
@@ -204,15 +323,18 @@ export async function actionApproveRequest(id: string) {
   await prisma.request.update({ where: { id }, data: { status: "APPROVED" } })
   await applyRequestEffects(req, changedById)
   revalidatePath("/admin/requests")
+  return { ok: true }
 }
 
 /** 飛び越し承認（ADMIN 専用）: 未消化ステップを SKIPPED で一括消化し最終承認まで進める */
-export async function actionForceApproveRequest(id: string) {
+export async function actionForceApproveRequest(id: string): Promise<ActionResult> {
   const { userId: changedById, role } = await checkAdmin()
   if (role !== "ADMIN") throw new Error("Forbidden: 飛び越し承認は ADMIN のみ")
 
   const req = await findRequest(id)
-  if (!req || req.status !== "PENDING") return
+  if (!req || req.status !== "PENDING") return { ok: true }
+  const locked = await lockedCorrectionError(req)
+  if (locked) return { ok: false, error: locked }
 
   const route = await findRoute(req.user.department)
   if (route.length > 0) {
@@ -242,6 +364,7 @@ export async function actionForceApproveRequest(id: string) {
   await prisma.request.update({ where: { id }, data: { status: "APPROVED" } })
   await applyRequestEffects(req, changedById)
   revalidatePath("/admin/requests")
+  return { ok: true }
 }
 
 export async function actionRejectRequest(id: string) {
@@ -275,48 +398,11 @@ export async function actionRejectRequest(id: string) {
     data: { status: "REJECTED" },
   })
 
-  // 早出申請却下時: clockIn に丸め処理を適用（スキップしていた分を補正）
-  if (req?.type === "OVERTIME") {
-    const detail = req.detail as Record<string, string> | null
-    if (detail?.overtimeType === "earlyStart") {
-      const setting = await prisma.setting.findUnique({ where: { id: 1 } })
-      if (setting?.roundEarlyClockIn || setting?.roundNearClockTime) {
-        const existing = await prisma.attendanceRecord.findUnique({
-          where: { userId_date: { userId: req.userId, date: req.targetDate } },
-        })
-        if (existing?.clockIn) {
-          const corrected = applyRounding(existing.clockIn, req.user.workStartTime, {
-            roundEarly: setting.roundEarlyClockIn  ?? false,
-            roundNear:  setting.roundNearClockTime ?? false,
-            kind: "in",
-          })
-          if (corrected.getTime() !== existing.clockIn.getTime()) {
-            const updateData: Record<string, Date | number> = { clockIn: corrected }
-            // clockOut があれば workingMinutes も再計算
-            if (existing.clockOut) {
-              const totalMs    = existing.clockOut.getTime() - corrected.getTime()
-              const goOutMs    = existing.goOutAt && existing.returnAt
-                ? existing.returnAt.getTime() - existing.goOutAt.getTime()
-                : 0
-              const rawMinutes = Math.floor((totalMs - goOutMs) / 60000)
-              if (req.user.employmentType === "part") {
-                const breakMs = existing.breakStart && existing.breakEnd
-                  ? existing.breakEnd.getTime() - existing.breakStart.getTime()
-                  : 0
-                updateData.workingMinutes = Math.max(0, rawMinutes - Math.floor(breakMs / 60000))
-              } else {
-                updateData.workingMinutes = Math.max(0, rawMinutes - calcLegalBreak(rawMinutes))
-              }
-            }
-            await prisma.attendanceRecord.update({
-              where: { id: existing.id },
-              data:  updateData,
-            })
-            revalidatePath("/records")
-          }
-        }
-      }
-    }
+  // 残業・早出申請の却下: 入力に使うのは承認済みの申請だけなので結果は変わらないはずだが、
+  // 早出申請を却下した日は、申請が無い日と同じ扱い（①②③）になっていることを同じパイプラインで確かめて保存し直す
+  if (req.type === "OVERTIME") {
+    await recomputeDay(req.userId, req.targetDate)
+    revalidatePath("/records")
   }
 
   revalidatePath("/admin/requests")
@@ -329,10 +415,22 @@ export async function actionUpdateRequest(id: string, formData: FormData) {
   const targetDate = formData.get("targetDate") as string
   const reason     = formData.get("reason")     as string
 
+  const before = await prisma.request.findUnique({ where: { id } })
+  const beforeDetail = (before?.detail ?? {}) as Record<string, string>
+
   let detail: Record<string, string> = {}
   switch (type) {
     case "OVERTIME":
-      detail = { endTime: formData.get("endTime") as string }
+      if (before?.type === "OVERTIME" && beforeDetail.overtimeType === "earlyStart") {
+        // 早出申請は overtimeType・定時（修正前ベースライン）を残したまま開始時刻だけ直す。
+        // {endTime} で作り直すと overtimeType が消え、通常の残業申請に化ける
+        detail = { ...beforeDetail, startTime: (formData.get("startTime") as string) || beforeDetail.startTime || "" }
+      } else if (before?.type === "OVERTIME") {
+        // 通常の残業申請も、申請時に記録した定時（scheduledEndTime）を消さない
+        detail = { ...beforeDetail, endTime: formData.get("endTime") as string }
+      } else {
+        detail = { endTime: formData.get("endTime") as string }
+      }
       break
     case "ABSENCE":
       detail = {
@@ -358,15 +456,34 @@ export async function actionUpdateRequest(id: string, formData: FormData) {
       detail,
     },
   })
+
+  // 承認済みの残業・早出・休暇（半休）申請の時刻・日付・種別を直したら、入力が変わるので記録を打刻パイプラインで計算し直す
+  const affects = (t: string | undefined) => t === "OVERTIME" || t === "LEAVE"
+  if (before?.status === "APPROVED" && (affects(before.type) || affects(type))) {
+    await recomputeDay(before.userId, before.targetDate)
+    const newDate = new Date(targetDate)
+    if (newDate.getTime() !== before.targetDate.getTime()) {
+      await recomputeDay(before.userId, newDate)
+    }
+    revalidatePath("/records")
+  }
   revalidatePath("/admin/requests")
   revalidatePath("/requests")
 }
 
-export async function actionDeleteRequest(id: string) {
-  await checkAdmin()
+export async function actionDeleteRequest(id: string): Promise<ActionResult> {
+  const { userId: changedById } = await checkAdmin()
 
   // 欠勤承認済みの場合は AttendanceRecord の isAbsent をリセット
-  const req = await prisma.request.findUnique({ where: { id } })
+  const req = await prisma.request.findUnique({
+    where: { id },
+    include: { approvals: { where: { action: "APPROVED" }, select: { actedAt: true } } },
+  })
+  // 承認済みの打刻修正を削除するときは、先に記録を修正前の時刻に戻す（締め済みの日は拒否）
+  if (req?.status === "APPROVED" && req.type === "CORRECTION") {
+    const reverted = await revertApprovedCorrection(req, changedById)
+    if (!reverted.ok) return reverted
+  }
   if (req?.status === "APPROVED" && req.type === "ABSENCE") {
     const detail = req.detail as Record<string, string> | null
     if (detail?.absenceType === "absent") {
@@ -389,6 +506,13 @@ export async function actionDeleteRequest(id: string) {
   }
 
   await prisma.request.delete({ where: { id } })
+
+  // 承認済みの残業・早出・休暇（半休）申請を削除したら、入力から外れるので記録を打刻パイプラインで計算し直す
+  if (req?.status === "APPROVED" && (req.type === "OVERTIME" || req.type === "LEAVE")) {
+    await recomputeDay(req.userId, req.targetDate)
+    revalidatePath("/records")
+  }
   revalidatePath("/admin/requests")
   revalidatePath("/requests")
+  return { ok: true }
 }

@@ -27,6 +27,8 @@ enum RequestType {
   CORRECTION  // 打刻修正申請
   COMMENT     // テキストのみの連絡
   OTHER
+  BREAK       // 休憩申請（60分超・押し忘れ用）
+  HOLIDAY_WORK // 休日出勤申請（振休・代休の区別はシステムが決める）
 }
 
 enum RequestStatus {
@@ -69,6 +71,7 @@ model User {
   workThu          Boolean   @default(true)
   workFri          Boolean   @default(true)
   workSat          Boolean   @default(false)
+  breakMinutes     Int?      // 本人の所定休憩（分・任意。空なら会社設定から求める）
   createdAt        DateTime  @default(now())
 
   attendanceRecords AttendanceRecord[]
@@ -145,6 +148,18 @@ model AttendanceRecord {
   earlyLeaveMinutes    Int?      // 早退分
   overtimeMinutes      Int?      // 残業分
   paidLeaveMinutes     Int?      // 有給取得時間（分）
+  breakMinutes         Int?      // その日の休憩の分数（休憩ボタン・休憩申請の承認で入る）
+  isHolidayWork        Boolean   @default(false) // 休日出勤の印（代理打刻の休日出勤チェック。承認し直しても遅刻・早退を0に保つ）
+  // 打刻時点のスイッチ状態（①〜④）。計算し直すときはこの保存値を使う（遡及しない）。null＝保存値なし（既存の記録）
+  // 保存値なしの記録は「③④OFF・①②は現在値」として扱う（lib/clock-pipeline.ts resolveSwitches）
+  // 管理者の確定修正（段6.5）。管理者の直接修正・代理打刻で入れた時刻。段0〜6の結果を最後に上書きする（丸め・④を通さない）
+  // 実打刻（rawClockIn/Out）・記録時刻（clockIn/Out）とは別の列。後で計算し直しても管理者の値が最後に勝つ
+  adminClockIn         DateTime?
+  adminClockOut        DateTime?
+  switchRoundEarly     Boolean?  // ① roundEarlyClockIn
+  switchRoundNear      Boolean?  // ② roundNearClockTime
+  switchRoundQuarter   Boolean?  // ③ roundQuarterHour
+  switchCapOvertime    Boolean?  // ④ capOvertimeByRequest
   createdAt            DateTime  @default(now())
   updatedAt      DateTime         @updatedAt
 
@@ -163,6 +178,9 @@ model AttendanceChangeLog {
   fieldName   String   // "clockIn" / "clockOut" など
   oldValue    String?  // HH:MM または null
   newValue    String?
+  // 取り消し（管理者の修正の取り消し・打刻修正申請の削除）で書いた履歴のとき、取り消した履歴の id。
+  // 取り消された履歴と取り消しの履歴は、次の取り消しの「戻し先」に数えない
+  revertsLogId String?
 
   record    AttendanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
   changedBy User             @relation(fields: [changedById], references: [id])
@@ -230,6 +248,11 @@ model Setting {
   break2Minutes       Int      @default(60)    // 60分
   roundEarlyClockIn  Boolean  @default(false) // 定時前打刻→定時扱い
   roundNearClockTime Boolean  @default(false) // 定時±14分以内→定時きっかり
+  roundQuarterHour   Boolean  @default(false) // ③15分丸め（出勤切り上げ・退勤切り捨て。本人の定時起点）
+  capOvertimeByRequest Boolean @default(false) // ④残業の申請上限（退勤の記録時刻を最後の承認済み残業申請の終了、無ければ定時で頭打ち）
+  lunchStartTime      String   @default("12:00") // 昼休憩の開始時刻。正社員の半休の境目を決めるためだけに使う（休憩控除の判定には使わない）
+  legalHolidayWeekday Int      @default(0)       // 法定休日の曜日（0=日曜〜6=土曜）。仮置き（労務担当者に確認中）。休日出勤の担当が使う
+  weekStartDay        Int      @default(0)       // 週の起算日（0=日曜〜6=土曜）。仮置き（労務担当者に確認中）。休日出勤の担当が使う
   updatedAt           DateTime @updatedAt
 }
 

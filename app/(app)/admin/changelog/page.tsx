@@ -107,7 +107,10 @@ export default async function ChangeLogPage({ searchParams }: { searchParams: Se
                     {log.oldValue ?? "—"}
                   </td>
                   <td className="px-3 py-2.5 text-center font-mono text-blue-700 text-xs font-medium">
-                    {log.newValue ?? "—"}
+                    {log.revertsLogId
+                      // 取り消し（管理者の修正の取り消し・申請の削除）。戻した時刻があれば併記、実打刻へ戻したときは「取り消し」のみ
+                      ? <span className="text-red-600">取り消し{log.newValue ? `（→ ${log.newValue}）` : ""}</span>
+                      : (log.newValue ?? "—")}
                   </td>
                 </tr>
               )

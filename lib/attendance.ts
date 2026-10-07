@@ -71,53 +71,73 @@ export function calcWorkingMinutes({
   return Math.max(0, rawMinutes - calcLegalBreak(rawMinutes))
 }
 
-type CalcInput = {
-  clockIn:        Date | null
-  clockOut:       Date | null
-  workingMinutes: number | null  // 既存の勤務時間（break 控除済み）
-  workStartTime:  string | null  // "08:30"
-  workEndTime:    string | null  // "17:30"
-  scheduledMinutes: number       // 所定勤務時間（例: 480）
-}
+/** その日の定時（CLOCK_PIPELINE 段0の結果）。null ＝ 定時なし（休日など）。遅刻・早退・残業は付けない */
+export type DaySchedule = { start: string; end: string } | null
 
 export type AttendanceMetrics = {
   lateMinutes:       number
   earlyLeaveMinutes: number
+  /** 残業 ＝ 早出（定時の始業 − 記録した出勤）＋ 残業（記録した退勤 − 定時の終業）。段8 */
   overtimeMinutes:   number
+  /** 内訳：早出（定時の始業 − 記録した出勤） */
+  earlyStartMinutes: number
+  /** 内訳：終業後（記録した退勤 − 定時の終業） */
+  afterHoursMinutes: number
 }
 
+/**
+ * 遅刻・早退・残業を「記録時刻と定時の差」だけで出す（段4・段8）。
+ * 差し引きした数字（実働−所定など）は使わない。定時なし（null）なら全部0。
+ * - 遅刻 ＝ 記録した出勤 − 定時の始業（0未満は0）
+ * - 早退 ＝ 定時の終業 − 記録した退勤（0未満は0）
+ * - 残業 ＝ 早出 ＋ 終業後（それぞれ0未満は0）。出勤・退勤の両方が揃った日だけ
+ * 日をまたぐ退勤も時刻の差で数える（深夜残業を落とさない）
+ */
 export function calcMetrics({
   clockIn,
   clockOut,
-  workingMinutes,
   workStartTime,
   workEndTime,
-  scheduledMinutes,
-}: CalcInput): AttendanceMetrics {
-  let lateMinutes       = 0
-  let earlyLeaveMinutes = 0
-  let overtimeMinutes   = 0
-
+}: {
+  clockIn:       Date | null
+  clockOut:      Date | null
+  workStartTime: string | null
+  workEndTime:   string | null
+}): AttendanceMetrics {
+  const zero: AttendanceMetrics = { lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: 0, earlyStartMinutes: 0, afterHoursMinutes: 0 }
   const startMins = parseHHMM(workStartTime)
   const endMins   = parseHHMM(workEndTime)
+  if (startMins === null || endMins === null) return zero
+  const ref = clockIn ?? clockOut
+  if (!ref) return zero
 
-  if (clockIn && startMins !== null) {
-    lateMinutes = Math.max(0, hhmm(clockIn) - startMins)
+  // 記録時刻の JST 日付を基準に、定時を分単位（秒は切り捨て）の通し値にして差を取る
+  const dayStartMin = Math.floor(jstDayStartUTC(ref).getTime() / 60000)
+  const toMin = (d: Date) => Math.floor(d.getTime() / 60000)
+  const startMin = dayStartMin + startMins
+  const endMin   = dayStartMin + endMins
+
+  const lateMinutes       = clockIn  ? Math.max(0, toMin(clockIn)  - startMin) : 0
+  const earlyLeaveMinutes = clockOut ? Math.max(0, endMin - toMin(clockOut))  : 0
+  let earlyStartMinutes = 0
+  let afterHoursMinutes = 0
+  if (clockIn && clockOut) {
+    earlyStartMinutes = Math.max(0, startMin - toMin(clockIn))
+    afterHoursMinutes = Math.max(0, toMin(clockOut) - endMin)
   }
-
-  if (clockOut && endMins !== null) {
-    const outMins = hhmm(clockOut)
-    earlyLeaveMinutes = Math.max(0, endMins - outMins)
-    // 退勤が所定終了を超えていれば早退ではなく残業
-    if (outMins >= endMins) earlyLeaveMinutes = 0
+  return {
+    lateMinutes,
+    earlyLeaveMinutes,
+    overtimeMinutes: earlyStartMinutes + afterHoursMinutes,
+    earlyStartMinutes,
+    afterHoursMinutes,
   }
+}
 
-  // 残業: 実労働時間 - 所定時間
-  if (workingMinutes !== null && scheduledMinutes > 0) {
-    overtimeMinutes = Math.max(0, workingMinutes - scheduledMinutes)
-  }
-
-  return { lateMinutes, earlyLeaveMinutes, overtimeMinutes }
+/** 日時の属する JST 日付の 0:00 を UTC の Date で返す（先に +9h して日付部品を取る。JST 0:00〜8:59 のズレ防止） */
+export function jstDayStartUTC(d: Date): Date {
+  const jst = toJST(d)
+  return new Date(Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), jst.getUTCDate()) - 9 * 60 * 60 * 1000)
 }
 
 /**
@@ -254,31 +274,107 @@ export function hhmmToUTCDate(hhmm: string, todayUTC: Date): Date {
  *   - 出勤(kind="in"):  定時前14分以内のみ丸める。定時後（遅刻側）は丸めない
  *   - 退勤(kind="out"): 定時後14分以内のみ丸める。定時前（早退側）は丸めない
  *   遅刻・早退を丸めで消さないため、2026-08-19 に前後対称から方向限定へ変更
+ * - roundQuarter: ③全体の15分丸め（出勤は切り上げ・退勤は切り捨て）。①②の結果に対して最後に適用する
+ *   **15分の区切りは本人の定時を起点に刻む**（出勤は始業時刻から、退勤は終業時刻から15分ずつ）。
+ *   時計の :00/:15/:30/:45 で刻むと、定時が区切りに乗らない人で定時を越えて丸まり、架空の早退・遅刻が出るため。
+ *   例: 終業 17:40 の人が 17:43 に退勤 → 17:40（時計刻みだと 17:30 になり早退10分が生まれてしまう）
+ *   ③ONなら②も効いているものとして扱う（呼び出し側が roundNear に ② または ③ を渡す）。
+ *   早出・残業申請がある日も③は効かせる（①②だけ呼び出し側が無効にする）
  */
 export function applyRounding(
   actual: Date,
   scheduled: string | null,
-  opts: { roundEarly: boolean; roundNear: boolean; kind: "in" | "out" },
+  opts: { roundEarly: boolean; roundNear: boolean; roundQuarter?: boolean; kind: "in" | "out"; dayStart?: Date },
 ): Date {
   if (!scheduled) return actual
   // JST の日付 0:00 を UTC で表した基準日を算出
   // 注意: 先に +9h して JST の日付部品を取ること。actual.getUTCDate() を直接使うと
   // JST 0:00〜8:59 の打刻（UTC では前日）で基準日が1日ズレ、丸めが不発になる
   const jst = new Date(actual.getTime() + 9 * 60 * 60 * 1000)
-  const todayUTC = new Date(
+  // dayStart: 記録の日付の JST 0:00。日をまたぐ退勤（翌1:00 など）でも定時は記録の日付のものを使うため、呼び出し側が渡す
+  const todayUTC = opts.dayStart ?? new Date(
     Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), jst.getUTCDate())
     - 9 * 60 * 60 * 1000,
   )
   const scheduledDate = hhmmToUTCDate(scheduled, todayUTC)
   const diffMin = Math.round((actual.getTime() - scheduledDate.getTime()) / 60000)
 
-  if (opts.roundEarly && diffMin < 0) return scheduledDate
-  if (opts.roundNear) {
+  // ①→②の順に評価（どちらかが当たれば定時きっかりになる）
+  let result = actual
+  if (opts.roundEarly && diffMin < 0) {
+    result = scheduledDate
+  } else if (opts.roundNear) {
     // 出勤は定時前、退勤は定時後の14分以内だけを定時へ寄せる（遅刻・早退側は丸めない）
-    if (opts.kind === "in"  && diffMin < 0 && diffMin >= -14) return scheduledDate
-    if (opts.kind === "out" && diffMin > 0 && diffMin <=  14) return scheduledDate
+    if (opts.kind === "in"  && diffMin < 0 && diffMin >= -14) result = scheduledDate
+    if (opts.kind === "out" && diffMin > 0 && diffMin <=  14) result = scheduledDate
   }
-  return actual
+
+  // ③15分丸め: ①②の結果を、定時を起点にした15分の区切りへ寄せる
+  // 秒は落として分単位で数える（画面に出る HH:MM と同じ基準）
+  if (opts.roundQuarter) {
+    const minutesFromScheduled = Math.floor((result.getTime() - scheduledDate.getTime()) / 60000)
+    const steps = opts.kind === "in"
+      ? Math.ceil(minutesFromScheduled / 15)   // 出勤: 切り上げ（8:10 → 8:15、9:23 → 9:30）
+      : Math.floor(minutesFromScheduled / 15)  // 退勤: 切り捨て
+    return new Date(scheduledDate.getTime() + steps * 15 * 60000)
+  }
+  return result
+}
+
+/** 申請の最小形（残業申請の判定・上限の決定に使う） */
+export type OvertimeRequestLike = {
+  type:      string
+  status:    string
+  createdAt: Date
+  detail?:   unknown
+}
+
+export function isNormalOvertime(r: OvertimeRequestLike): boolean {
+  if (r.type !== "OVERTIME") return false
+  const d = r.detail as { overtimeType?: string } | null | undefined
+  return d?.overtimeType !== "earlyStart"  // 早出申請は残業ではない
+}
+
+/** 残業申請（早出申請を除く）が申請中・承認済で存在するか。②の無効化と注意表示の判定に使う */
+export function hasOvertimeRequest(requests: OvertimeRequestLike[]): boolean {
+  return requests.some((r) => isNormalOvertime(r) && (r.status === "PENDING" || r.status === "APPROVED"))
+}
+
+/**
+ * ④の上限にする終了時刻（"HH:MM"）。承認済みの残業申請（早出申請を除く）のうち
+ * **最後に出した申請（createdAt が最新）**の終了時刻。無ければ null（＝定時が上限）
+ */
+export function pickOvertimeCapEnd(requests: OvertimeRequestLike[]): string | null {
+  const approved = requests
+    .filter((r) => isNormalOvertime(r) && r.status === "APPROVED")
+    .filter((r) => /^\d{1,2}:\d{2}$/.test(String((r.detail as { endTime?: string } | null)?.endTime ?? "")))
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+  if (approved.length === 0) return null
+  return (approved[0].detail as { endTime: string }).endTime
+}
+
+/**
+ * 「残業申請が無いのに定時を15分以上過ぎて打刻した日」の注意表示の判定
+ * - 実打刻（rawClockOut）が定時＋15分以上、かつ残業申請（申請中・承認済、早出申請を除く）が無い
+ * - ④ONのときだけ（④OFFなら何も削らないので注意の対象にしない）
+ * - 定時から14分以内は②で定時に吸収されるいつもの運用なので対象外
+ * 要確認の状態・件数には入れない。本人向けは削った時間を出さない（内訳は管理者画面のみ）
+ */
+export function needsOvertimeRequestNotice(p: {
+  rawClockOut: Date | null
+  workEndTime: string | null
+  hasOvertimeRequest: boolean
+  capEnabled: boolean
+  /** 記録の日付（UTC 0時＝その日の JST 暦日）。日をまたぐ退勤でも記録の日付の定時で判定する。省略時は退勤した日 */
+  date?: Date
+}): boolean {
+  if (!p.capEnabled || !p.rawClockOut || p.hasOvertimeRequest) return false
+  const endMins = parseHHMM(p.workEndTime)
+  if (endMins === null) return false
+  // workEndTime は段0の定時（半休・休日を反映したもの。休日は null）
+  const dayStart = p.date ? p.date.getTime() - 9 * 60 * 60 * 1000 : jstDayStartUTC(p.rawClockOut).getTime()
+  const minutesFromDayStart = Math.floor((p.rawClockOut.getTime() - dayStart) / 60000)
+  return minutesFromDayStart >= endMins + 15
 }
 
 /**
@@ -305,31 +401,30 @@ export function buildLateEarlyStatusMap(
 }
 
 /**
- * 遅刻・早退（分）: 保存値があればそれを、無ければ記録時刻から計算する。
+ * 遅刻・早退・残業（分）: 保存値があればそれを、無ければ記録時刻と定時の差から計算する（段4・段8）。
  * 画面（/records・承認詳細）と Excel で同じ結果にするための共通関数。
- * 承認前の日は保存値が無いので、表示時に calcMetrics で計算する。
+ * schedule は段0の結果（休日・半休を反映した定時）。null なら定時なしで全部0。
  */
-export function resolveLateEarlyMinutes(
+export function resolveDayMetrics(
   rec: {
     clockIn: Date | null
     clockOut: Date | null
-    workingMinutes: number | null
     lateMinutes: number | null
     earlyLeaveMinutes: number | null
+    overtimeMinutes: number | null
   },
-  user: { workStartTime: string | null; workEndTime: string | null; employmentType: string | null },
-): { lateMinutes: number; earlyLeaveMinutes: number } {
+  schedule: DaySchedule,
+): { lateMinutes: number; earlyLeaveMinutes: number; overtimeMinutes: number } {
   const metrics = calcMetrics({
     clockIn: rec.clockIn,
     clockOut: rec.clockOut,
-    workingMinutes: rec.workingMinutes,
-    workStartTime: user.workStartTime,
-    workEndTime: user.workEndTime,
-    scheduledMinutes: calcScheduledMinutes(user.workStartTime, user.workEndTime, user.employmentType),
+    workStartTime: schedule?.start ?? null,
+    workEndTime: schedule?.end ?? null,
   })
   return {
     lateMinutes: rec.lateMinutes ?? metrics.lateMinutes,
     earlyLeaveMinutes: rec.earlyLeaveMinutes ?? metrics.earlyLeaveMinutes,
+    overtimeMinutes: rec.overtimeMinutes ?? metrics.overtimeMinutes,
   }
 }
 

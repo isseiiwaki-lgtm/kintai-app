@@ -3,14 +3,16 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { actionCreateRequest } from "../actions"
+import { REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 
 type RequestType = "OVERTIME" | "EARLY_START" | "ABSENCE" | "ABSENCE_ABSENT" | "LEAVE_PAID" | "LEAVE_SUB" | "CORRECTION"
 
-// 15分刻みの時刻オプション（HH:MM 形式）
+// 申請の時刻の刻み（REQUEST_TIME_STEP_MINUTES）の時刻オプション（HH:MM 形式）。
+// 打刻パイプラインが早出の実打刻を切り上げる刻み（CLOCK_PIPELINE 段2）と同じ定数を参照する
 function buildTimeOptions(startHour = 0, endHour = 23): { value: string; label: string }[] {
   const opts: { value: string; label: string }[] = []
   for (let h = startHour; h <= endHour; h++) {
-    for (const m of [0, 15, 30, 45]) {
+    for (let m = 0; m < 60; m += REQUEST_TIME_STEP_MINUTES) {
       const hh = String(h).padStart(2, "0")
       const mm = String(m).padStart(2, "0")
       opts.push({ value: `${hh}:${mm}`, label: `${hh}:${mm}` })

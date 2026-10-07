@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 import {
   actionApproveRequest,
   actionForceApproveRequest,
@@ -30,9 +31,10 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   REJECTED: { label: "却下",   className: "bg-red-100    text-red-600"    },
 }
 
-const TIME_OPTIONS = Array.from({ length: 96 }, (_, i) => {
-  const h = Math.floor(i / 4)
-  const m = (i % 4) * 15
+// 申請の時刻の刻み（REQUEST_TIME_STEP_MINUTES）。申請フォームと同じ定数を参照する
+const TIME_OPTIONS = Array.from({ length: Math.floor((24 * 60) / REQUEST_TIME_STEP_MINUTES) }, (_, i) => {
+  const h = Math.floor((i * REQUEST_TIME_STEP_MINUTES) / 60)
+  const m = (i * REQUEST_TIME_STEP_MINUTES) % 60
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 })
 
@@ -116,6 +118,18 @@ const inputClass = "w-full border border-gray-200 rounded-md px-2.5 py-1.5 text-
 const labelClass = "block text-xs text-gray-500 mb-1"
 
 function DetailFields({ type, detail }: { type: string; detail: Record<string, string> }) {
+  if (type === "OVERTIME" && detail.overtimeType === "earlyStart") {
+    // 早出申請は開始時刻を直す（overtimeType はサーバー側で保持される）
+    return (
+      <div>
+        <label className={labelClass}>開始時刻</label>
+        <select name="startTime" defaultValue={detail.startTime ?? ""} className={inputClass}>
+          <option value="">未設定</option>
+          {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+    )
+  }
   if (type === "OVERTIME") {
     return (
       <div>
@@ -213,6 +227,8 @@ export function RequestsTable({
   const [editType, setEditType]         = useState("")
   const [deleteTarget, setDeleteTarget] = useState<DeleteState | null>(null)
   const [isPending, startTransition]    = useTransition()
+  // 承認・削除を拒否したときの理由（締め済みの日の打刻修正など）
+  const [actionError, setActionError]   = useState<string | null>(null)
 
   function openEdit(r: ReqRow) {
     setEditType(r.type)
@@ -227,6 +243,7 @@ export function RequestsTable({
 
   function openDelete(r: ReqRow) {
     const info = `${r.user.name ?? r.user.email} / ${TYPE_LABEL[r.type] ?? r.type} / ${formatDate(r.targetDate)}`
+    setActionError(null)
     setDeleteTarget({ id: r.id, info })
   }
 
@@ -241,16 +258,27 @@ export function RequestsTable({
   function handleDelete() {
     if (!deleteTarget) return
     startTransition(async () => {
-      await actionDeleteRequest(deleteTarget.id)
+      const res = await actionDeleteRequest(deleteTarget.id)
+      if (!res.ok) { setActionError(res.error); return }
       setDeleteTarget(null)
+    })
+  }
+
+  function handleApprove(r: ReqRow) {
+    setActionError(null)
+    startTransition(async () => {
+      const res = await actionApproveRequest(r.id)
+      if (!res.ok) setActionError(res.error)
     })
   }
 
   function handleForceApprove(r: ReqRow) {
     const who = r.user.name ?? r.user.email
     if (!window.confirm(`${who} の申請を飛び越し承認しますか？\n（未消化の承認ステップをスキップして承認を確定します）`)) return
+    setActionError(null)
     startTransition(async () => {
-      await actionForceApproveRequest(r.id)
+      const res = await actionForceApproveRequest(r.id)
+      if (!res.ok) setActionError(res.error)
     })
   }
 
@@ -288,11 +316,14 @@ export function RequestsTable({
                 <span className="text-xs text-gray-400 whitespace-nowrap">他の承認者待ち</span>
               ) : (
               <>
-                <form action={actionApproveRequest.bind(null, r.id)}>
-                  <button type="submit" className="px-2.5 py-1 rounded text-xs font-medium bg-green-600 hover:bg-green-700 text-white transition-colors whitespace-nowrap">
-                    承認
-                  </button>
-                </form>
+                <button
+                  type="button"
+                  onClick={() => handleApprove(r)}
+                  disabled={isPending}
+                  className="px-2.5 py-1 rounded text-xs font-medium bg-green-600 hover:bg-green-700 text-white transition-colors whitespace-nowrap disabled:opacity-50"
+                >
+                  承認
+                </button>
                 <form action={actionRejectRequest.bind(null, r.id)}>
                   <button type="submit" className="px-2.5 py-1 rounded text-xs font-medium bg-red-500 hover:bg-red-600 text-white transition-colors whitespace-nowrap">
                     却下
@@ -337,6 +368,12 @@ export function RequestsTable({
 
   return (
     <>
+      {actionError && (
+        <div role="alert" className="mb-3 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <span>{actionError}</span>
+          <button type="button" onClick={() => setActionError(null)} className="text-red-400 hover:text-red-600 leading-none" aria-label="閉じる">✕</button>
+        </div>
+      )}
       <h2 className="text-sm font-medium text-gray-700 mb-2">審査中 ({pending.length}件)</h2>
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto mb-6">
         <table className="w-full text-sm min-w-[800px]">
@@ -472,6 +509,7 @@ export function RequestsTable({
             </div>
             <div className="px-5 py-4 space-y-3">
               <p className="text-sm text-gray-700">{deleteTarget.info}</p>
+              {actionError && <p role="alert" className="text-xs text-red-600">{actionError}</p>}
               <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
                 一度削除すると取り消せません。必要に応じて内容を記録してから実施してください。
               </div>

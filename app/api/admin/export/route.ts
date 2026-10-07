@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
+import { resolveDayMetrics } from "@/lib/attendance"
+import { resolveScheduleForDate } from "@/lib/clock-pipeline"
+import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 
 function toJST(dt: Date) {
   return new Date(dt.getTime() + 9 * 60 * 60 * 1000)
@@ -38,7 +41,9 @@ export async function GET(req: NextRequest) {
     where: { isActive: true },
     orderBy: { name: "asc" },
     select: {
-      name: true, email: true, employmentType: true, department: true,
+      id: true, name: true, email: true, employmentType: true, department: true,
+      workStartTime: true, workEndTime: true, breakMinutes: true,
+      workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       attendanceRecords: {
         where: { date: { gte: firstDay, lte: lastDay } },
         orderBy: { date: "asc" },
@@ -46,10 +51,14 @@ export async function GET(req: NextRequest) {
           date: true, clockIn: true, clockOut: true,
           goOutAt: true, returnAt: true,
           workingMinutes: true, overtimeMinutes: true, note: true, status: true,
+          isHolidayWork: true, lateMinutes: true, earlyLeaveMinutes: true,
         },
       },
     },
   })
+
+  // 段0：その日の定時（休日は定時なし・半休は前半/後半）。保存値が無い日の残業の計算に使う
+  const sched = await loadScheduleInputs(users.map((u) => u.id), firstDay, lastDay)
 
   const header = ["氏名", "部署", "雇用形態", "日付", "出勤時刻", "退勤時刻", "外出", "戻り", "勤務時間(分)", "残業時間(分)", "備考", "状態"]
   const rows: string[][] = []
@@ -57,8 +66,12 @@ export async function GET(req: NextRequest) {
   for (const u of users) {
     for (const r of u.attendanceRecords) {
       if (!r.clockIn) continue // 打刻なし日はスキップ
-      // overtimeMinutes は打刻時・一括再計算時に保存済み（法定1日8h超）
-      const overtime = r.overtimeMinutes ?? 0
+      // 残業 ＝ 早出（定時の始業 − 記録した出勤）＋ 残業（記録した退勤 − 定時の終業）。保存値があればそれ、無ければ同じ式で計算（CLOCK_PIPELINE 段8）
+      const schedule = resolveScheduleForDate({
+        date: r.date, user: u, setting: sched.setting,
+        isHoliday: sched.isHoliday(r.date), isHolidayWork: r.isHolidayWork, requests: sched.requestsOf(u.id, r.date),
+      })
+      const overtime = resolveDayMetrics(r, schedule).overtimeMinutes
       rows.push([
         u.name ?? u.email ?? "",
         u.department ?? "",

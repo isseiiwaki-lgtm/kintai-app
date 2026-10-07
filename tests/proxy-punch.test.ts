@@ -1,9 +1,11 @@
 /**
  * 代理打刻（打刻ゼロの日への管理者後日打刻）の計算検証
- * 合意した具体例をそのままなぞる。休日出勤フラグによる遅刻・早退の抑止が主眼。
+ * 代理打刻の時刻は段1の入力になり、打刻パイプラインを通る。休日出勤フラグの日は定時なしで遅刻・早退が付かない。
  */
 import { describe, it, expect } from "vitest"
-import { calcWorkingMinutes, calcMetrics, calcScheduledMinutes } from "../lib/attendance"
+import { calcWorkingMinutes, calcScheduledMinutes } from "../lib/attendance"
+import { computeClockPipeline } from "../lib/clock-pipeline"
+import { OFF } from "./helpers/pipeline"
 
 /** JST の日付・時刻から UTC の Date を作る（サーバーアクションの toUTC と同じ） */
 function jst(dateISO: string, hhmm: string): Date {
@@ -12,7 +14,7 @@ function jst(dateISO: string, hhmm: string): Date {
   return new Date(Date.UTC(y, m - 1, d, hh - 9, mm))
 }
 
-/** サーバーアクション actionAdminCreateRecord の保存値を再現する */
+/** サーバーアクション actionAdminCreateRecord の保存値を再現する（スイッチは全OFFの既存の記録と同じ） */
 function proxyPunch(opts: {
   dateISO: string
   clockIn: string
@@ -27,32 +29,25 @@ function proxyPunch(opts: {
   isHolidayWork?: boolean
 }) {
   const t = (v?: string) => (v ? jst(opts.dateISO, v) : null)
-  const clockIn  = t(opts.clockIn)!
-  const clockOut = t(opts.clockOut)
-
+  // 休日出勤の印がある日は定時なし（段0）
+  const schedule = opts.isHolidayWork ? null : { start: opts.workStartTime, end: opts.workEndTime }
+  const out = computeClockPipeline({
+    inputClockIn: t(opts.clockIn), inputClockOut: t(opts.clockOut), schedule, switches: OFF, requests: [],
+  })
   const workingMinutes = calcWorkingMinutes({
-    clockIn,
-    clockOut,
+    clockIn: out.clockIn,
+    clockOut: out.clockOut,
     goOutAt:    t(opts.goOutAt),
     returnAt:   t(opts.returnAt),
     breakStart: t(opts.breakStart),
     breakEnd:   t(opts.breakEnd),
     employmentType: opts.employmentType,
   })
-
-  const scheduledMinutes = calcScheduledMinutes(opts.workStartTime, opts.workEndTime, opts.employmentType)
-  const metrics = calcMetrics({
-    clockIn, clockOut, workingMinutes,
-    workStartTime: opts.workStartTime,
-    workEndTime:   opts.workEndTime,
-    scheduledMinutes,
-  })
-
   return {
     workingMinutes,
-    lateMinutes:       opts.isHolidayWork ? 0 : metrics.lateMinutes,
-    earlyLeaveMinutes: opts.isHolidayWork ? 0 : metrics.earlyLeaveMinutes,
-    overtimeMinutes:   metrics.overtimeMinutes,
+    lateMinutes:       out.lateMinutes,
+    earlyLeaveMinutes: out.earlyLeaveMinutes,
+    overtimeMinutes:   out.overtimeMinutes,
   }
 }
 
@@ -64,8 +59,7 @@ describe("代理打刻の集計値", () => {
       .toEqual({ workingMinutes: 480, lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: 0 })
   })
 
-  // 注: overtimeMinutes が 0 なのは「実働300分 − 所定480分」が負になるための結果であり、
-  // 休日労働の割増を意図した仕様ではない（STATUS.md 未完了タスク「休日労働の割増計上」参照）
+  // 休日出勤の残業の計上（休日労働の割増）は後続の担当。定時なしの日は残業を付けない
   it("(b) 休日出勤 10:00〜15:00 は遅刻・早退を計上しない", () => {
     expect(proxyPunch({ dateISO: "2026-08-02", clockIn: "10:00", clockOut: "15:00", isHolidayWork: true, ...FULL }))
       .toEqual({ workingMinutes: 300, lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: 0 })
@@ -76,13 +70,11 @@ describe("代理打刻の集計値", () => {
       .toEqual({ workingMinutes: 300, lateMinutes: 90, earlyLeaveMinutes: 150, overtimeMinutes: 0 })
   })
 
-  it("(e) パートは休憩打刻がなければ法定休憩を控除しない", () => {
-    // 実働は在席時間そのまま420分。一方 scheduledMinutes は所定7hから法定休憩45分を引いた375分のため
-    // 差分45分が残業に出る（通常打刻でも起きる既存挙動。STATUS.md 懸念事項「パート休憩打刻漏れ」と同根）
+  it("(e) パートは休憩打刻がなければ法定休憩を控除しない。残業は定時との差なので 0（実働−所定の差し引きではない）", () => {
     expect(proxyPunch({
       dateISO: "2026-07-28", clockIn: "09:00", clockOut: "16:00",
       workStartTime: "09:00", workEndTime: "16:00", employmentType: "part",
-    })).toEqual({ workingMinutes: 420, lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: 45 })
+    })).toEqual({ workingMinutes: 420, lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: 0 })
   })
 
   it("パートの休憩打刻ありは実休憩分だけ控除する", () => {
@@ -108,5 +100,9 @@ describe("代理打刻の集計値", () => {
   it("JST深夜帯の日付でもUTCへ正しく変換される（0:00打刻）", () => {
     // JST 2026-07-28 00:00 = UTC 2026-07-27 15:00
     expect(jst("2026-07-28", "00:00").toISOString()).toBe("2026-07-27T15:00:00.000Z")
+  })
+
+  it("所定勤務時間（calcScheduledMinutes）は従来どおり（休憩控除後の所定。残業の計算には使わない）", () => {
+    expect(calcScheduledMinutes("08:30", "17:30", "full")).toBe(480)
   })
 })

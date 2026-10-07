@@ -3,7 +3,11 @@ import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { QuickClockButton } from "./clock/QuickClockButton"
 import { calcReviewReasons, resolveEmployeeReview, buildLateEarlyStatusMap } from "@/lib/attendance"
+import { resolveScheduleForDate } from "@/lib/clock-pipeline"
+import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
+import { OvertimeNotice } from "@/components/overtime-notice"
+import { shouldShowOvertimeNotice } from "@/lib/clock-out-cap"
 
 /** UTC の Date を JST の同じ日付の 00:00:00 UTC に変換 */
 function todayJST(): Date {
@@ -38,14 +42,17 @@ export default async function DashboardPage() {
   const [userInfo, todayRecord, monthRecords, lateEarlyRequests, pendingRequests, rejectedRequests, missedClockOut] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { name: true, employeeCode: true, workStartTime: true, workEndTime: true },
+      select: {
+        name: true, employeeCode: true, workStartTime: true, workEndTime: true, employmentType: true, breakMinutes: true,
+        workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
+      },
     }),
     prisma.attendanceRecord.findUnique({
       where: { userId_date: { userId, date: today } },
     }),
     prisma.attendanceRecord.findMany({
       where: { userId, date: { gte: firstDay, lte: lastDay }, clockIn: { not: null } },
-      select: { workingMinutes: true, clockIn: true, clockOut: true, status: true, date: true },
+      select: { workingMinutes: true, clockIn: true, clockOut: true, status: true, date: true, isHolidayWork: true },
     }),
     // 遅刻早退申請（欠勤は除く）。要確認件数から除く
     prisma.request.findMany({
@@ -80,6 +87,9 @@ export default async function DashboardPage() {
     }),
   ])
 
+  // 当日だけの注意表示（残業申請が無いのに定時を15分以上過ぎて退勤した日）。要確認の件数には入れない
+  const showOvertimeNotice = await shouldShowOvertimeNotice(userId, today)
+
   const workDays     = monthRecords.length
   const totalMinutes = monthRecords.reduce((s: number, r: { workingMinutes: number | null }) => s + (r.workingMinutes ?? 0), 0)
 
@@ -95,14 +105,23 @@ export default async function DashboardPage() {
 
   // 要確認カウント: 昨日以前 OPEN レコードで、審査中の修正申請がなく、
   // 遅刻・早退申請で打ち消されていない理由（遅刻・早退・退勤漏れ）が残る日。/records と同じ判定
+  // 段0：その日の定時（休日は定時なし・半休は前半/後半）で遅刻・早退を判定する。/records と同じ
+  const sched = await loadScheduleInputs([userId], firstDay, lastDay)
   const openCount = monthRecords.filter((r) =>
     r.status === "OPEN" &&
     !pendingCorrectionDates.has(r.date.toISOString()) &&
     resolveEmployeeReview(
       calcReviewReasons({
         clockIn: r.clockIn, clockOut: r.clockOut, date: r.date, today,
-        workStartTime: userInfo?.workStartTime ?? null,
-        workEndTime: userInfo?.workEndTime ?? null,
+        ...(() => {
+          const sc = userInfo
+            ? resolveScheduleForDate({
+                date: r.date, user: userInfo, setting: sched.setting,
+                isHoliday: sched.isHoliday(r.date), isHolidayWork: r.isHolidayWork, requests: sched.requestsOf(userId, r.date),
+              })
+            : null
+          return { workStartTime: sc?.start ?? null, workEndTime: sc?.end ?? null }
+        })(),
       }),
       lateEarlyMap.get(r.date.toISOString()),
     ).needsReview
@@ -137,6 +156,8 @@ export default async function DashboardPage() {
           <span className="text-sm font-medium text-gray-700">{userInfo.name ?? "—"}</span>
         </div>
       )}
+
+      {showOvertimeNotice && <OvertimeNotice />}
 
       {/* 今日の打刻カード */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">

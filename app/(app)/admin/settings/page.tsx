@@ -2,6 +2,7 @@ import { auth } from "@/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
 import { actionSaveSetting } from "./actions"
+import { RoundingFields } from "./RoundingFields"
 
 const DEFAULT_SETTING = {
   closingDay:         25,
@@ -11,6 +12,9 @@ const DEFAULT_SETTING = {
   break2Minutes:      60,
   roundEarlyClockIn:  false,
   roundNearClockTime: false,
+  roundQuarterHour:   false,
+  capOvertimeByRequest: false,
+  lunchStartTime:     "12:00",
 }
 
 export default async function SettingsPage() {
@@ -94,39 +98,25 @@ export default async function SettingsPage() {
           </p>
         </div>
 
-        {/* 打刻丸め処理 */}
+        {/* 昼休憩の開始時刻（正社員の半休の境目を決めるためだけに使う。休憩控除の判定には使わない） */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-          <h2 className="text-sm font-semibold text-gray-800 mb-1">打刻丸め処理</h2>
-          <p className="text-xs text-gray-400 mb-4">
-            打刻時刻を自動で定時に補正します。ユーザーごとの所定開始・終了時刻が設定されている場合に有効です。
-          </p>
-          <div className="space-y-4">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox" name="roundEarlyClockIn"
-                defaultChecked={setting.roundEarlyClockIn}
-                value="true"
-                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <div>
-                <p className="text-sm text-gray-700 font-medium">定時前打刻 → 定時扱い</p>
-                <p className="text-xs text-gray-400 mt-0.5">例: 9:00始業の人が 8:40 に打刻 → 9:00 で記録</p>
-              </div>
-            </label>
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox" name="roundNearClockTime"
-                defaultChecked={setting.roundNearClockTime}
-                value="true"
-                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <div>
-                <p className="text-sm text-gray-700 font-medium">定時14分以内の早出・残業 → 定時きっかり</p>
-                <p className="text-xs text-gray-400 mt-0.5">例: 9:00始業の人が 8:55 に出勤打刻 → 9:00 で記録。17:00終業の人が 17:10 に退勤打刻 → 17:00 で記録。遅刻（9:09 出勤）・早退（16:50 退勤）は丸めず実時刻で記録します</p>
-              </div>
-            </label>
-          </div>
+          <h2 className="text-sm font-semibold text-gray-800 mb-1">昼休憩の開始時刻</h2>
+          <p className="text-xs text-gray-400 mb-3">正社員の半休の前半・後半の境目に使います（昼休憩の終わり ＝ 開始 ＋ 本人の休憩の長さ）。休憩の控除には使いません。</p>
+          <input
+            type="time" name="lunchStartTime"
+            defaultValue={setting.lunchStartTime ?? "12:00"}
+            required
+            className={inputClass}
+          />
         </div>
+
+        {/* 打刻丸め ①②③ と残業の申請上限 ④ */}
+        <RoundingFields
+          roundEarlyClockIn={setting.roundEarlyClockIn}
+          roundNearClockTime={setting.roundNearClockTime}
+          roundQuarterHour={setting.roundQuarterHour}
+          capOvertimeByRequest={setting.capOvertimeByRequest}
+        />
 
         <button
           type="submit"

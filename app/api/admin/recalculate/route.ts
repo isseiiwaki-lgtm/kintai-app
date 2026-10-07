@@ -1,18 +1,16 @@
 /**
  * POST /api/admin/recalculate
- * 過去レコードの workingMinutes(NULL) と overtimeMinutes を一括再計算・保存する。
+ * 過去レコードを打刻パイプライン（docs/CLOCK_PIPELINE.md・lib/clock-pipeline-db.ts）で一括して計算し直す。
+ * 独自の計算は持たない。ユーザーごとに recomputeRecords を呼び、記録時刻・勤務時間・残業
+ * （承認済みの日は遅刻・早退も）を、打刻・承認と同じ計算で最初から出し直して保存する。
  *
- * workingMinutes : NULL かつ clockOut あり のレコードのみ更新
- * overtimeMinutes: clockOut あり の全レコードを更新（法定1日8h超）
- *
- * 注意: 打刻時に丸め処理済みの clockIn/clockOut をそのまま使う。再計算で丸めは適用しない。
+ * 対象: 退勤のある記録。締め済み（LOCKED）の日は計算し直さない。
+ * 入力は実打刻・承認済みの申請・記録に保存したスイッチ状態（保存値が無い記録は ③④OFF・①②は現在値）。
  */
 import { NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
-import { calcLegalBreak } from "@/config/attendance.config"
-
-const LEGAL_DAILY_LIMIT = 480  // 8時間（分）
+import { recomputeRecords } from "@/lib/clock-pipeline-db"
 
 export async function POST() {
   const session = await auth()
@@ -20,70 +18,28 @@ export async function POST() {
     return new NextResponse("Forbidden", { status: 403 })
   }
 
-  // clockOut がある全レコードを取得
   const records = await prisma.attendanceRecord.findMany({
-    where: { clockOut: { not: null } },
-    select: {
-      id: true,
-      clockIn: true,
-      clockOut: true,
-      goOutAt: true,
-      returnAt: true,
-      breakStart: true,
-      breakEnd: true,
-      workingMinutes: true,
-      user: { select: { employmentType: true } },
-    },
+    where: { clockOut: { not: null }, status: { not: "LOCKED" } },
   })
 
-  let updatedWorking = 0
-  let updatedOvertime = 0
-  const errorIds: string[] = []
+  const byUser = new Map<string, typeof records>()
+  for (const r of records) byUser.set(r.userId, [...(byUser.get(r.userId) ?? []), r])
 
-  for (const r of records) {
-    if (!r.clockIn || !r.clockOut) continue
-
-    const totalMs  = r.clockOut.getTime() - r.clockIn.getTime()
-    const goOutMs  = r.goOutAt && r.returnAt
-      ? r.returnAt.getTime() - r.goOutAt.getTime()
-      : 0
-    const rawMinutes = Math.floor((totalMs - goOutMs) / 60000)
-
-    // 勤務時間を計算（雇用形態で分岐）
-    let calcedWorkingMinutes: number
-    if (r.user.employmentType === "part") {
-      const breakMs = r.breakStart && r.breakEnd
-        ? r.breakEnd.getTime() - r.breakStart.getTime()
-        : 0
-      calcedWorkingMinutes = Math.max(0, rawMinutes - Math.floor(breakMs / 60000))
-    } else {
-      calcedWorkingMinutes = Math.max(0, rawMinutes - calcLegalBreak(rawMinutes))
-    }
-
-    const calcedOvertimeMinutes = Math.max(0, calcedWorkingMinutes - LEGAL_DAILY_LIMIT)
-
-    // 更新データを組み立て
-    const data: { workingMinutes?: number; overtimeMinutes: number } = {
-      overtimeMinutes: calcedOvertimeMinutes,
-    }
-    if (r.workingMinutes === null) {
-      data.workingMinutes = calcedWorkingMinutes
-    }
-
+  let updated = 0
+  const errorUserIds: string[] = []
+  for (const [userId, recs] of byUser) {
     try {
-      await prisma.attendanceRecord.update({ where: { id: r.id }, data })
-      if (r.workingMinutes === null) updatedWorking++
-      updatedOvertime++
+      await recomputeRecords(userId, recs)
+      updated += recs.length
     } catch {
-      errorIds.push(r.id)
+      errorUserIds.push(userId)
     }
   }
 
   return NextResponse.json({
     total: records.length,
-    updatedWorking,
-    updatedOvertime,
-    errors: errorIds.length,
-    ...(errorIds.length > 0 ? { errorIds } : {}),
+    updated,
+    errors: errorUserIds.length,
+    ...(errorUserIds.length > 0 ? { errorUserIds } : {}),
   })
 }
