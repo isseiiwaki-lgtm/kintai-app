@@ -205,6 +205,17 @@ describe("buildRecordUpdate：計算し直さない日・入力の決め方", ()
   })
 })
 
+describe("buildRecordUpdate：段6.5 管理者の確定修正は後の再計算でも最後に勝つ", () => {
+  it("管理者の退勤 19:00（adminClockOut）は、後で残業申請 19:30 が承認されて計算し直しても 19:00 のまま", () => {
+    const r = build(rec({ adminClockOut: jst(19, 0) }), ctx({ requests: [approved("19:30")] }), { status: "APPROVED" })!
+    expect(hm(r.data.clockOut as Date)).toBe("19:00")
+    expect(r.data.overtimeMinutes).toBe(90)
+  })
+  it("管理者の値が無い日は従来どおり（④で 17:30）", () => {
+    expect(hm(build(rec(), ctx())!.data.clockOut as Date)).toBe("17:30")
+  })
+})
+
 describe("buildRecordUpdate：承認済みの日は遅刻・早退も保存し直す", () => {
   it("承認処理：9:20 出勤・14:00 退勤（③OFF 保存）→ 遅刻20・早退210・残業0・状態 APPROVED", () => {
     const r = build(

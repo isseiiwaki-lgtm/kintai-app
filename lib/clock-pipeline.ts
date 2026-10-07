@@ -249,6 +249,9 @@ export type PipelineInput = {
   /** 出退勤の入力が実打刻でも修正でもない（出どころ不明の既存の記録）ときは、丸めず記録時刻をそのまま使う */
   clockInIsFinal?:  boolean
   clockOutIsFinal?: boolean
+  /** 段6.5：管理者の確定修正。段0〜6の結果を最後に上書きする（丸め・④を通さない）。遅刻・早退・残業は上書き後の時刻から出す */
+  adminClockIn?:  Date | null
+  adminClockOut?: Date | null
   /** 段0の結果 */
   schedule: DaySchedule
   /** 打刻時点のスイッチ状態 */
@@ -392,6 +395,16 @@ export function computeClockPipeline(input: PipelineInput): PipelineOutput {
     }
   }
 
+  // 段6.5：管理者の確定修正が最後に勝つ（段0〜6の結果を上書き）
+  if (input.adminClockIn) {
+    clockIn = input.adminClockIn
+    earlyStartRequestApplied = false
+  }
+  if (input.adminClockOut) {
+    clockOut = input.adminClockOut
+    capBeforeClockIn = false
+  }
+
   // 段4・段8：時刻の差だけで出す
   const m = calcMetrics({
     clockIn,
@@ -468,4 +481,56 @@ export function resolveInputTime(p: {
   }
   if (p.raw) return { time: p.raw, source: "raw" }
   return { time: p.recorded, source: "recorded" }
+}
+
+// ---------------------------------------------------------------------------
+// 段6.5：管理者の入力画面の時刻の選択肢
+// ---------------------------------------------------------------------------
+
+/** 選択肢を決めるための、その日の条件（画面に渡せるよう Date を含まない） */
+export type AdminTimeConstraint = {
+  schedule: DaySchedule
+  switches: PipelineSwitches
+  /** 承認済みの早出申請の開始時刻（"HH:MM"）。無ければ null */
+  earlyStartTime: string | null
+  /** 承認済みの残業申請（最後に出した申請）の終了時刻。無ければ null（＝定時が上限） */
+  overtimeCapEnd: string | null
+}
+
+const OPTION_BASE = Date.UTC(2026, 0, 5) - 9 * 60 * 60 * 1000  // 判定用の基準日の JST 0:00（日付に意味は無い）
+
+/**
+ * 管理者の入力画面（編集モーダル・代理打刻フォーム）の時刻の選択肢（"HH:MM" の配列）。
+ * - 出勤・退勤：その時刻をパイプラインに通しても変わらない時刻だけ（③ON なら15分刻み、④ON なら退勤は上限まで、など）
+ * - それ以外の項目（外出・戻り・休憩）：パイプラインに影響しないので申請の刻みの時刻
+ * - unrestricted（「制限なしで入力する」）：全項目・1分単位・全時間帯
+ */
+export function buildAdminTimeOptions(
+  kind: "clockIn" | "clockOut" | "other",
+  c: AdminTimeConstraint,
+  unrestricted: boolean,
+): string[] {
+  const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`
+  if (unrestricted) return Array.from({ length: 1440 }, (_, m) => fmt(m))
+  if (kind === "other") {
+    const out: string[] = []
+    for (let m = 0; m < 1440; m += REQUEST_TIME_STEP_MINUTES) out.push(fmt(m))
+    return out
+  }
+  const requests: PipelineRequest[] = []
+  const at = new Date("2026-01-01T00:00:00Z")
+  if (c.earlyStartTime) requests.push({ type: "OVERTIME", status: "APPROVED", createdAt: at, detail: { overtimeType: "earlyStart", startTime: c.earlyStartTime } })
+  if (c.overtimeCapEnd) requests.push({ type: "OVERTIME", status: "APPROVED", createdAt: at, detail: { endTime: c.overtimeCapEnd } })
+  const result: string[] = []
+  for (let m = 0; m < 1440; m++) {
+    const t = new Date(OPTION_BASE + m * 60000)
+    const o = computeClockPipeline({
+      inputClockIn: kind === "clockIn" ? t : null,
+      inputClockOut: kind === "clockOut" ? t : null,
+      schedule: c.schedule, switches: c.switches, requests,
+    })
+    const got = kind === "clockIn" ? o.clockIn : o.clockOut
+    if (got && got.getTime() === t.getTime()) result.push(fmt(m))
+  }
+  return result
 }

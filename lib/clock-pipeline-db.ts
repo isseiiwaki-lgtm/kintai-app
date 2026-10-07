@@ -149,6 +149,8 @@ export function buildRecordUpdate(
     inputClockOut: inOut.time,
     clockInIsFinal: inIn.source === "recorded",
     clockOutIsFinal: inOut.source === "recorded",
+    adminClockIn: rec.adminClockIn,
+    adminClockOut: rec.adminClockOut,
     schedule,
     switches,
     requests: dayRequests,

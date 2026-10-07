@@ -2,7 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { calcNeedsReview, hasOvertimeRequest, needsOvertimeRequestNotice, resolveDayMetrics } from "@/lib/attendance"
-import { resolveScheduleForDate } from "@/lib/clock-pipeline"
+import { resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
@@ -56,22 +56,22 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
         select: {
           workingMinutes: true, clockIn: true, clockOut: true, rawClockOut: true, date: true, status: true,
           isHolidayWork: true, lateMinutes: true, earlyLeaveMinutes: true, overtimeMinutes: true,
+          switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true,
         },
       },
     },
   })
 
   // ④ON のとき: 残業申請が無いのに実打刻が定時を15分以上過ぎた日の数を出すため、期間内の残業申請（申請中・承認済）を取得
-  const capEnabled = setting?.capOvertimeByRequest ?? false
-  const overtimeRequests = capEnabled
-    ? await prisma.request.findMany({
+  const capEnabled = setting?.capOvertimeByRequest ?? false  // 要確認の取得範囲を決めるだけ。目印の判定は各日の保存値
+  // 目印の判定は各日に保存したスイッチ状態で行うので、現在の設定に関わらず取得する
+  const overtimeRequests = await prisma.request.findMany({
         where: {
           type: "OVERTIME", status: { in: ["PENDING", "APPROVED"] },
           targetDate: { gte: firstDay, lte: lastDay },
         },
         select: { userId: true, targetDate: true, type: true, status: true, createdAt: true, detail: true },
       })
-    : []
   const overtimeReqMap = new Map<string, typeof overtimeRequests>()
   for (const q of overtimeRequests) {
     const k = `${q.userId}|${q.targetDate.toISOString()}`
@@ -106,6 +106,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
   type Rec = {
     clockIn: Date | null; clockOut: Date | null; rawClockOut: Date | null; date: Date; workingMinutes: number | null; status: string
     isHolidayWork: boolean; lateMinutes: number | null; earlyLeaveMinutes: number | null; overtimeMinutes: number | null
+    switchRoundEarly: boolean | null; switchRoundNear: boolean | null; switchRoundQuarter: boolean | null; switchCapOvertime: boolean | null
   }
   const rows: Row[] = users.map((u: typeof users[number]) => {
     const recs = u.attendanceRecords as Rec[]
@@ -138,7 +139,8 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
         rawClockOut: r.rawClockOut,
         workEndTime: u.workEndTime,
         hasOvertimeRequest: hasOvertimeRequest(overtimeReqMap.get(`${u.id}|${r.date.toISOString()}`) ?? []),
-        capEnabled,
+        // ④はその日の記録に保存したスイッチ状態で判定する（後から ON にしても過去の日に目印を出さない）
+        capEnabled: resolveSwitches(r, setting).capOvertime,
       })
     ).length
     return {

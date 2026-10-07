@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma"
 import { hasOvertimeRequest, needsOvertimeRequestNotice } from "@/lib/attendance"
+import { resolveSwitches } from "@/lib/clock-pipeline"
 
 /**
  * その日の残業申請（申請中・承認済、早出申請を含む）を取得する。
@@ -26,16 +27,20 @@ export async function shouldShowOvertimeNotice(userId: string, today: Date): Pro
   const [record, user, setting, requests] = await Promise.all([
     prisma.attendanceRecord.findUnique({
       where: { userId_date: { userId, date: today } },
-      select: { rawClockOut: true },
+      select: {
+        rawClockOut: true,
+        switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true,
+      },
     }),
     prisma.user.findUnique({ where: { id: userId }, select: { workEndTime: true } }),
-    prisma.setting.findUnique({ where: { id: 1 }, select: { capOvertimeByRequest: true } }),
+    prisma.setting.findUnique({ where: { id: 1 }, select: { roundEarlyClockIn: true, roundNearClockTime: true, capOvertimeByRequest: true } }),
     fetchDayOvertimeRequests(userId, today),
   ])
   return needsOvertimeRequestNotice({
     rawClockOut: record?.rawClockOut ?? null,
     workEndTime: user?.workEndTime ?? null,
     hasOvertimeRequest: hasOvertimeRequest(requests),
-    capEnabled: setting?.capOvertimeByRequest ?? false,
+    // その日の記録に保存したスイッチ状態で判定する（保存値が無い記録は ④OFF）
+    capEnabled: resolveSwitches(record, setting).capOvertime,
   })
 }

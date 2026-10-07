@@ -152,6 +152,10 @@ model AttendanceRecord {
   isHolidayWork        Boolean   @default(false) // 休日出勤の印（代理打刻の休日出勤チェック。承認し直しても遅刻・早退を0に保つ）
   // 打刻時点のスイッチ状態（①〜④）。計算し直すときはこの保存値を使う（遡及しない）。null＝保存値なし（既存の記録）
   // 保存値なしの記録は「③④OFF・①②は現在値」として扱う（lib/clock-pipeline.ts resolveSwitches）
+  // 管理者の確定修正（段6.5）。管理者の直接修正・代理打刻で入れた時刻。段0〜6の結果を最後に上書きする（丸め・④を通さない）
+  // 実打刻（rawClockIn/Out）・記録時刻（clockIn/Out）とは別の列。後で計算し直しても管理者の値が最後に勝つ
+  adminClockIn         DateTime?
+  adminClockOut        DateTime?
   switchRoundEarly     Boolean?  // ① roundEarlyClockIn
   switchRoundNear      Boolean?  // ② roundNearClockTime
   switchRoundQuarter   Boolean?  // ③ roundQuarterHour

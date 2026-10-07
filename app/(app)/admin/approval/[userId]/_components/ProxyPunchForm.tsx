@@ -2,19 +2,11 @@
 
 import { useState, useTransition } from "react"
 import { actionAdminCreateRecord } from "../actions"
+import type { AdminTimeConstraint } from "@/lib/clock-pipeline"
+import { AdminTimeSelect } from "./AdminTimeSelect"
 
-export type MissingDate = { iso: string; label: string }
-
-function buildTimeOptions() {
-  const opts: string[] = []
-  for (let h = 0; h <= 23; h++) {
-    for (const m of [0, 15, 30, 45]) {
-      opts.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`)
-    }
-  }
-  return opts
-}
-const TIME_OPTIONS = buildTimeOptions()
+// constraint: その日のスイッチ（現在の設定）・定時・承認済みの申請。時刻の選択肢を決める（段6.5）
+export type MissingDate = { iso: string; label: string; constraint: AdminTimeConstraint }
 
 const selectClass =
   "border border-gray-200 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -42,13 +34,15 @@ export function ProxyPunchForm({
   const [open, setOpen]     = useState(false)
   const [error, setError]   = useState<string | null>(null)
   const [done, setDone]     = useState<string | null>(null)
+  const [dateISO, setDateISO] = useState("")
+  const [unrestricted, setUnrestricted] = useState(false)
+  const constraint = missingDates.find((d) => d.iso === dateISO)?.constraint ?? missingDates[0]?.constraint
   const [isPending, startTransition] = useTransition()
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const form = e.currentTarget
     const fd   = new FormData(form)
-    const dateISO = fd.get("dateISO") as string
     if (!dateISO) {
       setError("対象日を選択してください")
       return
@@ -60,6 +54,7 @@ export function ProxyPunchForm({
       if (res.ok) {
         setDone(`${dateISO} の打刻を登録しました`)
         form.reset()
+        setDateISO("")
       } else {
         setError(res.error)
       }
@@ -95,7 +90,7 @@ export function ProxyPunchForm({
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label className="block text-[10px] text-gray-500 mb-1">対象日</label>
-              <select name="dateISO" defaultValue="" required className={selectClass}>
+              <select name="dateISO" value={dateISO} onChange={(e) => setDateISO(e.target.value)} required className={selectClass}>
                 <option value="">選択</option>
                 {missingDates.map((d) => (
                   <option key={d.iso} value={d.iso}>{d.label}</option>
@@ -108,14 +103,23 @@ export function ProxyPunchForm({
                 <label className="block text-[10px] text-gray-500 mb-1">
                   {label}{required && <span className="text-red-500">*</span>}
                 </label>
-                <select name={name} defaultValue="" required={required} className={`${selectClass} w-[72px]`}>
-                  <option value="">—</option>
-                  {TIME_OPTIONS.map((t) => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
+                <AdminTimeSelect
+                  key={`${name}-${dateISO}-${unrestricted}`}
+                  name={name}
+                  kind={name === "clockIn" ? "clockIn" : name === "clockOut" ? "clockOut" : "other"}
+                  constraint={constraint!}
+                  unrestricted={unrestricted}
+                  current={null}
+                  required={required}
+                  className={`${selectClass} w-[72px]`}
+                />
               </div>
             ))}
+
+            <label className="flex items-center gap-1.5 text-xs text-gray-600 pb-1.5">
+              <input type="checkbox" checked={unrestricted} onChange={(e) => setUnrestricted(e.target.checked)} className="accent-blue-600" />
+              制限なしで入力する
+            </label>
 
             <label className="flex items-center gap-1.5 text-xs text-gray-600 pb-1.5">
               <input type="checkbox" name="isHolidayWork" className="accent-blue-600" />

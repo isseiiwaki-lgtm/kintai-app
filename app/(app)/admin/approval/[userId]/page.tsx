@@ -5,7 +5,7 @@ import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { ProxyPunchForm } from "./_components/ProxyPunchForm"
 import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
-import { resolveScheduleForDate } from "@/lib/clock-pipeline"
+import { pickEarlyStartTime, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
@@ -80,7 +80,6 @@ export default async function UserApprovalPage({
       select: { targetDate: true, type: true, status: true, createdAt: true, detail: true },
     }),
   ])
-  const capEnabled = setting?.capOvertimeByRequest ?? false
   const overtimeReqByDate = new Map<string, typeof overtimeRequests>()
   for (const q of overtimeRequests) {
     const k = q.targetDate.toISOString()
@@ -125,9 +124,19 @@ export default async function UserApprovalPage({
     .map((d) => {
       const dm = d.getUTCMonth() + 1
       const dd = d.getUTCDate()
+      const approvedReqs = sched.requestsOf(userId, d)
       return {
         iso:   `${d.getUTCFullYear()}-${String(dm).padStart(2, "0")}-${String(dd).padStart(2, "0")}`,
         label: `${dm}/${dd}（${WEEKDAY[d.getUTCDay()]}）`,
+        // 代理打刻はこの時点の設定のスイッチで保存される。選択肢もそれに合わせる（段6.5）
+        constraint: {
+          schedule: resolveScheduleForDate({
+            date: d, user, setting: sched.setting, isHoliday: sched.isHoliday(d), requests: approvedReqs,
+          }),
+          switches: switchesFromSetting(setting),
+          earlyStartTime: pickEarlyStartTime(approvedReqs),
+          overtimeCapEnd: pickOvertimeCapEnd(approvedReqs),
+        },
       }
     })
 
@@ -152,6 +161,9 @@ export default async function UserApprovalPage({
     const nightMinutes = calcNightMinutes(r.clockIn, r.clockOut)
     // ④（残業の申請上限）: 実打刻・申請終了・記録時刻の3つを管理者に見せる。一般社員の画面には出さない
     const dayOvertimeReqs = overtimeReqByDate.get(r.date.toISOString()) ?? []
+    // ④の判定は、その日の記録に保存したスイッチ状態で行う（④を後から ON にしても、④OFF で保存した過去の日には出さない）
+    const switches = resolveSwitches(r, setting)
+    const capEnabled = switches.capOvertime
     const requestEndTime = capEnabled ? pickOvertimeCapEnd(dayOvertimeReqs) : null
     const noOvertimeRequest = needsOvertimeRequestNotice({
       rawClockOut: r.rawClockOut, workEndTime: user.workEndTime,
@@ -188,6 +200,15 @@ export default async function UserApprovalPage({
       isAbsent:    r.isAbsent,
       requestId:   requestMap.get(key) ?? null,
       scheduledMinutes,
+      // 管理者の入力画面の選択肢（段6.5）：その日のスイッチ・定時・承認済みの申請
+      timeConstraint: (() => {
+        const approvedReqs = sched.requestsOf(userId, r.date)
+        return {
+          schedule, switches,
+          earlyStartTime: pickEarlyStartTime(approvedReqs),
+          overtimeCapEnd: pickOvertimeCapEnd(approvedReqs),
+        }
+      })(),
       isWeekend:   dow === 0 || dow === 6,
     }
   })

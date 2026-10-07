@@ -53,6 +53,9 @@ export async function actionAdminUpdateRecord(
     if (oldHHMM === v) continue // 変更なし
 
     data[name] = newDate
+    // 段6.5：出勤・退勤は管理者の確定修正として別の列にも保存する（段0〜6の結果を最後に上書き。後の再計算でも残る）
+    if (name === "clockIn") data.adminClockIn = newDate
+    if (name === "clockOut") data.adminClockOut = newDate
     logs.push({ fieldName: name, oldValue: oldHHMM, newValue: v })
 
     // 原打刻の保存（clockIn/clockOut のみ、初回変更時のみ）
@@ -153,6 +156,9 @@ export async function actionAdminCreateRecord(
   const data = {
     clockIn,
     clockOut,
+    // 段6.5：代理打刻の時刻は管理者の確定修正（丸め・④を通さない）
+    adminClockIn: clockIn,
+    adminClockOut: clockOut,
     breakStart,
     breakEnd,
     goOutAt,

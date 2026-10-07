@@ -17,6 +17,8 @@ ALTER TABLE "User" ADD COLUMN     "breakMinutes" INTEGER;
 -- AlterTable（switch* は打刻時点のスイッチ状態。NULL＝保存値なしの既存の記録）
 ALTER TABLE "AttendanceRecord" ADD COLUMN     "breakMinutes" INTEGER,
 ADD COLUMN     "isHolidayWork" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "adminClockIn" TIMESTAMP(3),
+ADD COLUMN     "adminClockOut" TIMESTAMP(3),
 ADD COLUMN     "switchRoundEarly" BOOLEAN,
 ADD COLUMN     "switchRoundNear" BOOLEAN,
 ADD COLUMN     "switchRoundQuarter" BOOLEAN,

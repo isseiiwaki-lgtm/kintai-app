@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react"
 import Link from "next/link"
 import { actionAdminUpdateRecord, actionBulkApprove, actionBulkLock } from "../actions"
+import type { AdminTimeConstraint } from "@/lib/clock-pipeline"
+import { AdminTimeSelect } from "./AdminTimeSelect"
 
 type Rec = {
   id: string
@@ -30,20 +32,10 @@ type Rec = {
   isAbsent:      boolean
   requestId:  string | null
   scheduledMinutes: number  // 所定勤務時間（分）
+  timeConstraint: AdminTimeConstraint  // 管理者の入力画面の選択肢を決める、その日のスイッチ・定時・申請の条件（段6.5）
   isWeekend:  boolean
 }
 
-
-function buildTimeOptions() {
-  const opts: string[] = []
-  for (let h = 0; h <= 23; h++) {
-    for (const m of [0, 15, 30, 45]) {
-      opts.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`)
-    }
-  }
-  return opts
-}
-const TIME_OPTIONS = buildTimeOptions()
 
 const selectClass = "border border-gray-200 rounded px-2 py-1 text-xs font-mono w-[72px] focus:outline-none focus:ring-1 focus:ring-blue-500"
 
@@ -59,10 +51,12 @@ type Props = {
 
 export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAdmin, openCount, approvedCount }: Props) {
   const [editRec, setEditRec]   = useState<Rec | null>(null)
+  const [unrestricted, setUnrestricted] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   function handleEdit(rec: Rec) {
     if (rec.status === "LOCKED") return
+    setUnrestricted(false)
     setEditRec(rec)
   }
 
@@ -243,17 +237,24 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
               ].map(({ name, label }) => {
                 const current = editRec[name as keyof Rec] as string | null
                 return (
-                  <div key={name} className="flex items-center justify-between">
+                  <div key={`${name}-${unrestricted}`} className="flex items-center justify-between">
                     <label className="text-xs text-gray-600 w-20">{label}</label>
-                    <select name={name} defaultValue={current ?? ""} className={selectClass}>
-                      <option value="">—</option>
-                      {TIME_OPTIONS.map((t) => (
-                        <option key={t} value={t}>{t}</option>
-                      ))}
-                    </select>
+                    <AdminTimeSelect
+                      name={name}
+                      kind={name === "clockIn" ? "clockIn" : name === "clockOut" ? "clockOut" : "other"}
+                      constraint={editRec.timeConstraint}
+                      unrestricted={unrestricted}
+                      current={current}
+                      className={selectClass}
+                    />
                   </div>
                 )
               })}
+              <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                <input type="checkbox" checked={unrestricted} onChange={(e) => setUnrestricted(e.target.checked)} className="accent-blue-600" />
+                制限なしで入力する（1分単位・全時間帯）
+              </label>
+              <p className="text-[10px] text-gray-400">※ 出勤・退勤は、その日のスイッチ（丸め・申請上限）に合う時刻だけを表示しています。入力した出勤・退勤は丸め・上限を通さず、そのまま記録されます</p>
               <p className="text-xs text-amber-600 mt-2">※ 保存すると状態が「承認済」になります</p>
               <div className="flex gap-2 pt-1">
                 <button
