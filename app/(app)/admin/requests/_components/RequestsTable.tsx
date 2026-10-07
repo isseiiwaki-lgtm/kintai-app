@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 import {
   actionApproveRequest,
   actionForceApproveRequest,
@@ -30,9 +31,10 @@ const STATUS_LABEL: Record<string, { label: string; className: string }> = {
   REJECTED: { label: "却下",   className: "bg-red-100    text-red-600"    },
 }
 
-const TIME_OPTIONS = Array.from({ length: 96 }, (_, i) => {
-  const h = Math.floor(i / 4)
-  const m = (i % 4) * 15
+// 申請の時刻の刻み（REQUEST_TIME_STEP_MINUTES）。申請フォームと同じ定数を参照する
+const TIME_OPTIONS = Array.from({ length: Math.floor((24 * 60) / REQUEST_TIME_STEP_MINUTES) }, (_, i) => {
+  const h = Math.floor((i * REQUEST_TIME_STEP_MINUTES) / 60)
+  const m = (i * REQUEST_TIME_STEP_MINUTES) % 60
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 })
 
