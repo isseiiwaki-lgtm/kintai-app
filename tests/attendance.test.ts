@@ -107,16 +107,21 @@ describe("calcNeedsReview（要確認判定）", () => {
 })
 
 describe("calcMetrics（遅刻・早退・残業）", () => {
-  const base = { workStartTime: "09:00", workEndTime: "17:30", scheduledMinutes: 480 }
+  const base = { workStartTime: "09:00", workEndTime: "17:30" }
 
-  it("遅刻10分・早退30分・残業20分", () => {
-    expect(calcMetrics({ ...base, clockIn: jst(2026, 7, 6, 9, 10), clockOut: null, workingMinutes: null }).lateMinutes).toBe(10)
-    expect(calcMetrics({ ...base, clockIn: null, clockOut: jst(2026, 7, 6, 17, 0), workingMinutes: null }).earlyLeaveMinutes).toBe(30)
-    expect(calcMetrics({ ...base, clockIn: null, clockOut: null, workingMinutes: 500 }).overtimeMinutes).toBe(20)
+  it("遅刻10分・早退30分・残業20分（残業は 早出＋終業後。9:00〜17:50 → 20分）", () => {
+    expect(calcMetrics({ ...base, clockIn: jst(2026, 7, 6, 9, 10), clockOut: null }).lateMinutes).toBe(10)
+    expect(calcMetrics({ ...base, clockIn: null, clockOut: jst(2026, 7, 6, 17, 0) }).earlyLeaveMinutes).toBe(30)
+    expect(calcMetrics({ ...base, clockIn: jst(2026, 7, 6, 9, 0), clockOut: jst(2026, 7, 6, 17, 50) }).overtimeMinutes).toBe(20)
   })
 
   it("定時後退勤は早退0（残業扱い）", () => {
-    expect(calcMetrics({ ...base, clockIn: null, clockOut: jst(2026, 7, 6, 18, 0), workingMinutes: null }).earlyLeaveMinutes).toBe(0)
+    expect(calcMetrics({ ...base, clockIn: null, clockOut: jst(2026, 7, 6, 18, 0) }).earlyLeaveMinutes).toBe(0)
+  })
+
+  it("定時なし（null）なら全部0", () => {
+    expect(calcMetrics({ workStartTime: null, workEndTime: null, clockIn: jst(2026, 7, 6, 8, 0), clockOut: jst(2026, 7, 6, 19, 0) }))
+      .toMatchObject({ lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: 0 })
   })
 })
 
