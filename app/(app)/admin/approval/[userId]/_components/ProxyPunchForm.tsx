@@ -36,7 +36,10 @@ export function ProxyPunchForm({
   const [done, setDone]     = useState<string | null>(null)
   const [dateISO, setDateISO] = useState("")
   const [unrestricted, setUnrestricted] = useState(false)
-  const constraint = missingDates.find((d) => d.iso === dateISO)?.constraint ?? missingDates[0]?.constraint
+  const [holidayWork, setHolidayWork] = useState(false)
+  const dayConstraint = missingDates.find((d) => d.iso === dateISO)?.constraint ?? missingDates[0]?.constraint
+  // 休日出勤にチェックした日は定時なし（丸め・④の対象外）なので、選択肢も制限しない
+  const constraint = dayConstraint && holidayWork ? { ...dayConstraint, schedule: null } : dayConstraint
   const [isPending, startTransition] = useTransition()
 
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -55,6 +58,7 @@ export function ProxyPunchForm({
         setDone(`${dateISO} の打刻を登録しました`)
         form.reset()
         setDateISO("")
+        setHolidayWork(false)
       } else {
         setError(res.error)
       }
@@ -104,7 +108,7 @@ export function ProxyPunchForm({
                   {label}{required && <span className="text-red-500">*</span>}
                 </label>
                 <AdminTimeSelect
-                  key={`${name}-${dateISO}-${unrestricted}`}
+                  key={`${name}-${dateISO}-${unrestricted}-${holidayWork}`}
                   name={name}
                   kind={name === "clockIn" ? "clockIn" : name === "clockOut" ? "clockOut" : "other"}
                   constraint={constraint!}
@@ -122,7 +126,7 @@ export function ProxyPunchForm({
             </label>
 
             <label className="flex items-center gap-1.5 text-xs text-gray-600 pb-1.5">
-              <input type="checkbox" name="isHolidayWork" className="accent-blue-600" />
+              <input type="checkbox" name="isHolidayWork" checked={holidayWork} onChange={(e) => setHolidayWork(e.target.checked)} className="accent-blue-600" />
               休日出勤
             </label>
 

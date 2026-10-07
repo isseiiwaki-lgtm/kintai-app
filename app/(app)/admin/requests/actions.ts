@@ -147,8 +147,10 @@ async function applyRequestEffects(
           })
         })
       }
-      // 打刻ゼロの日に新設した記録は、この時点のスイッチ状態を保存する（既存の記録は保存値をそのまま使う）
-      await recomputeDay(req.userId, req.targetDate, existing ? {} : { snapshot: "ifMissing" })
+      // 修正前に出退勤（記録時刻・実打刻）がすべて空だった日（新設した記録を含む）は、この時点のスイッチ状態を保存する。
+      // 出退勤がすでにある記録は保存値をそのまま使う（遡及しない）
+      const hadNoPunch = !existing || (!existing.clockIn && !existing.clockOut && !existing.rawClockIn && !existing.rawClockOut)
+      await recomputeDay(req.userId, req.targetDate, hadNoPunch ? { snapshot: "ifMissing" } : {})
       revalidatePath("/records")
     }
   }

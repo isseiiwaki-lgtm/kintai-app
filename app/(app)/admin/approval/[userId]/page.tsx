@@ -166,7 +166,8 @@ export default async function UserApprovalPage({
     const capEnabled = switches.capOvertime
     const requestEndTime = capEnabled ? pickOvertimeCapEnd(dayOvertimeReqs) : null
     const noOvertimeRequest = needsOvertimeRequestNotice({
-      rawClockOut: r.rawClockOut, workEndTime: user.workEndTime,
+      // 段0の定時（半休・休日を反映）。日をまたぐ退勤でも記録の日付の定時で判定する
+      rawClockOut: r.rawClockOut, workEndTime: schedule?.end ?? null, date: r.date,
       hasOvertimeRequest: hasOvertimeRequest(dayOvertimeReqs), capEnabled,
     })
     const goOutMins =

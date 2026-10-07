@@ -137,7 +137,9 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     const noOvertimeRequestDays = recs.filter((r) =>
       needsOvertimeRequestNotice({
         rawClockOut: r.rawClockOut,
-        workEndTime: u.workEndTime,
+        // 段0の定時（半休・休日を反映）。日をまたぐ退勤でも記録の日付の定時で判定する
+        workEndTime: scheduleOf(r)?.end ?? null,
+        date: r.date,
         hasOvertimeRequest: hasOvertimeRequest(overtimeReqMap.get(`${u.id}|${r.date.toISOString()}`) ?? []),
         // ④はその日の記録に保存したスイッチ状態で判定する（後から ON にしても過去の日に目印を出さない）
         capEnabled: resolveSwitches(r, setting).capOvertime,

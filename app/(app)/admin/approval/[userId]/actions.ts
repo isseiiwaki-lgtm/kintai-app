@@ -39,6 +39,8 @@ export async function actionAdminUpdateRecord(
     include: { user: { select: { workStartTime: true, workEndTime: true, employmentType: true } } },
   })
   if (!current) return
+  // 締め済み（LOCKED）の日はサーバー側でも直接修正を受け付けない（画面の制限に頼らない）
+  if (current.status === "LOCKED") return
 
   // 変更するフィールドのみ data に含める（空値は元値を維持）
   const data: Record<string, Date | string | number> = { status: "APPROVED" }

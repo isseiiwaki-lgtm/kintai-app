@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma"
 import { hasOvertimeRequest, needsOvertimeRequestNotice } from "@/lib/attendance"
-import { resolveSwitches } from "@/lib/clock-pipeline"
+import { resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 
 /**
  * その日の残業申請（申請中・承認済、早出申請を含む）を取得する。
@@ -28,17 +29,32 @@ export async function shouldShowOvertimeNotice(userId: string, today: Date): Pro
     prisma.attendanceRecord.findUnique({
       where: { userId_date: { userId, date: today } },
       select: {
-        rawClockOut: true,
+        rawClockOut: true, isHolidayWork: true,
         switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true,
       },
     }),
-    prisma.user.findUnique({ where: { id: userId }, select: { workEndTime: true } }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        workStartTime: true, workEndTime: true, employmentType: true, breakMinutes: true,
+        workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
+      },
+    }),
     prisma.setting.findUnique({ where: { id: 1 }, select: { roundEarlyClockIn: true, roundNearClockTime: true, capOvertimeByRequest: true } }),
     fetchDayOvertimeRequests(userId, today),
   ])
+  // 段0：その日の定時（半休は前半/後半、休日は定時なし＝目印を出さない）
+  const sched = await loadScheduleInputs([userId], today, today)
+  const schedule = user
+    ? resolveScheduleForDate({
+        date: today, user, setting: sched.setting,
+        isHoliday: sched.isHoliday(today), isHolidayWork: record?.isHolidayWork, requests: sched.requestsOf(userId, today),
+      })
+    : null
   return needsOvertimeRequestNotice({
     rawClockOut: record?.rawClockOut ?? null,
-    workEndTime: user?.workEndTime ?? null,
+    workEndTime: schedule?.end ?? null,
+    date: today,
     hasOvertimeRequest: hasOvertimeRequest(requests),
     // その日の記録に保存したスイッチ状態で判定する（保存値が無い記録は ④OFF）
     capEnabled: resolveSwitches(record, setting).capOvertime,

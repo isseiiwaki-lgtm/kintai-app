@@ -252,6 +252,8 @@ export type PipelineInput = {
   /** 段6.5：管理者の確定修正。段0〜6の結果を最後に上書きする（丸め・④を通さない）。遅刻・早退・残業は上書き後の時刻から出す */
   adminClockIn?:  Date | null
   adminClockOut?: Date | null
+  /** 記録の日付（UTC 0時＝その日の JST 暦日）。日をまたぐ退勤でも定時・上限は記録の日付のものを使う。省略時は入力の出勤（無ければ退勤）の日 */
+  date?: Date
   /** 段0の結果 */
   schedule: DaySchedule
   /** 打刻時点のスイッチ状態 */
@@ -301,10 +303,10 @@ function computeClockIn(
   schedule: NonNullable<DaySchedule>,
   sw: PipelineSwitches,
   requests: PipelineRequest[],
+  dayStart: Date,
 ): { clockIn: Date; earlyRequestApplied: boolean } {
   // ③ONなら②も実効ON
   const near = sw.roundNear || sw.roundQuarter
-  const dayStart = jstDayStartUTC(raw)
   const scheduledStart = hhmmToUTCDate(schedule.start, dayStart)
 
   // 段2：早出申請がある日
@@ -318,6 +320,7 @@ function computeClockIn(
       roundNear: near,
       roundQuarter: sw.roundQuarter,
       kind: "in",
+      dayStart,
     })
     if (sw.capOvertime) {
       const requested = hhmmToUTCDate(earlyStart, dayStart)
@@ -336,6 +339,7 @@ function computeClockIn(
       roundNear: near,
       roundQuarter: sw.roundQuarter,
       kind: "in",
+      dayStart,
     }),
     earlyRequestApplied: false,
   }
@@ -348,6 +352,7 @@ function computeClockOut(
   schedule: NonNullable<DaySchedule>,
   sw: PipelineSwitches,
   requests: PipelineRequest[],
+  dayStart: Date,
 ): { clockOut: Date; capBeforeClockIn: boolean } {
   // ②は申請の有無に関係なく効く。③ONなら②も実効ON
   const rounded = applyRounding(raw, schedule.end, {
@@ -355,12 +360,13 @@ function computeClockOut(
     roundNear: sw.roundNear || sw.roundQuarter,
     roundQuarter: sw.roundQuarter,
     kind: "out",
+    dayStart,
   })
   if (!sw.capOvertime) return { clockOut: rounded, capBeforeClockIn: false }
 
   // 段6：④。上限 ＝ 承認済みの残業申請（早出申請を除く）のうち最後に出した申請の終了時刻。無ければ定時
   const capHHMM = pickOvertimeCapEnd(requests.filter((r) => r.status === "APPROVED")) ?? schedule.end
-  const cap = hhmmToUTCDate(capHHMM, jstDayStartUTC(rounded))
+  const cap = hhmmToUTCDate(capHHMM, dayStart)
   // 上限が出勤より前（定時後に出勤し、申請なしで働いた日など）は勤務0分。退勤を出勤に揃える
   if (clockIn && cap.getTime() <= clockIn.getTime()) {
     return { clockOut: clockIn, capBeforeClockIn: true }
@@ -380,16 +386,19 @@ export function computeClockPipeline(input: PipelineInput): PipelineOutput {
   let clockOut = input.inputClockOut
   let earlyStartRequestApplied = false
   let capBeforeClockIn = false
+  // 定時・④の上限は記録の日付のもの（日をまたぐ退勤で翌日の定時に置かない）
+  const ref = input.inputClockIn ?? input.inputClockOut
+  const dayStart = input.date ? new Date(input.date.getTime() - 9 * 60 * 60 * 1000) : ref ? jstDayStartUTC(ref) : new Date(0)
 
   // 定時なし（休日など）は丸める基準が無いので記録時刻＝入力。遅刻・早退・残業も付けない
   if (schedule) {
     if (clockIn && !input.clockInIsFinal) {
-      const r = computeClockIn(clockIn, schedule, switches, requests)
+      const r = computeClockIn(clockIn, schedule, switches, requests, dayStart)
       clockIn = r.clockIn
       earlyStartRequestApplied = r.earlyRequestApplied
     }
     if (clockOut && !input.clockOutIsFinal) {
-      const r = computeClockOut(clockOut, clockIn, schedule, switches, requests)
+      const r = computeClockOut(clockOut, clockIn, schedule, switches, requests, dayStart)
       clockOut = r.clockOut
       capBeforeClockIn = r.capBeforeClockIn
     }
@@ -424,6 +433,23 @@ export function computeClockPipeline(input: PipelineInput): PipelineOutput {
     earlyStartRequestApplied,
     capBeforeClockIn,
   }
+}
+
+/**
+ * 出勤の記録時刻が段2の④（早出申請の開始時刻で切った）で遅らされたか。画面で実打刻を併記するかの判定に使う。
+ * ④ありとなしの記録時刻を比べ、④ありのほうが遅ければ切られている。
+ */
+export function isClockInCapped(p: {
+  rawClockIn: Date | null
+  schedule: DaySchedule
+  switches: PipelineSwitches
+  requests: PipelineRequest[]
+}): boolean {
+  if (!p.switches.capOvertime || !p.schedule || !p.rawClockIn) return false
+  const base = { inputClockIn: p.rawClockIn, inputClockOut: null, schedule: p.schedule, requests: p.requests }
+  const withCap = computeClockPipeline({ ...base, switches: p.switches }).clockIn
+  const withoutCap = computeClockPipeline({ ...base, switches: { ...p.switches, capOvertime: false } }).clockIn
+  return !!withCap && !!withoutCap && withCap.getTime() > withoutCap.getTime()
 }
 
 /**

@@ -284,14 +284,15 @@ export function hhmmToUTCDate(hhmm: string, todayUTC: Date): Date {
 export function applyRounding(
   actual: Date,
   scheduled: string | null,
-  opts: { roundEarly: boolean; roundNear: boolean; roundQuarter?: boolean; kind: "in" | "out" },
+  opts: { roundEarly: boolean; roundNear: boolean; roundQuarter?: boolean; kind: "in" | "out"; dayStart?: Date },
 ): Date {
   if (!scheduled) return actual
   // JST の日付 0:00 を UTC で表した基準日を算出
   // 注意: 先に +9h して JST の日付部品を取ること。actual.getUTCDate() を直接使うと
   // JST 0:00〜8:59 の打刻（UTC では前日）で基準日が1日ズレ、丸めが不発になる
   const jst = new Date(actual.getTime() + 9 * 60 * 60 * 1000)
-  const todayUTC = new Date(
+  // dayStart: 記録の日付の JST 0:00。日をまたぐ退勤（翌1:00 など）でも定時は記録の日付のものを使うため、呼び出し側が渡す
+  const todayUTC = opts.dayStart ?? new Date(
     Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), jst.getUTCDate())
     - 9 * 60 * 60 * 1000,
   )
@@ -364,11 +365,16 @@ export function needsOvertimeRequestNotice(p: {
   workEndTime: string | null
   hasOvertimeRequest: boolean
   capEnabled: boolean
+  /** 記録の日付（UTC 0時＝その日の JST 暦日）。日をまたぐ退勤でも記録の日付の定時で判定する。省略時は退勤した日 */
+  date?: Date
 }): boolean {
   if (!p.capEnabled || !p.rawClockOut || p.hasOvertimeRequest) return false
   const endMins = parseHHMM(p.workEndTime)
   if (endMins === null) return false
-  return hhmm(p.rawClockOut) >= endMins + 15
+  // workEndTime は段0の定時（半休・休日を反映したもの。休日は null）
+  const dayStart = p.date ? p.date.getTime() - 9 * 60 * 60 * 1000 : jstDayStartUTC(p.rawClockOut).getTime()
+  const minutesFromDayStart = Math.floor((p.rawClockOut.getTime() - dayStart) / 60000)
+  return minutesFromDayStart >= endMins + 15
 }
 
 /**

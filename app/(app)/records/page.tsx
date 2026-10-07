@@ -2,7 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { calcReviewReasons, resolveEmployeeReview, getDisplayStatus, buildLateEarlyStatusMap, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes } from "@/lib/attendance"
-import { isClockOutCapped, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { isClockInCapped, isClockOutCapped, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
@@ -150,14 +150,18 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
     // 残業・遅刻・早退: 保存値 or 記録時刻と定時の差から計算（CLOCK_PIPELINE 段4・段8。定時は段0の結果）
     const { overtimeMinutes: overtime, lateMinutes: late, earlyLeaveMinutes: earlyLeave } = resolveDayMetrics(rec, schedule)
-    // ④で打ち切った退勤には実打刻を併記しない（修正した退勤は実打刻が入力ではないので従来どおり）
-    const outCapped = !rec.originalClockOut && isClockOutCapped({
-      recordedClockIn: rec.clockIn, rawClockOut: rec.rawClockOut, schedule,
-      switches: resolveSwitches(rec, sched.setting), requests: dayRequests,
+    // ④で打ち切った出勤（段2：早出申請の開始で切った）・退勤（段6）には実打刻を併記しない（一般社員の画面に④の内訳を出さない）。
+    // 管理者が確定した時刻は④を通していないので対象外。退勤側は originalClockOut の有無に関係なく判定する
+    const switches = resolveSwitches(rec, sched.setting)
+    const outCapped = !rec.adminClockOut && isClockOutCapped({
+      recordedClockIn: rec.clockIn, rawClockOut: rec.rawClockOut, schedule, switches, requests: dayRequests,
+    })
+    const inCapped = !rec.adminClockIn && isClockInCapped({
+      rawClockIn: rec.rawClockIn, schedule, switches, requests: dayRequests,
     })
     const night      = calcNightMinutes(rec.clockIn, rec.clockOut)
 
-    return { needsReview, reviewPending: review.pending, goOutMins, breakMins, overtime, late, earlyLeave, night, outCapped }
+    return { needsReview, reviewPending: review.pending, goOutMins, breakMins, overtime, late, earlyLeave, night, outCapped, inCapped }
   }
 
   // 月次サマリー
@@ -272,7 +276,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                   </td>
                   <td className={`px-2 py-2 text-center font-mono text-xs ${needsReview && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
                     {formatTime(rec?.clockIn)}
-                    <RawTime recorded={rec?.clockIn} raw={rec?.rawClockIn} />
+                    <RawTime recorded={rec?.clockIn} raw={rec?.rawClockIn} hide={data?.inCapped} />
                   </td>
                   <td className={`px-2 py-2 text-center font-mono text-xs ${needsReview && !rec?.clockOut && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-700"}`}>
                     {formatTime(rec?.clockOut)}
@@ -359,7 +363,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
                       <p className="text-gray-400">出勤</p>
                       <p className={`font-mono ${needsReview && !correctionStatus ? "text-amber-600 font-semibold" : "text-gray-800"}`}>
                         {formatTime(rec.clockIn)}
-                        <RawTime recorded={rec.clockIn} raw={rec.rawClockIn} />
+                        <RawTime recorded={rec.clockIn} raw={rec.rawClockIn} hide={data?.inCapped} />
                       </p>
                     </div>
                     <div>
