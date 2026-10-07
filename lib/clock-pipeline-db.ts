@@ -15,6 +15,8 @@ import { prisma } from "@/lib/prisma"
 import { calcWorkingMinutes } from "@/lib/attendance"
 import {
   computeClockPipeline,
+  pickHalfDay,
+  resolveBreakMinutes,
   resolveInputTime,
   resolveScheduleForDate,
   resolveSwitches,
@@ -45,7 +47,7 @@ export type PipelineContext = {
   setting: SettingRow | null
   /** 休日カレンダーの日付（"YYYY-MM-DD"） */
   holidayKeys: Set<string>
-  /** 期間内の承認済み OVERTIME / LEAVE */
+  /** 期間内の承認済み OVERTIME / LEAVE / HOLIDAY_WORK */
   requests: ContextRequest[]
   /** 期間内の記録の出退勤の変更履歴 */
   logs: ContextLog[]
@@ -70,7 +72,7 @@ export async function loadPipelineContext(userId: string, records: { id: string;
     prisma.setting.findUnique({ where: { id: 1 } }),
     prisma.holiday.findMany({ where: { date: { gte: from, lte: to } }, select: { date: true } }),
     prisma.request.findMany({
-      where: { userId, targetDate: { gte: from, lte: to }, status: "APPROVED", type: { in: ["OVERTIME", "LEAVE"] } },
+      where: { userId, targetDate: { gte: from, lte: to }, status: "APPROVED", type: { in: ["OVERTIME", "LEAVE", "HOLIDAY_WORK"] } },
       select: { type: true, status: true, createdAt: true, detail: true, targetDate: true },
     }),
     prisma.attendanceChangeLog.findMany({
@@ -88,7 +90,7 @@ export async function loadScheduleInputs(userIds: string[], from: Date, to: Date
     prisma.setting.findUnique({ where: { id: 1 } }),
     prisma.holiday.findMany({ where: { date: { gte: from, lte: to } }, select: { date: true } }),
     prisma.request.findMany({
-      where: { userId: { in: userIds }, targetDate: { gte: from, lte: to }, type: { in: ["OVERTIME", "LEAVE"] }, status: "APPROVED" },
+      where: { userId: { in: userIds }, targetDate: { gte: from, lte: to }, type: { in: ["OVERTIME", "LEAVE", "HOLIDAY_WORK"] }, status: "APPROVED" },
       select: { userId: true, type: true, status: true, createdAt: true, detail: true, targetDate: true },
     }),
   ])
@@ -96,7 +98,7 @@ export async function loadScheduleInputs(userIds: string[], from: Date, to: Date
   return {
     setting,
     isHoliday: (date: Date) => holidayKeys.has(dateKey(date)),
-    /** その人・その日の承認済み OVERTIME / LEAVE（半休の判定・④の打ち切りの判定に使う） */
+    /** その人・その日の承認済み OVERTIME / LEAVE / HOLIDAY_WORK（半休・休日出勤の定時・④の打ち切りの判定に使う） */
     requestsOf: (userId: string, date: Date) =>
       requests.filter((l) => l.userId === userId && l.targetDate.getTime() === date.getTime()),
   }
@@ -163,13 +165,24 @@ export function buildRecordUpdate(
   if (out.clockOut) data.clockOut = out.clockOut
   if (out.clockIn && out.clockOut) {
     // 段6：④の上限が出勤より前の日は勤務0分
+    // 段7：休憩分数（その日の breakMinutes → 半休・パート → 規定値）を決めて控除する
+    const breakMinutes = resolveBreakMinutes({
+      savedBreakMinutes: rec.breakMinutes,
+      breakStart: rec.breakStart, breakEnd: rec.breakEnd,
+      halfDay: pickHalfDay(dayRequests),
+      employmentType: ctx.user.employmentType,
+      userBreakMinutes: ctx.user.breakMinutes,
+      workStartTime: ctx.user.workStartTime, workEndTime: ctx.user.workEndTime,
+      daySchedule: schedule,
+      presenceMinutes: Math.floor((out.clockOut.getTime() - out.clockIn.getTime() - (rec.goOutAt && rec.returnAt ? rec.returnAt.getTime() - rec.goOutAt.getTime() : 0)) / 60000),
+      setting: ctx.setting,
+    })
     data.workingMinutes = out.capBeforeClockIn
       ? 0
       : calcWorkingMinutes({
           clockIn: out.clockIn, clockOut: out.clockOut,
           goOutAt: rec.goOutAt, returnAt: rec.returnAt,
-          breakStart: rec.breakStart, breakEnd: rec.breakEnd,
-          employmentType: ctx.user.employmentType,
+          breakMinutes,
         })
     // 段8：残業 ＝ 早出 ＋ 終業後（退勤時の保存・承認時の保存・画面の計算で同じ式）
     data.overtimeMinutes = out.overtimeMinutes

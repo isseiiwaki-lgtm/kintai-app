@@ -8,11 +8,10 @@ type ClockRecord = {
   clockOut:   Date | null
   goOutAt:    Date | null
   returnAt:   Date | null
-  breakStart: Date | null
-  breakEnd:   Date | null
+  breakMinutes: number | null
 }
 
-type WorkState = "initial" | "working" | "out" | "on_break" | "done"
+type WorkState = "initial" | "working" | "out" | "done"
 type EmpType   = "full" | "part"
 
 const MOCK_BASE: ClockRecord = {
@@ -20,15 +19,13 @@ const MOCK_BASE: ClockRecord = {
   clockOut:   null,
   goOutAt:    null,
   returnAt:   null,
-  breakStart: null,
-  breakEnd:   null,
+  breakMinutes: null,
 }
 
 const MOCK_RECORDS: Record<WorkState, ClockRecord | null> = {
   initial:  null,
   working:  { ...MOCK_BASE },
   out:      { ...MOCK_BASE, goOutAt: new Date("2026-04-21T12:00:00+09:00") },
-  on_break: { ...MOCK_BASE, breakStart: new Date("2026-04-21T12:00:00+09:00") },
   done:     { ...MOCK_BASE, clockOut: new Date("2026-04-21T17:30:00+09:00") },
 }
 
@@ -36,7 +33,6 @@ const STATE_LABELS: { value: WorkState; label: string }[] = [
   { value: "initial",  label: "未出勤" },
   { value: "working",  label: "出勤中" },
   { value: "out",      label: "外出中" },
-  { value: "on_break", label: "休憩中" },
   { value: "done",     label: "退勤済" },
 ]
 

@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
-import { formatHHMMfromDate } from "@/lib/attendance"
+import { formatHHMMfromDate, parseBreakRequestMinutes } from "@/lib/attendance"
 import { correctionKey, loadApprovedCorrections, recomputeDay } from "@/lib/clock-pipeline-db"
 import { correctionLogIdSet, planAdminRevert, proxyFirstLogAt, type InputLog } from "@/lib/clock-pipeline"
 import { approveRecordsWithMetrics } from "@/lib/approve-records"
@@ -69,6 +69,17 @@ export async function actionAdminUpdateRecord(
     }
     if (name === "clockOut" && !current.originalClockOut && oldDate) {
       data.originalClockOut = oldDate
+    }
+  }
+
+  // 休憩（分）：その日の休憩の合計。空なら変えない。休憩ボタン・休憩申請の承認と同じ breakMinutes を直接書く（段7）
+  const breakInput = (formData.get("breakMinutes") as string | null) ?? ""
+  if (breakInput !== "") {
+    const minutes = parseBreakRequestMinutes(breakInput)
+    if (minutes === null) return { ok: false, error: "休憩の分数が正しくありません（15分刻み）" }
+    if (current.breakMinutes !== minutes) {
+      data.breakMinutes = minutes
+      logs.push({ fieldName: "breakMinutes", oldValue: current.breakMinutes != null ? String(current.breakMinutes) : null, newValue: String(minutes) })
     }
   }
 
@@ -239,6 +250,11 @@ export async function actionAdminCreateRecord(
   const breakStart = values.breakStart ?? null
   const breakEnd   = values.breakEnd   ?? null
 
+  // 休憩（分）：その日の休憩の合計（任意）。空なら未設定（段7の規定値）
+  const breakInput = (formData.get("breakMinutes") as string | null) ?? ""
+  const breakMinutes = breakInput === "" ? null : parseBreakRequestMinutes(breakInput)
+  if (breakInput !== "" && breakMinutes === null) return { ok: false, error: "休憩の分数が正しくありません（15分刻み）" }
+
   // 休日出勤: 所定時刻を持たない日なので定時なし（遅刻・早退は計上しない）
   const isHolidayWork = formData.get("isHolidayWork") === "on"
 
@@ -251,6 +267,7 @@ export async function actionAdminCreateRecord(
     adminClockOut: clockOut,
     breakStart,
     breakEnd,
+    breakMinutes,
     goOutAt,
     returnAt,
     isHolidayWork,

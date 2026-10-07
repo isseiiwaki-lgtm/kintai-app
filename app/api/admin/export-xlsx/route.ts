@@ -6,9 +6,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
-import { calcLegalBreak } from "@/config/attendance.config"
 import { resolveDayMetrics } from "@/lib/attendance"
-import { resolveScheduleForDate } from "@/lib/clock-pipeline"
+import { pickHalfDay, resolveBreakMinutes, resolveScheduleForDate } from "@/lib/clock-pipeline"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly, effectiveChangedFields } from "@/lib/export-format"
 import ExcelJS from "exceljs"
@@ -95,7 +94,7 @@ export async function GET(req: NextRequest) {
       requests: {
         where: {
           targetDate: { gte: firstDay, lte: lastDay },
-          type: { in: ["LEAVE", "ABSENCE"] },
+          type: { in: ["LEAVE", "ABSENCE", "HOLIDAY_WORK"] },
           status: "APPROVED",
         },
         select: { targetDate: true, type: true, status: true, createdAt: true, detail: true },
@@ -233,24 +232,27 @@ export async function GET(req: NextRequest) {
         rawMinutes    = Math.floor((totalMs - goOutMs) / 60000)
         goOutMinutes  = Math.floor(goOutMs / 60000)
 
-        if (user.employmentType === "part") {
-          const breakMs = rec.breakStart && rec.breakEnd
-            ? rec.breakEnd.getTime() - rec.breakStart.getTime()
-            : 0
-          breakMinutes    = Math.floor(breakMs / 60000)
-          workingMinutes  = rec.workingMinutes ?? Math.max(0, rawMinutes - breakMinutes)
-        } else {
-          breakMinutes    = calcLegalBreak(rawMinutes)
-          workingMinutes  = rec.workingMinutes ?? Math.max(0, rawMinutes - breakMinutes)
-        }
       }
 
-      // 段0：その日の定時（休日は定時なし・半休は前半/後半）。承認済みの LEAVE から半休を拾う
+      // 段0：その日の定時（休日は定時なし・半休は前半/後半・承認済みの休日出勤申請はその開始〜終了）。承認済みの LEAVE から半休を拾う
+      const dayRequests = user.requests.filter((q) => q.targetDate.toISOString().slice(0, 10) === dateKey)
       const schedule = resolveScheduleForDate({
         date: dayDate, user, setting,
         isHoliday: !!holidayName, isHolidayWork: rec?.isHolidayWork,
-        requests: user.requests.filter((q) => q.targetDate.toISOString().slice(0, 10) === dateKey),
+        requests: dayRequests,
       })
+      if (rec?.clockIn && rec?.clockOut) {
+        // 段7：休憩分数は勤務時間の計算（打刻パイプライン）と同じ関数で決める。保存した勤務時間があればそれを優先する
+        breakMinutes = resolveBreakMinutes({
+          savedBreakMinutes: rec.breakMinutes,
+          breakStart: rec.breakStart, breakEnd: rec.breakEnd,
+          halfDay: pickHalfDay(dayRequests),
+          employmentType: user.employmentType, userBreakMinutes: user.breakMinutes,
+          workStartTime: user.workStartTime, workEndTime: user.workEndTime,
+          daySchedule: schedule, presenceMinutes: rawMinutes, setting,
+        })
+        workingMinutes = rec.workingMinutes ?? Math.max(0, rawMinutes - breakMinutes)
+      }
       // 残業・遅刻・早退: 保存値が無い日（承認前）は画面と同じく記録時刻と定時の差から計算する（段4・段8）
       const dayMetrics = rec
         ? resolveDayMetrics(rec, schedule)

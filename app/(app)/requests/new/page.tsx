@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { actionCreateRequest } from "../actions"
-import { REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
+import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 
-type RequestType = "OVERTIME" | "EARLY_START" | "ABSENCE" | "ABSENCE_ABSENT" | "LEAVE_PAID" | "LEAVE_SUB" | "CORRECTION"
+type RequestType = "OVERTIME" | "EARLY_START" | "ABSENCE" | "ABSENCE_ABSENT" | "LEAVE_PAID" | "LEAVE_SUB" | "CORRECTION" | "BREAK"
 
 // 申請の時刻の刻み（REQUEST_TIME_STEP_MINUTES）の時刻オプション（HH:MM 形式）。
 // 打刻パイプラインが早出の実打刻を切り上げる刻み（CLOCK_PIPELINE 段2）と同じ定数を参照する
@@ -23,6 +23,12 @@ function buildTimeOptions(startHour = 0, endHour = 23): { value: string; label: 
 
 const ALL_TIME_OPTIONS = buildTimeOptions(0, 23)
 
+// 休憩申請の分数（0〜上限を15分刻み。0 は「休憩なし」の申請）
+const BREAK_MINUTE_OPTIONS = Array.from(
+  { length: Math.floor(BREAK_REQUEST_MAX_MINUTES / BREAK_REQUEST_STEP_MINUTES) + 1 },
+  (_, i) => i * BREAK_REQUEST_STEP_MINUTES,
+)
+
 const selectClass = "w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
 
 const TYPE_OPTIONS: { value: RequestType; label: string }[] = [
@@ -33,6 +39,7 @@ const TYPE_OPTIONS: { value: RequestType; label: string }[] = [
   { value: "LEAVE_PAID",     label: "有給休暇申請" },
   { value: "LEAVE_SUB",      label: "振休申請" },
   { value: "CORRECTION",     label: "打刻修正申請" },
+  { value: "BREAK",          label: "休憩申請" },
 ]
 
 // 勤怠記録からの修正依頼モード用（2択のみ）
@@ -263,6 +270,22 @@ export default function NewRequestPage() {
                 ))}
               </select>
             </div>
+          </div>
+        )}
+
+        {/* 休憩: 分数（その日の休憩の合計。承認されると上書きされる） */}
+        {type === "BREAK" && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">その日の休憩の合計（分）</label>
+            <select name="minutes" required defaultValue="" className={selectClass}>
+              <option value="" disabled>-- 分数を選択 --</option>
+              {BREAK_MINUTE_OPTIONS.map((m) => (
+                <option key={m} value={m}>{m}分</option>
+              ))}
+            </select>
+            <p className="mt-1.5 text-xs text-gray-500">
+              60分を超える休憩や、休憩ボタンの押し忘れ用です。承認されると、その日の休憩の合計がこの値になります（承認までは勤務時間に反映されません）。
+            </p>
           </div>
         )}
 

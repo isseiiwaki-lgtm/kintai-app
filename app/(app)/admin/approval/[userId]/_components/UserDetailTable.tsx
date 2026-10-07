@@ -5,6 +5,7 @@ import Link from "next/link"
 import { actionAdminUpdateRecord, actionBulkApprove, actionBulkLock, actionClearAdminEdit } from "../actions"
 import type { AdminTimeConstraint } from "@/lib/clock-pipeline"
 import { AdminTimeSelect } from "./AdminTimeSelect"
+import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES } from "@/config/attendance.config"
 
 type Rec = {
   id: string
@@ -17,6 +18,10 @@ type Rec = {
   hasAdminEdit: boolean        // 管理者の確定修正（段6.5）に取り消し先がある日。「管理者の修正を取り消す」を出す
   requestEndTime: string | null   // ④: 承認済み残業申請（最後に出した申請）の終了時刻。④OFF・申請なしは null
   noOvertimeRequest: boolean      // ④ON で残業申請が無いのに実打刻が定時を15分以上過ぎた日の目印
+  breakMinutes: number | null        // その日の休憩の合計（休憩ボタン・承認済みの休憩申請）
+  pendingBreakRequest: boolean       // 承認待ちの休憩申請がある日（まだ差し引いていない）
+  noBreakRecord: boolean             // パートの休憩申請漏れ（所定休憩が設定されているのに記録が無い／実働6時間超で記録が無い）の目印
+  noHolidayWorkRequest: boolean      // 休日に休日出勤申請が無いまま打刻があった日の目印
   breakStart: string | null
   breakEnd:   string | null
   goOutAt:    string | null
@@ -186,7 +191,21 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                   <td className="px-3 py-2.5 text-center font-mono text-gray-500 text-xs">
                     {rec.goOutMins === null ? "外出中" : rec.goOutMins > 0 ? fmtMin(rec.goOutMins) : "—"}
                   </td>
-                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">{fmtMin(rec.workingMinutes)}</td>
+                  <td className="px-3 py-2.5 text-center font-mono text-gray-700">
+                    {fmtMin(rec.workingMinutes)}
+                    {rec.breakMinutes != null && (
+                      <span className="block text-[10px] text-gray-400 leading-tight">休憩 {rec.breakMinutes}分</span>
+                    )}
+                    {rec.pendingBreakRequest && (
+                      <span className="block text-[10px] text-amber-600 leading-tight" title="休憩申請は承認されるまで勤務時間から差し引きません">承認待ちの休憩申請あり</span>
+                    )}
+                    {rec.noBreakRecord && (
+                      <span className="block text-[10px] text-amber-600 leading-tight" title="パートで、所定休憩が設定されているか実働が6時間を超えているのに、休憩の記録がありません">休憩の記録なし</span>
+                    )}
+                    {rec.noHolidayWorkRequest && (
+                      <span className="block text-[10px] text-amber-600 leading-tight" title="休日に打刻がありますが、休日出勤申請がありません（定時なしのため遅刻・早退・残業は付きません）">休日出勤申請なし</span>
+                    )}
+                  </td>
                   <td className="px-3 py-2.5 text-center font-mono text-gray-400">
                     {rec.scheduledMinutes > 0 ? fmtMin(rec.scheduledMinutes) : "—"}
                   </td>
@@ -247,8 +266,6 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                 { name: "clockOut",   label: "退勤" },
                 { name: "goOutAt",    label: "外出" },
                 { name: "returnAt",   label: "戻り" },
-                { name: "breakStart", label: "休憩開始" },
-                { name: "breakEnd",   label: "休憩終了" },
               ].map(({ name, label }) => {
                 const current = editRec[name as keyof Rec] as string | null
                 return (
@@ -265,6 +282,15 @@ export function UserDetailTable({ records, firstDayISO, lastDayISO, userId, isAd
                   </div>
                 )
               })}
+              <div key={`break-${editRec.id}`} className="flex items-center justify-between">
+                <label className="text-xs text-gray-600 w-20">休憩（分）</label>
+                <select name="breakMinutes" defaultValue={editRec.breakMinutes != null ? String(editRec.breakMinutes) : ""} className={selectClass}>
+                  <option value="">変更なし</option>
+                  {Array.from({ length: BREAK_REQUEST_MAX_MINUTES / BREAK_REQUEST_STEP_MINUTES + 1 }, (_, i) => i * BREAK_REQUEST_STEP_MINUTES).map((m) => (
+                    <option key={m} value={m}>{m}分</option>
+                  ))}
+                </select>
+              </div>
               <label className="flex items-center gap-1.5 text-xs text-gray-600">
                 <input type="checkbox" checked={unrestricted} onChange={(e) => setUnrestricted(e.target.checked)} className="accent-blue-600" />
                 制限なしで入力する（1分単位・全時間帯）

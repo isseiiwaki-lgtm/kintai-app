@@ -34,6 +34,25 @@ export function validateWorkTime(value: string | null | undefined): string | nul
   return null
 }
 
+/** 所定休憩（分）の入力の上限と刻み */
+export const USER_BREAK_MAX_MINUTES = 240
+export const USER_BREAK_STEP_MINUTES = 15
+
+/**
+ * 所定休憩（分・任意）の検証。空（未設定）は許可し null を返す（空なら会社設定の休憩ルールから求める）。
+ * 0〜240分の15分刻みのみ許可。値かエラーメッセージのどちらかを返す
+ */
+export function parseUserBreakMinutes(value: string | null | undefined): { value: number | null } | { error: string } {
+  const v = (value ?? "").trim()
+  if (!v) return { value: null }
+  if (!/^\d{1,3}$/.test(v)) return { error: "分数は数字で入力してください" }
+  const n = Number(v)
+  if (n > USER_BREAK_MAX_MINUTES || n % USER_BREAK_STEP_MINUTES !== 0) {
+    return { error: `${USER_BREAK_STEP_MINUTES}分刻み（0〜${USER_BREAK_MAX_MINUTES}分）で入力してください` }
+  }
+  return { value: n }
+}
+
 export type CsvCodeRow = { row: number; email: string; employeeCode: string | null }
 export type DbCodeHolder = { email: string; name: string | null; employeeCode: string | null }
 export type CodeConflict = { row: number; message: string }

@@ -6,6 +6,7 @@ import { redirect } from "next/navigation"
 import {
   resolveLoginEmailOnCompanyEmailSave,
   validateWorkTime,
+  parseUserBreakMinutes,
   detectEmployeeCodeConflicts,
   employeeCodeInUseMessage,
 } from "@/lib/user-validation"
@@ -214,6 +215,7 @@ export async function actionUpdateUser(formData: FormData): Promise<{ error: str
   const department     = formData.get("department")     as string
   const workStartTime  = formData.get("workStartTime")  as string
   const workEndTime    = formData.get("workEndTime")    as string
+  const breakInput     = formData.get("breakMinutes")   as string | null
   const isActive       = formData.get("isActive") === "true"
   const workSun        = formData.get("workSun")  === "on"
   const workMon        = formData.get("workMon")  === "on"
@@ -228,6 +230,9 @@ export async function actionUpdateUser(formData: FormData): Promise<{ error: str
   if (startErr) return { error: `出勤時刻: ${startErr}` }
   const endErr = validateWorkTime(workEndTime)
   if (endErr) return { error: `退勤時刻: ${endErr}` }
+  // 所定休憩（分・任意。空なら会社設定の休憩ルールから求める）
+  const breakParsed = parseUserBreakMinutes(breakInput)
+  if ("error" in breakParsed) return { error: `所定休憩: ${breakParsed.error}` }
 
   // 社員番号は UNIQUE。他人と重複する場合は例外にせずエラーを返す
   if (employeeCode) {
@@ -272,6 +277,7 @@ export async function actionUpdateUser(formData: FormData): Promise<{ error: str
       department:     department     || null,
       workStartTime:  workStartTime  || null,
       workEndTime:    workEndTime    || null,
+      breakMinutes:   breakParsed.value,
       isActive,
       workSun, workMon, workTue, workWed, workThu, workFri, workSat,
     },
@@ -313,6 +319,7 @@ export async function actionCreateUser(formData: FormData): Promise<{ error: str
   const department     = formData.get("department")      as string
   const workStartTime  = formData.get("workStartTime")   as string
   const workEndTime    = formData.get("workEndTime")     as string
+  const breakInput     = formData.get("breakMinutes")    as string | null
 
   if (!email) return { error: "メールアドレスは必須です" }
 
@@ -321,6 +328,8 @@ export async function actionCreateUser(formData: FormData): Promise<{ error: str
   if (startErr) return { error: `出勤時刻: ${startErr}` }
   const endErr = validateWorkTime(workEndTime)
   if (endErr) return { error: `退勤時刻: ${endErr}` }
+  const breakParsed = parseUserBreakMinutes(breakInput)
+  if ("error" in breakParsed) return { error: `所定休憩: ${breakParsed.error}` }
 
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) {
@@ -346,6 +355,7 @@ export async function actionCreateUser(formData: FormData): Promise<{ error: str
       department:     department     || null,
       workStartTime:  workStartTime  || null,
       workEndTime:    workEndTime    || null,
+      breakMinutes:   breakParsed.value,
       workSun, workMon, workTue, workWed, workThu, workFri, workSat,
     },
   })
@@ -360,7 +370,7 @@ export async function actionDuplicateUser(sourceId: string) {
     where: { id: sourceId },
     select: {
       role: true, employmentType: true, department: true, jobTitle: true,
-      workStartTime: true, workEndTime: true,
+      workStartTime: true, workEndTime: true, breakMinutes: true,
       workSun: true, workMon: true, workTue: true,
       workWed: true, workThu: true, workFri: true, workSat: true,
     },
@@ -377,6 +387,7 @@ export async function actionDuplicateUser(sourceId: string) {
       jobTitle:       src.jobTitle,
       workStartTime:  src.workStartTime,
       workEndTime:    src.workEndTime,
+      breakMinutes:   src.breakMinutes,
       workSun: src.workSun, workMon: src.workMon, workTue: src.workTue,
       workWed: src.workWed, workThu: src.workThu, workFri: src.workFri,
       workSat: src.workSat,

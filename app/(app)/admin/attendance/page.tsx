@@ -1,8 +1,8 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
-import { calcNeedsReview, hasOvertimeRequest, needsOvertimeRequestNotice, resolveDayMetrics } from "@/lib/attendance"
-import { resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { calcNeedsReview, calcScheduledMinutes, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice, resolveDayMetrics } from "@/lib/attendance"
+import { isRestDay, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
@@ -54,7 +54,8 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
       attendanceRecords: {
         where: { date: { gte: firstDay, lte: lastDay } },
         select: {
-          workingMinutes: true, clockIn: true, clockOut: true, rawClockOut: true, date: true, status: true,
+          workingMinutes: true, clockIn: true, clockOut: true, rawClockIn: true, rawClockOut: true, date: true, status: true,
+          goOutAt: true, returnAt: true, breakStart: true, breakEnd: true, breakMinutes: true,
           isHolidayWork: true, lateMinutes: true, earlyLeaveMinutes: true, overtimeMinutes: true,
           switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true,
         },
@@ -78,16 +79,24 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     overtimeReqMap.set(k, [...(overtimeReqMap.get(k) ?? []), q])
   }
 
+  // 承認待ちの休憩申請・審査中か承認済みの休日出勤申請（休憩・休日出勤の知らせの判定に使う）
+  const extraRequests = await prisma.request.findMany({
+    where: {
+      targetDate: { gte: firstDay, lte: lastDay },
+      OR: [{ type: "BREAK", status: "PENDING" }, { type: "HOLIDAY_WORK", status: { in: ["PENDING", "APPROVED"] } }],
+    },
+    select: { userId: true, targetDate: true, type: true },
+  })
+  const extraReqMap = new Map<string, string[]>()
+  for (const q of extraRequests) {
+    const k = `${q.userId}|${q.targetDate.toISOString()}`
+    extraReqMap.set(k, [...(extraReqMap.get(k) ?? []), q.type])
+  }
+
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 
   // 段0：その日の定時（休日は定時なし・半休は前半/後半）。残業・要確認の判定に使う
   const sched = await loadScheduleInputs(users.map((u: { id: string }) => u.id), firstDay, lastDay)
-
-  function parseHHMM(s: string | null | undefined): number | null {
-    if (!s) return null
-    const [h, m] = s.split(":").map(Number)
-    return h * 60 + m
-  }
 
   // 集計
   type Row = {
@@ -102,19 +111,21 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     unapprovedDays: number
     approvedDays: number
     noOvertimeRequestDays: number
+    noBreakRecordDays: number
+    noHolidayWorkDays: number
   }
   type Rec = {
-    clockIn: Date | null; clockOut: Date | null; rawClockOut: Date | null; date: Date; workingMinutes: number | null; status: string
+    clockIn: Date | null; clockOut: Date | null; rawClockIn: Date | null; rawClockOut: Date | null; date: Date; workingMinutes: number | null; status: string
+    goOutAt: Date | null; returnAt: Date | null; breakStart: Date | null; breakEnd: Date | null; breakMinutes: number | null
     isHolidayWork: boolean; lateMinutes: number | null; earlyLeaveMinutes: number | null; overtimeMinutes: number | null
     switchRoundEarly: boolean | null; switchRoundNear: boolean | null; switchRoundQuarter: boolean | null; switchCapOvertime: boolean | null
   }
   const rows: Row[] = users.map((u: typeof users[number]) => {
     const recs = u.attendanceRecords as Rec[]
-    const startM = parseHHMM(u.workStartTime)
-    const endM   = parseHHMM(u.workEndTime)
-    const scheduledPerDay = startM !== null && endM !== null && endM > startM
-      ? endM - startM
-      : u.employmentType === "full" ? 480 : 0
+    // 所定勤務時間 ＝ 拘束時間 − 所定休憩（本人の所定休憩 → 会社設定の休憩ルール）
+    const scheduledPerDay = calcScheduledMinutes(u.workStartTime, u.workEndTime, u.employmentType, {
+      userBreakMinutes: u.breakMinutes, setting: sched.setting,
+    })
 
     const workDays          = recs.filter((r) => r.clockIn).length
     const totalMin          = recs.reduce((s, r) => s + (r.workingMinutes ?? 0), 0)
@@ -145,15 +156,32 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
         capEnabled: resolveSwitches(r, setting).capOvertime,
       })
     ).length
+    // パートの休憩申請漏れ・休日出勤申請なしの日数（控えめな目印。要確認には入れない。通知は飛ばさない）
+    const extraReqsOf = (r: Rec) => extraReqMap.get(`${u.id}|${r.date.toISOString()}`) ?? []
+    const noBreakRecordDays = recs.filter((r) => needsBreakRecordNotice({
+      employmentType: u.employmentType, userBreakMinutes: u.breakMinutes,
+      breakMinutes: r.breakMinutes, breakStart: r.breakStart, breakEnd: r.breakEnd,
+      clockIn: r.clockIn, clockOut: r.clockOut, goOutAt: r.goOutAt, returnAt: r.returnAt,
+      hasPendingBreakRequest: extraReqsOf(r).includes("BREAK"),
+    })).length
+    const noHolidayWorkDays = recs.filter((r) => needsHolidayWorkNotice({
+      isRestDay: isRestDay(r.date, u, sched.isHoliday(r.date)),
+      hasPunch: !!(r.clockIn || r.clockOut || r.rawClockIn || r.rawClockOut),
+      isHolidayWork: r.isHolidayWork,
+      hasHolidayWorkRequest: extraReqsOf(r).includes("HOLIDAY_WORK"),
+    })).length
     return {
       id: u.id,
       name: u.name ?? u.email ?? "?",
       dept: u.department ?? "—",
       empType: u.employmentType,
       workDays, totalMin, scheduledTotalMin, overtimeMin,
-      unapprovedDays, approvedDays, noOvertimeRequestDays,
+      unapprovedDays, approvedDays, noOvertimeRequestDays, noBreakRecordDays, noHolidayWorkDays,
     }
   })
+
+  // 休憩の記録なし・休日申請なしの列は、該当する日が1つでもあるときだけ出す（目印は控えめに）
+  const showExtraNotices = rows.some((r) => r.noBreakRecordDays > 0 || r.noHolidayWorkDays > 0)
 
   return (
     <div className="p-4 lg:p-6">
@@ -203,6 +231,8 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
               <th className="text-center px-3 py-3 font-medium">残業</th>
               <th className="text-center px-3 py-3 font-medium">未承認</th>
               {capEnabled && <th className="text-center px-3 py-3 font-medium" title="残業申請が無いのに、実打刻が定時を15分以上過ぎた日数">申請なし超過</th>}
+              {showExtraNotices && <th className="text-center px-3 py-3 font-medium" title="パートの休憩の記録なし（所定休憩があるのに記録が無い／実働6時間超で記録が無い）の日数">休憩記録なし</th>}
+              {showExtraNotices && <th className="text-center px-3 py-3 font-medium" title="休日に打刻があるのに休日出勤申請が無い日数">休日申請なし</th>}
               <th className="text-center px-3 py-3 font-medium">承認済</th>
             </tr>
           </thead>
@@ -235,6 +265,16 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
                 {capEnabled && (
                   <td className="px-3 py-2.5 text-center">
                     {r.noOvertimeRequestDays > 0 ? <span className="text-gray-600">{r.noOvertimeRequestDays}日</span> : <span className="text-gray-300">—</span>}
+                  </td>
+                )}
+                {showExtraNotices && (
+                  <td className="px-3 py-2.5 text-center">
+                    {r.noBreakRecordDays > 0 ? <span className="text-gray-600">{r.noBreakRecordDays}日</span> : <span className="text-gray-300">—</span>}
+                  </td>
+                )}
+                {showExtraNotices && (
+                  <td className="px-3 py-2.5 text-center">
+                    {r.noHolidayWorkDays > 0 ? <span className="text-gray-600">{r.noHolidayWorkDays}日</span> : <span className="text-gray-300">—</span>}
                   </td>
                 )}
                 <td className="px-3 py-2.5 text-center">

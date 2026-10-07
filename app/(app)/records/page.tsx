@@ -101,10 +101,12 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
   const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 
-  const scheduledMins = calcScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType)
-
   // 段0（休日・半休を反映した定時）の材料。保存値が無いときの遅刻・早退・残業の計算に使う
   const sched = await loadScheduleInputs([userId], firstDay, lastDay)
+  // 所定勤務時間 ＝ 拘束時間 − 所定休憩（本人の所定休憩 → 会社設定の休憩ルール）
+  const scheduledMins = calcScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType, {
+    userBreakMinutes: user?.breakMinutes, setting: sched.setting,
+  })
   // 段1の入力（打刻修正で直した日はその時刻）を出すための出退勤の変更履歴。④の併記判定に使う
   const changeLogs = await prisma.attendanceChangeLog.findMany({
     where: { recordId: { in: records.map((r) => r.id) }, fieldName: { in: ["clockIn", "clockOut"] } },
@@ -142,8 +144,11 @@ export default async function RecordsPage({ searchParams }: { searchParams: Sear
 
     // 休憩（分）
     let breakMins: number
-    if (rec.breakStart && rec.breakEnd) {
-      // パート: 明示的な休憩
+    if (rec.breakMinutes != null) {
+      // その日の休憩の合計（休憩ボタン・承認済みの休憩申請。段7）
+      breakMins = rec.breakMinutes
+    } else if (rec.breakStart && rec.breakEnd) {
+      // 休憩ボタン導入前の記録: 過去の休憩打刻
       breakMins = Math.round((rec.breakEnd.getTime() - rec.breakStart.getTime()) / 60000)
     } else if (rec.clockIn && rec.clockOut && rec.workingMinutes !== null) {
       // フルタイム: 逆算（拘束時間 - 中抜け - 実労働）

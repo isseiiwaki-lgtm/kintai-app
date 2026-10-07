@@ -4,6 +4,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
+import { parseBreakRequestMinutes } from "@/lib/attendance"
 
 export async function actionCreateRequest(formData: FormData) {
   const session = await auth()
@@ -34,6 +35,13 @@ export async function actionCreateRequest(formData: FormData) {
         startTime:          formData.get("startTime") as string,
         scheduledStartTime: user?.workStartTime ?? "",
       }
+      break
+    }
+    case "BREAK": {
+      // 休憩申請（60分超・押し忘れ用）。15分刻みの分数。承認されたらその日の休憩の合計（上書き）になる
+      const minutes = parseBreakRequestMinutes(formData.get("minutes"))
+      if (minutes === null) throw new Error("休憩の分数が正しくありません")
+      detail = { minutes: String(minutes) }
       break
     }
     case "ABSENCE":
@@ -77,7 +85,7 @@ export async function actionCreateRequest(formData: FormData) {
   await prisma.request.create({
     data: {
       userId,
-      type:       dbType as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER",
+      type:       dbType as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER" | "BREAK",
       targetDate: new Date(targetDate),
       reason,
       detail,

@@ -3,7 +3,7 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
-import { formatHHMMfromDate, calcScheduledMinutes } from "@/lib/attendance"
+import { formatHHMMfromDate, calcScheduledMinutes, parseBreakRequestMinutes } from "@/lib/attendance"
 import { recomputeDay } from "@/lib/clock-pipeline-db"
 import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
 import { findCorrectionLog, planFieldRevert, planInputRevert } from "@/lib/clock-pipeline"
@@ -19,19 +19,51 @@ function hhmmOnDate(date: Date, hhmm: string): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), hh - 9, mm))
 }
 
-/**
- * 打刻修正の承認は記録時刻を書き換えるので、対象の日が締め済み（LOCKED）なら拒否する。
- * 承認の操作を始める前に呼ぶ（承認の記録・申請の状態も変えない）
- */
-async function lockedCorrectionError(req: { type: string; userId: string; targetDate: Date }): Promise<string | null> {
-  if (req.type !== "CORRECTION") return null
+/** 承認の確定でその日の記録を書き換える申請（打刻修正・休憩申請・休日出勤申請） */
+const RECORD_REWRITING_TYPES = ["CORRECTION", "BREAK", "HOLIDAY_WORK"]
+const RECORD_REWRITING_LABEL: Record<string, string> = { CORRECTION: "打刻修正", BREAK: "休憩申請", HOLIDAY_WORK: "休日出勤申請" }
+
+/** 対象の日が締め済み（LOCKED）か（記録が無い日は false） */
+async function isLockedDay(userId: string, date: Date): Promise<boolean> {
   const rec = await prisma.attendanceRecord.findUnique({
-    where: { userId_date: { userId: req.userId, date: req.targetDate } },
+    where: { userId_date: { userId, date } },
     select: { status: true },
   })
   return rec?.status === "LOCKED"
-    ? "締め済みの日の打刻修正は承認できません（締め解除してから承認してください）"
+}
+
+/**
+ * 打刻修正・休憩申請・休日出勤申請の承認は記録を書き換えるので、対象の日が締め済み（LOCKED）なら拒否する。
+ * 承認の操作を始める前に呼ぶ（承認の記録・申請の状態も変えない）
+ */
+async function lockedCorrectionError(req: { type: string; userId: string; targetDate: Date }): Promise<string | null> {
+  if (!RECORD_REWRITING_TYPES.includes(req.type)) return null
+  return (await isLockedDay(req.userId, req.targetDate))
+    ? `締め済みの日の${RECORD_REWRITING_LABEL[req.type]}は承認できません（締め解除してから承認してください）`
     : null
+}
+
+/**
+ * その日の休憩分数を、承認済みの休憩申請（最後に出した申請）に合わせて保存し、打刻パイプラインで計算し直す。
+ * 承認済みの休憩申請を削除・修正したときに使う。承認済みの休憩申請が無くなった日は breakMinutes を空に戻す
+ * （休憩ボタンの値は申請の承認で上書きされているため、戻せない）。締め済みの日は呼ぶ前に拒否すること
+ */
+async function syncBreakFromApprovedRequests(userId: string, date: Date) {
+  const rec = await prisma.attendanceRecord.findUnique({ where: { userId_date: { userId, date } } })
+  if (!rec) return
+  const reqs = await prisma.request.findMany({
+    where: { userId, type: "BREAK", status: "APPROVED", targetDate: date },
+    orderBy: { createdAt: "desc" },
+    select: { detail: true },
+  })
+  let minutes: number | null = null
+  for (const r of reqs) {
+    const m = parseBreakRequestMinutes((r.detail as { minutes?: string } | null)?.minutes)
+    if (m !== null) { minutes = m; break }
+  }
+  await prisma.attendanceRecord.update({ where: { id: rec.id }, data: { breakMinutes: minutes } })
+  await recomputeDay(userId, date)
+  revalidatePath("/records")
 }
 
 /**
@@ -139,7 +171,7 @@ async function checkAdmin() {
 function findRequest(id: string) {
   return prisma.request.findUnique({
     where: { id },
-    include: { user: { select: { workStartTime: true, workEndTime: true, employmentType: true, department: true } } },
+    include: { user: { select: { workStartTime: true, workEndTime: true, employmentType: true, breakMinutes: true, department: true } } },
   })
 }
 
@@ -190,9 +222,27 @@ async function applyRequestEffects(
     revalidatePath("/records")
   }
 
+  // 休憩申請の承認時: その日の休憩の合計（上書き）として breakMinutes に入れ、勤務時間を打刻パイプラインで計算し直す
+  // （審査中の間は差し引かない。複数承認されたら最後に承認されたものが残る）
+  if (req.type === "BREAK") {
+    const minutes = parseBreakRequestMinutes(detail?.minutes)
+    if (minutes !== null) {
+      await prisma.attendanceRecord.upsert({
+        where:  { userId_date: { userId: req.userId, date: req.targetDate } },
+        update: { breakMinutes: minutes },
+        create: { userId: req.userId, date: req.targetDate, breakMinutes: minutes },
+      })
+      await recomputeDay(req.userId, req.targetDate)
+      revalidatePath("/records")
+    }
+  }
+
   // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存（本人所定時間ベース。半休は所定時間の半分を四捨五入）
   if (req.type === "LEAVE" && detail?.leaveType === "paid") {
-    const scheduledMins = calcScheduledMinutes(req.user.workStartTime, req.user.workEndTime, req.user.employmentType)
+    const setting = await prisma.setting.findUnique({ where: { id: 1 } })
+    const scheduledMins = calcScheduledMinutes(req.user.workStartTime, req.user.workEndTime, req.user.employmentType, {
+      userBreakMinutes: req.user.breakMinutes, setting,
+    })
     const halfDay = detail?.halfDay
     const paidMins = halfDay === "am" || halfDay === "pm" ? Math.round(scheduledMins / 2) : scheduledMins
     await prisma.attendanceRecord.upsert({
@@ -408,7 +458,7 @@ export async function actionRejectRequest(id: string) {
   revalidatePath("/admin/requests")
 }
 
-export async function actionUpdateRequest(id: string, formData: FormData) {
+export async function actionUpdateRequest(id: string, formData: FormData): Promise<ActionResult> {
   await checkAdmin()
 
   const type       = formData.get("type")       as string
@@ -432,6 +482,12 @@ export async function actionUpdateRequest(id: string, formData: FormData) {
         detail = { endTime: formData.get("endTime") as string }
       }
       break
+    case "BREAK": {
+      const minutes = parseBreakRequestMinutes(formData.get("minutes"))
+      if (minutes === null) return { ok: false, error: "休憩の分数が正しくありません（15分刻み）" }
+      detail = { minutes: String(minutes) }
+      break
+    }
     case "ABSENCE":
       detail = {
         absenceType: formData.get("absenceType") as string,
@@ -447,10 +503,19 @@ export async function actionUpdateRequest(id: string, formData: FormData) {
       break
   }
 
+  // 承認済みの休憩申請が絡む修正は、記録の休憩分数を書き換えるので、締め済みの日は拒否する（修正前・修正後どちらの日も）
+  const breakInvolved = before?.status === "APPROVED" && (before.type === "BREAK" || type === "BREAK")
+  if (before && breakInvolved) {
+    const newDate = new Date(targetDate)
+    if ((await isLockedDay(before.userId, before.targetDate)) || (await isLockedDay(before.userId, newDate))) {
+      return { ok: false, error: "締め済みの日の休憩申請は修正できません（締め解除してから修正してください）" }
+    }
+  }
+
   await prisma.request.update({
     where: { id },
     data: {
-      type:       type as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER",
+      type:       type as "OVERTIME" | "LEAVE" | "ABSENCE" | "COMMENT" | "OTHER" | "BREAK",
       targetDate: new Date(targetDate),
       reason,
       detail,
@@ -467,8 +532,17 @@ export async function actionUpdateRequest(id: string, formData: FormData) {
     }
     revalidatePath("/records")
   }
+  // 承認済みの休憩申請の分数・日付・種別を直したら、修正前・修正後の日の休憩分数を承認済みの申請から出し直す
+  if (before && breakInvolved) {
+    await syncBreakFromApprovedRequests(before.userId, before.targetDate)
+    const newDate = new Date(targetDate)
+    if (newDate.getTime() !== before.targetDate.getTime()) {
+      await syncBreakFromApprovedRequests(before.userId, newDate)
+    }
+  }
   revalidatePath("/admin/requests")
   revalidatePath("/requests")
+  return { ok: true }
 }
 
 export async function actionDeleteRequest(id: string): Promise<ActionResult> {
@@ -483,6 +557,10 @@ export async function actionDeleteRequest(id: string): Promise<ActionResult> {
   if (req?.status === "APPROVED" && req.type === "CORRECTION") {
     const reverted = await revertApprovedCorrection(req, changedById)
     if (!reverted.ok) return reverted
+  }
+  // 承認済みの休憩申請を削除するときは、記録を書き換えるので締め済みの日は拒否する
+  if (req?.status === "APPROVED" && req.type === "BREAK" && (await isLockedDay(req.userId, req.targetDate))) {
+    return { ok: false, error: "締め済みの日の休憩申請は削除できません（締め解除してから削除してください）" }
   }
   if (req?.status === "APPROVED" && req.type === "ABSENCE") {
     const detail = req.detail as Record<string, string> | null
@@ -506,6 +584,11 @@ export async function actionDeleteRequest(id: string): Promise<ActionResult> {
   }
 
   await prisma.request.delete({ where: { id } })
+
+  // 承認済みの休憩申請を削除したら、その日の休憩分数を残りの承認済みの申請から出し直す（無ければ空に戻す）
+  if (req?.status === "APPROVED" && req.type === "BREAK") {
+    await syncBreakFromApprovedRequests(req.userId, req.targetDate)
+  }
 
   // 承認済みの残業・早出・休暇（半休）申請を削除したら、入力から外れるので記録を打刻パイプラインで計算し直す
   if (req?.status === "APPROVED" && (req.type === "OVERTIME" || req.type === "LEAVE")) {

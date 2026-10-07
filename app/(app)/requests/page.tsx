@@ -8,6 +8,7 @@ const TYPE_LABEL: Record<string, string> = {
   ABSENCE:    "遅刻・早退",
   LEAVE:      "休暇申請",
   CORRECTION: "打刻修正",
+  BREAK:      "休憩申請",
   COMMENT:    "修正依頼",
   OTHER:      "その他",
 }
@@ -37,6 +38,7 @@ function detailSummary(type: string, detail: unknown): string {
       const scheduled = d.scheduledEndTime ? `（定時 ${d.scheduledEndTime}）` : ""
       return d.endTime ? `残業終了 ${d.endTime}${scheduled}` : ""
     }
+    case "BREAK":    return d.minutes != null ? `休憩 ${d.minutes}分` : ""
     case "ABSENCE":  return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
     case "LEAVE": {
       const lt = d.leaveType === "substitute" ? "振休" : "有給"

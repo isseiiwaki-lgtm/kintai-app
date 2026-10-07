@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
+import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 import {
   actionApproveRequest,
   actionForceApproveRequest,
@@ -15,6 +15,7 @@ const TYPE_LABEL: Record<string, string> = {
   ABSENCE:    "遅刻・早退",
   LEAVE:      "休暇申請",
   CORRECTION: "打刻修正",
+  BREAK:      "休憩申請",
   COMMENT:    "修正依頼",
   OTHER:      "その他",
 }
@@ -38,6 +39,12 @@ const TIME_OPTIONS = Array.from({ length: Math.floor((24 * 60) / REQUEST_TIME_ST
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`
 })
 
+// 休憩申請の分数（申請フォームと同じ刻み・上限）
+const BREAK_MINUTE_OPTIONS = Array.from(
+  { length: Math.floor(BREAK_REQUEST_MAX_MINUTES / BREAK_REQUEST_STEP_MINUTES) + 1 },
+  (_, i) => i * BREAK_REQUEST_STEP_MINUTES,
+)
+
 function detailSummary(type: string, detail: Record<string, string> | null): string {
   const d = detail
   if (!d) return ""
@@ -50,6 +57,8 @@ function detailSummary(type: string, detail: Record<string, string> | null): str
       const scheduled = d.scheduledEndTime ? `（定時 ${d.scheduledEndTime}）` : ""
       return d.endTime ? `残業終了 ${d.endTime}${scheduled}` : ""
     }
+    case "BREAK":
+      return d.minutes != null ? `休憩 ${d.minutes}分` : ""
     case "ABSENCE":
       if (d.absenceType === "absent") return "欠勤（全日）"
       return `${d.absenceType === "late" ? "遅刻" : "早退"} ${d.time ?? ""}`
@@ -137,6 +146,17 @@ function DetailFields({ type, detail }: { type: string; detail: Record<string, s
         <select name="endTime" defaultValue={detail.endTime ?? ""} className={inputClass}>
           <option value="">未設定</option>
           {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+    )
+  }
+  if (type === "BREAK") {
+    // 休憩申請：その日の休憩の合計（分）。15分刻み・0〜上限
+    return (
+      <div>
+        <label className={labelClass}>休憩（分）</label>
+        <select name="minutes" defaultValue={detail.minutes ?? "0"} className={inputClass}>
+          {BREAK_MINUTE_OPTIONS.map(m => <option key={m} value={m}>{m}分</option>)}
         </select>
       </div>
     )
@@ -231,6 +251,7 @@ export function RequestsTable({
   const [actionError, setActionError]   = useState<string | null>(null)
 
   function openEdit(r: ReqRow) {
+    setActionError(null)
     setEditType(r.type)
     setEditTarget({
       id:         r.id,
@@ -249,8 +270,10 @@ export function RequestsTable({
 
   function handleUpdate(formData: FormData) {
     if (!editTarget) return
+    setActionError(null)
     startTransition(async () => {
-      await actionUpdateRequest(editTarget.id, formData)
+      const res = await actionUpdateRequest(editTarget.id, formData)
+      if (!res.ok) { setActionError(res.error); return }
       setEditTarget(null)
     })
   }
@@ -479,6 +502,7 @@ export function RequestsTable({
                 <label className={labelClass}>理由</label>
                 <textarea name="reason" defaultValue={editTarget.reason} rows={3} className={inputClass} />
               </div>
+              {actionError && <p role="alert" className="text-xs text-red-600">{actionError}</p>}
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"

@@ -4,8 +4,8 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { UserDetailTable } from "./_components/UserDetailTable"
 import { ProxyPunchForm } from "./_components/ProxyPunchForm"
-import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
-import { correctionLogIdSet, pickEarlyStartTime, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
+import { calcNeedsReview, getDisplayStatus, resolveDayMetrics, calcNightMinutes, calcScheduledMinutes, hasOvertimeRequest, needsBreakRecordNotice, needsHolidayWorkNotice, needsOvertimeRequestNotice, pickOvertimeCapEnd } from "@/lib/attendance"
+import { correctionLogIdSet, pickEarlyStartTime, isRestDay, planAdminRevert, proxyFirstLogAt, resolveScheduleForDate, resolveSwitches, switchesFromSetting } from "@/lib/clock-pipeline"
 import { correctionKey, loadApprovedCorrections, loadScheduleInputs } from "@/lib/clock-pipeline-db"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 
@@ -54,7 +54,7 @@ export default async function UserApprovalPage({
   const prevLink  = `/admin/approval/${userId}?year=${prevYear}&month=${prevMonth}`
   const nextLink  = `/admin/approval/${userId}?year=${nextYear}&month=${nextMonth}`
 
-  const [user, records, requests, overtimeRequests] = await Promise.all([
+  const [user, records, requests, overtimeRequests, breakHolidayRequests] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -78,6 +78,14 @@ export default async function UserApprovalPage({
         targetDate: { gte: firstDay, lte: lastDay },
       },
       select: { targetDate: true, type: true, status: true, createdAt: true, detail: true },
+    }),
+    // 承認待ちの休憩申請・審査中か承認済みの休日出勤申請（「承認待ちの休憩申請あり」の表示と、休憩・休日出勤の知らせの判定に使う）
+    prisma.request.findMany({
+      where: {
+        userId, targetDate: { gte: firstDay, lte: lastDay },
+        OR: [{ type: "BREAK", status: "PENDING" }, { type: "HOLIDAY_WORK", status: { in: ["PENDING", "APPROVED"] } }],
+      },
+      select: { targetDate: true, type: true },
     }),
   ])
   const overtimeReqByDate = new Map<string, typeof overtimeRequests>()
@@ -131,7 +139,9 @@ export default async function UserApprovalPage({
   )
 
   // 所定勤務時間（分）: workStartTime/workEndTime から算出。未設定時は employmentType で fallback
-  const scheduledMinutes = calcScheduledMinutes(user.workStartTime, user.workEndTime, user.employmentType)
+  const scheduledMinutes = calcScheduledMinutes(user.workStartTime, user.workEndTime, user.employmentType, {
+    userBreakMinutes: user.breakMinutes, setting: sched.setting,
+  })
 
   // レコードを日付キーでマップ
   const recordMap = new Map(
@@ -201,6 +211,21 @@ export default async function UserApprovalPage({
       rawClockOut: r.rawClockOut, workEndTime: schedule?.end ?? null, date: r.date,
       hasOvertimeRequest: hasOvertimeRequest(dayOvertimeReqs), capEnabled,
     })
+    // パートの休憩申請漏れ・休日出勤申請なしの目印（要確認には入れない。通知は飛ばさない）
+    const dayExtraReqs = breakHolidayRequests.filter((q) => q.targetDate.getTime() === r.date.getTime())
+    const pendingBreakRequest = dayExtraReqs.some((q) => q.type === "BREAK")
+    const noBreakRecord = needsBreakRecordNotice({
+      employmentType: user.employmentType, userBreakMinutes: user.breakMinutes,
+      breakMinutes: r.breakMinutes, breakStart: r.breakStart, breakEnd: r.breakEnd,
+      clockIn: r.clockIn, clockOut: r.clockOut, goOutAt: r.goOutAt, returnAt: r.returnAt,
+      hasPendingBreakRequest: pendingBreakRequest,
+    })
+    const noHolidayWorkRequest = needsHolidayWorkNotice({
+      isRestDay: isRestDay(r.date, user, sched.isHoliday(r.date)),
+      hasPunch: !!(r.clockIn || r.clockOut || r.rawClockIn || r.rawClockOut),
+      isHolidayWork: r.isHolidayWork,
+      hasHolidayWorkRequest: dayExtraReqs.some((q) => q.type === "HOLIDAY_WORK"),
+    })
     const goOutMins =
       r.goOutAt && r.returnAt
         ? Math.round((r.returnAt.getTime() - r.goOutAt.getTime()) / 60000)
@@ -216,6 +241,10 @@ export default async function UserApprovalPage({
       hasAdminEdit: canClearAdminEdit(r),
       requestEndTime,
       noOvertimeRequest,
+      breakMinutes: r.breakMinutes,
+      pendingBreakRequest,
+      noBreakRecord,
+      noHolidayWorkRequest,
       breakStart:  formatHHMM(r.breakStart),
       breakEnd:    formatHHMM(r.breakEnd),
       goOutAt:     formatHHMM(r.goOutAt),
