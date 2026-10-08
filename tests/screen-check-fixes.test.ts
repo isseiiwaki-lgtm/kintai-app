@@ -6,7 +6,7 @@
  * - 休日出勤申請の休憩の初期値は会社設定のルール
  */
 import { describe, it, expect } from "vitest"
-import { computeClockPipeline, isRestDay, resolveBreakMinutes, resolveScheduleForDate } from "../lib/clock-pipeline"
+import { computeClockPipeline, isHolidayWorkEligibleDate, isRestDay, resolveBreakMinutes, resolveScheduleForDate } from "../lib/clock-pipeline"
 import { calcWorkingMinutes, needsHolidayWorkNotice, storedBreakMinutes } from "../lib/attendance"
 import { validateSettingNumbers } from "../lib/setting-validation"
 import { defaultHolidayBreakMinutes } from "../lib/holiday-work"
@@ -102,5 +102,32 @@ describe("休日出勤申請の休憩の初期値は会社設定のルール", (
   })
   it("15分刻みでない設定は切り上げる", () => {
     expect(defaultHolidayBreakMinutes("09:00", "16:00", { ...setting, break1Minutes: 50 })).toBe(60)
+  })
+})
+
+describe("パートの休みの曜日の休日出勤申請", () => {
+  // 月・火・水・金のパート。2026-10-08 木曜（休み）、2026-10-07 水曜（所定）
+  const part = {
+    workStartTime: "09:00", workEndTime: "15:00", employmentType: "part", breakMinutes: null as number | null,
+    workSun: false, workMon: true, workTue: true, workWed: true, workThu: false, workFri: true, workSat: false,
+  }
+  const THU = new Date(Date.UTC(2026, 9, 8))
+  const WED = new Date(Date.UTC(2026, 9, 7))
+  const setting = { break1Threshold: 360, break1Minutes: 45, break2Threshold: 480, break2Minutes: 60 }
+  it("木曜は申請できる・水曜（所定出勤曜日）は不可・祝日は可", () => {
+    expect(isHolidayWorkEligibleDate(THU, part, false)).toBe(true)
+    expect(isHolidayWorkEligibleDate(WED, part, false)).toBe(false)
+    expect(isHolidayWorkEligibleDate(WED, part, true)).toBe(true)
+  })
+  it("承認済みの木曜 10:00-14:00 → 定時は申請の開始〜終了（休日出勤の印があっても申請が先）", () => {
+    const requests = [{ type: "HOLIDAY_WORK", status: "APPROVED", createdAt: new Date(), detail: { startTime: "10:00", endTime: "14:00" } }]
+    expect(resolveScheduleForDate({ date: THU, user: part, setting, isHoliday: false, requests })).toEqual({ start: "10:00", end: "14:00" })
+    expect(resolveScheduleForDate({ date: THU, user: part, setting, isHoliday: false, isHolidayWork: true, requests })).toEqual({ start: "10:00", end: "14:00" })
+  })
+  it("申請なしの木曜 → 本人の定時・注意なし", () => {
+    expect(resolveScheduleForDate({ date: THU, user: part, setting, isHoliday: false, requests: [] })).toEqual({ start: "09:00", end: "15:00" })
+    expect(needsHolidayWorkNotice({
+      isRestDay: isRestDay(THU, part, false), hasPunch: true, isHolidayWork: false, hasHolidayWorkRequest: false,
+    })).toBe(false)
   })
 })

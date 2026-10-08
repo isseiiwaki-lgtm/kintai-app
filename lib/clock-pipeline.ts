@@ -323,6 +323,20 @@ export function isRestDay(
 }
 
 /**
+ * 休日出勤申請を出せる日か。休日カレンダーの休日、または本人の所定出勤曜日でない日（パートの休みの曜日・土日を含む）。
+ * isRestDay と違い、パートの所定でない曜日も対象にする（申請が無ければ通常の労働日、承認されれば休日出勤）
+ */
+export function isHolidayWorkEligibleDate(
+  date: Date,
+  user: { workSun: boolean; workMon: boolean; workTue: boolean; workWed: boolean; workThu: boolean; workFri: boolean; workSat: boolean },
+  isHoliday: boolean,
+): boolean {
+  if (isHoliday) return true
+  const flags = [user.workSun, user.workMon, user.workTue, user.workWed, user.workThu, user.workFri, user.workSat]
+  return !flags[date.getUTCDay()]
+}
+
+/**
  * 段0（呼び出し側の入口）：ユーザー・会社設定・休日カレンダー・その日の申請から、その日の定時を出す。
  * パイプラインの計算し直し（clock-pipeline-db）と、画面・Excel の保存値が無いときの計算が同じ定時を使うための共通関数。
  * requests はその日の申請（承認済み以外は無視する）。
