@@ -20,6 +20,7 @@ const recs = () => store.recs as Rec[]
 
 vi.mock("@/auth", () => ({ auth: async () => ({ user: { id: "admin1", role: "ADMIN" } }) }))
 vi.mock("next/cache", () => ({ revalidatePath: () => {} }))
+vi.mock("next/navigation", () => ({ redirect: () => { throw new Error("REDIRECT") } }))
 vi.mock("@/lib/clock-pipeline-db", async (orig) => ({
   ...(await orig<typeof import("../lib/clock-pipeline-db")>()),
   recomputeDay: async () => {},
@@ -46,7 +47,9 @@ vi.mock("@/lib/prisma", () => {
           const r = (store.reqs as Req[]).find((x) => x.id === a.where.id)
           return r ? { ...r, approvals: [], user: store.user } : null
         },
-        findMany: async () => [],
+        findMany: async (a: { where: { userId: string; targetDate: Date; type: string; status: { in: string[] }; id?: { not: string } } }) =>
+          (store.reqs as Req[]).filter((r) => r.userId === a.where.userId && r.targetDate.getTime() === a.where.targetDate.getTime() && r.type === a.where.type && a.where.status.in.includes(r.status) && r.id !== a.where.id?.not),
+        create: async (a: { data: Partial<Req> }) => { (store.reqs as Req[]).push({ id: `N${store.reqs.length + 1}`, createdAt: new Date(), reason: null, ...a.data } as Req) },
         update: async (a: { where: { id: string }; data: Partial<Req> }) => { Object.assign((store.reqs as Req[]).find((r) => r.id === a.where.id)!, a.data) },
         delete: async (a: { where: { id: string } }) => { store.reqs = (store.reqs as Req[]).filter((r) => r.id !== a.where.id) },
         count: async () => 0,
@@ -59,7 +62,8 @@ vi.mock("@/lib/prisma", () => {
   }
 })
 
-import { actionApproveRequest, actionDeleteRequest, actionUpdateRequest } from "../app/(app)/admin/requests/actions"
+import { actionCreateRequest } from "../app/(app)/requests/actions"
+import { actionApproveRequest,actionDeleteRequest, actionUpdateRequest } from "../app/(app)/admin/requests/actions"
 
 const DAY1 = new Date(Date.UTC(2026, 9, 5))
 const DAY2 = new Date(Date.UTC(2026, 9, 6))
@@ -144,6 +148,46 @@ describe("修正：承認済みの有給", () => {
     addLeave("APPROVED", "full"); setRec(DAY1, 420)
     expect((await actionUpdateRequest("L1", form({ halfDay: "am" }))).ok).toBe(false)
     expect(rec(DAY1)?.paidLeaveMinutes).toBe(420)
+  })
+})
+
+describe("有給は 1 日 1 件まで（審査中・承認済み）", () => {
+  const MSG = "その日はすでに有給の申請があります。1日休む場合は全日で申請してください"
+  const other = (id: string, status: string, date: Date, halfDay = "am") =>
+    reqs().push({ id, userId: "admin1", type: "LEAVE", status, targetDate: date, createdAt: new Date(), detail: { leaveType: "paid", halfDay, workDate: "" }, reason: null })
+  // 申請者は auth モックのユーザー（admin1）
+  const create = async (over: Record<string, string> = {}) => {
+    try { return (await actionCreateRequest(form(over))) ?? { ok: true } } catch (e) { if ((e as Error).message === "REDIRECT") return { ok: true }; throw e }
+  }
+
+  it("作成：同じ日に審査中・承認済みの有給があれば拒否", async () => {
+    other("A", "PENDING", DAY1)
+    expect(await create()).toEqual({ ok: false, error: MSG })
+    reqs().length = 0; other("A", "APPROVED", DAY1)
+    expect(await create()).toEqual({ ok: false, error: MSG })
+  })
+  it("作成：却下済みは数えない・別の日は可（午後休を別の日に 2 件）", async () => {
+    other("A", "REJECTED", DAY1)
+    expect(await create()).toEqual({ ok: true })
+    other("B", "PENDING", DAY2, "pm")
+    expect(await create({ targetDate: "2026-10-07" })).toEqual({ ok: true })
+  })
+  it("作成：有給以外の休暇は数えない", async () => {
+    reqs().push({ id: "S", userId: "admin1", type: "LEAVE", status: "APPROVED", targetDate: DAY1, createdAt: new Date(), detail: { leaveType: "special", halfDay: "full" }, reason: null })
+    expect(await create()).toEqual({ ok: true })
+  })
+  it("修正：他の有給がある日へ移す・その日の有給へ変えるのは拒否（自分自身は除く）", async () => {
+    other("A", "APPROVED", DAY1, "am")
+    reqs().push({ id: "L2", userId: "admin1", type: "LEAVE", status: "APPROVED", targetDate: DAY2, createdAt: new Date(), detail: { leaveType: "paid", halfDay: "pm", workDate: "" }, reason: null })
+    expect(await actionUpdateRequest("L2", form({ targetDate: "2026-10-05" }))).toEqual({ ok: false, error: MSG })
+    // 同じ日のまま区分だけ直すのは自分自身を除くので通る
+    expect(await actionUpdateRequest("L2", form({ targetDate: "2026-10-06", halfDay: "am" }))).toEqual({ ok: true })
+  })
+  it("承認：同じ日にほかの有給があれば拒否（通常承認の安全網）", async () => {
+    other("A", "APPROVED", DAY1, "am")
+    reqs().push({ id: "L3", userId: "admin1", type: "LEAVE", status: "PENDING", targetDate: DAY1, createdAt: new Date(), detail: { leaveType: "paid", halfDay: "pm", workDate: "" }, reason: null })
+    expect(await actionApproveRequest("L3")).toEqual({ ok: false, error: MSG })
+    expect(reqs().find((r) => r.id === "L3")?.status).toBe("PENDING")
   })
 })
 

@@ -241,6 +241,20 @@ export async function recomputeDay(userId: string, date: Date, opts: RecomputeOp
   await recomputeRecords(userId, [rec], opts)
 }
 
+export const PAID_LEAVE_DUPLICATE_MESSAGE = "その日はすでに有給の申請があります。1日休む場合は全日で申請してください"
+
+/**
+ * 有給（LEAVE の paid。全休・半休とも）は 1 人 1 日 1 件まで。審査中・承認済みの申請が他にあればエラーメッセージ。
+ * 却下・削除済みは数えない。excludeId は修正・承認で自分自身を除くために使う
+ */
+export async function paidLeaveDuplicateError(userId: string, date: Date, excludeId?: string): Promise<string | null> {
+  const list = await prisma.request.findMany({
+    where: { userId, targetDate: date, type: "LEAVE", status: { in: ["PENDING", "APPROVED"] }, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    select: { detail: true },
+  })
+  return list.some((r) => (r.detail as { leaveType?: string } | null)?.leaveType === "paid") ? PAID_LEAVE_DUPLICATE_MESSAGE : null
+}
+
 /**
  * 休日出勤申請の対象日が休日か（休日カレンダー・本人の休みの曜日）をサーバーで確かめる。休日でなければエラーメッセージ。
  * 振替で労働日になった休日の除外は、振替の記録がまだ無いので見ていない（isRestDay の isSubstituteWorkday）。

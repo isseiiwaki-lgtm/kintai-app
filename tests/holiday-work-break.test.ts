@@ -139,7 +139,7 @@ describe("申請の作成：振休申請の廃止・休日出勤の休憩（必�
     for (const [k, v] of Object.entries(o)) fd.set(k, v)
     return fd
   }
-  beforeEach(() => { vi.clearAllMocks() })
+  beforeEach(() => { vi.clearAllMocks(); mocks.requestFindMany.mockResolvedValue([]) })
 
   it("LEAVE の substitute は新規に作れない（休日出勤申請を案内）。有給は作れる", async () => {
     const res = await actionCreateRequest(form({ type: "LEAVE", leaveType: "substitute", targetDate: "2026-10-14", reason: "", workDate: "2026-10-10" }))

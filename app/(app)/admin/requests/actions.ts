@@ -4,7 +4,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
 import { resolveEarlyLeaveBreakAnswer, breakAnswerMinutes, formatHHMMfromDate, parseBreakRequestMinutes } from "@/lib/attendance"
-import { holidayWorkDateError, recomputeDay } from "@/lib/clock-pipeline-db"
+import { holidayWorkDateError, paidLeaveDuplicateError, recomputeDay } from "@/lib/clock-pipeline-db"
 import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
 import { canTakeHalfDay, paidLeaveMinutesFor, findCorrectionLog, planFieldRevert, planInputRevert } from "@/lib/clock-pipeline"
 import { resolveRestKind, validateHolidayWorkTimes, validateRestDate } from "@/lib/holiday-work"
@@ -346,6 +346,12 @@ async function clearPaidLeaveMinutes(userId: string, date: Date) {
 }
 
 /** 半休を取れない人（フルタイムパートでないパート）の半休の承認は拒否する */
+/** 承認時の安全網：同じ日に他の有給（審査中・承認済み）があれば拒否する */
+async function paidLeaveApprovalError(req: { id: string; userId: string; targetDate: Date; type: string; detail?: unknown }): Promise<string | null> {
+  if (req.type !== "LEAVE" || (req.detail as { leaveType?: string } | null)?.leaveType !== "paid") return null
+  return paidLeaveDuplicateError(req.userId, req.targetDate, req.id)
+}
+
 function halfDayApprovalError(req: { type: string; detail?: unknown; user: { employmentType?: string | null; isFullTimePart?: boolean | null } }): string | null {
   const d = req.detail as { leaveType?: string; halfDay?: string } | null
   if (req.type === "LEAVE" && (d?.halfDay === "am" || d?.halfDay === "pm") && !canTakeHalfDay(req.user)) {
@@ -496,7 +502,7 @@ export async function actionApproveRequest(id: string): Promise<ActionResult> {
 
   const req = await findRequest(id)
   if (!req || req.status !== "PENDING") return { ok: true }
-  const locked = (await lockedCorrectionError(req)) ?? (await holidayWorkApprovalError(req)) ?? halfDayApprovalError(req)
+  const locked = (await lockedCorrectionError(req)) ?? (await holidayWorkApprovalError(req)) ?? halfDayApprovalError(req) ?? (await paidLeaveApprovalError(req))
   if (locked) return { ok: false, error: locked }
 
   const route = await findRoute(req.user.department)
@@ -540,7 +546,7 @@ export async function actionForceApproveRequest(id: string): Promise<ActionResul
 
   const req = await findRequest(id)
   if (!req || req.status !== "PENDING") return { ok: true }
-  const locked = (await lockedCorrectionError(req)) ?? (await holidayWorkApprovalError(req)) ?? halfDayApprovalError(req)
+  const locked = (await lockedCorrectionError(req)) ?? (await holidayWorkApprovalError(req)) ?? halfDayApprovalError(req) ?? (await paidLeaveApprovalError(req))
   if (locked) return { ok: false, error: locked }
 
   const route = await findRoute(req.user.department)
@@ -749,6 +755,12 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
   const paidChanged = !!before && (beforePaid || afterPaid) && (
     !beforePaid || !afterPaid || before.targetDate.getTime() !== newTargetDate.getTime() || (beforeDetail.halfDay ?? "full") !== (detail.halfDay ?? "full")
   )
+  // 有給は 1 日 1 件まで：日付・種別を直して有給になる（または別の日へ移る）ときは、その日の他の有給（自分以外）を見る
+  if (before && type === "LEAVE" && detail.leaveType === "paid" &&
+      !(before.type === "LEAVE" && beforeDetail.leaveType === "paid" && before.targetDate.getTime() === newTargetDate.getTime())) {
+    const dupErr = await paidLeaveDuplicateError(before.userId, newTargetDate, id)
+    if (dupErr) return { ok: false, error: dupErr }
+  }
   if (before && paidChanged) {
     if ((await isLockedDay(before.userId, before.targetDate)) || (await isLockedDay(before.userId, newTargetDate))) {
       return { ok: false, error: "締め済みの日の有給申請は修正できません（締め解除してから修正してください）" }
