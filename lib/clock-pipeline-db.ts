@@ -16,6 +16,7 @@ import { calcLegacyScheduledMinutes, calcWorkingMinutes } from "@/lib/attendance
 import {
   computeClockPipeline,
   isRestDay,
+  isHolidayWorkEligibleDate,
   pickHalfDay,
   resolveBreakMinutes,
   resolveInputTime,
@@ -254,7 +255,8 @@ export async function holidayWorkDateError(userId: string, date: Date): Promise<
     prisma.holiday.findUnique({ where: { date }, select: { id: true } }),
   ])
   if (!user) return "対象ユーザーが見つかりません"
-  return isRestDay(date, user, !!holiday)
+  // パートの所定でない曜日も申請できる（isRestDay はパートの休みの曜日を休日にしないので使わない）
+  return isHolidayWorkEligibleDate(date, user, !!holiday)
     ? null
     : "休日出勤申請は休日（休日カレンダー・本人の休みの曜日）の日だけ出せます。対象日を確かめてください"
 }
