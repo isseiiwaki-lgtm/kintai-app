@@ -36,7 +36,7 @@ export async function shouldShowOvertimeNotice(userId: string, today: Date): Pro
     prisma.user.findUnique({
       where: { id: userId },
       select: {
-        workStartTime: true, workEndTime: true, employmentType: true, breakMinutes: true,
+        workStartTime: true, workEndTime: true, employmentType: true, isFullTimePart: true, breakMinutes: true,
         workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       },
     }),
@@ -86,7 +86,7 @@ export async function loadDayNotices(userId: string, today: Date): Promise<DayNo
     prisma.user.findUnique({
       where: { id: userId },
       select: {
-        employmentType: true, breakMinutes: true, workStartTime: true, workEndTime: true,
+        employmentType: true, isFullTimePart: true, breakMinutes: true, workStartTime: true, workEndTime: true,
         workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       },
     }),

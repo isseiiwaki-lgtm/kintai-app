@@ -60,7 +60,7 @@ export default async function UserApprovalPage({
       where: { id: userId },
       select: {
         id: true, name: true, email: true, department: true,
-        employmentType: true, workStartTime: true, workEndTime: true, breakMinutes: true,
+        employmentType: true, isFullTimePart: true, workStartTime: true, workEndTime: true, breakMinutes: true,
         workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       },
     }),

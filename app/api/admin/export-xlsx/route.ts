@@ -8,7 +8,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { resolveDayMetrics, storedBreakMinutes } from "@/lib/attendance"
 import { buildRestDayLabels, fmtRestDate, restDateMonthPrefixes } from "@/lib/holiday-work"
-import { legacyOvertimeInput, pickHalfDay, isRestDay, pickHolidayWorkRequest, resolveBreakMinutes, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
+import { legacyOvertimeInput, pickHalfDay, paidLeaveDays as paidLeaveDaysOf, isRestDay, pickHolidayWorkRequest, resolveBreakMinutes, resolveScheduleForDate, resolveSwitches } from "@/lib/clock-pipeline"
 import { getClosingPeriod, getDefaultClosingMonth, listClosingPeriodDates } from "@/lib/closing"
 import { fmtDateWithWeekday, fmtWorkRange, fmtRawPunch, fmtChangedPair, fmtLateEarly, effectiveChangedFields } from "@/lib/export-format"
 import ExcelJS from "exceljs"
@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
     orderBy: { employeeCode: "asc" },
     select: {
       id: true, name: true, email: true,
-      department: true, employeeCode: true, employmentType: true, salaryCode: true,
+      department: true, employeeCode: true, employmentType: true, isFullTimePart: true, salaryCode: true,
       workStartTime: true, workEndTime: true, breakMinutes: true,
       workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       attendanceRecords: {
@@ -154,8 +154,7 @@ export async function GET(req: NextRequest) {
       if (r.type !== "LEAVE") continue
       const det = r.detail as Record<string, unknown> | null
       if (det?.leaveType !== "paid") continue
-      const half = det?.halfDay === "am" || det?.halfDay === "pm"
-      paidDaysTotal += half ? 0.5 : 1
+      paidDaysTotal += paidLeaveDaysOf(det)
     }
     const paidMinutesTotal = user.attendanceRecords.reduce((sum, r) => sum + (r.paidLeaveMinutes ?? 0), 0)
 
@@ -294,7 +293,7 @@ export async function GET(req: NextRequest) {
         const d = leave.detail as Record<string, unknown>
         if (d?.leaveType === "paid") {
           // "full" も truthy のため厳密比較必須（半日=am/pm のみ 0.5）
-          paidLeaveDays = d?.halfDay === "am" || d?.halfDay === "pm" ? "0.5" : "1"
+          paidLeaveDays = String(paidLeaveDaysOf(d))
         } else if (d?.leaveType === "special") {
           if (d?.isPaid !== false) specialPaid = "1"
           else specialUnpaid = "1"

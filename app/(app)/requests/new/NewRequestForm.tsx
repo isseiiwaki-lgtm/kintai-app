@@ -69,6 +69,7 @@ export function NewRequestForm({
   defaultEndTime,
   weekStartDay,
   isPartTimer,
+  canHalfDay,
   breakSetting,
 }: {
   /** 休日出勤申請の予定時刻の初期値（本人の所定の定時。未設定なら空） */
@@ -78,6 +79,8 @@ export function NewRequestForm({
   weekStartDay: number
   /** パートは休憩ボタンがあるので、早退申請で休憩を聞かない */
   isPartTimer: boolean
+  /** 半休を取れる人（正社員・フルタイムパート）。それ以外は有給の区分を出さない */
+  canHalfDay: boolean
   /** 会社設定の休憩時間控除ルール（休日出勤の休憩の初期値に使う）。無ければ法定休憩 */
   breakSetting: { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number } | null
 }) {
@@ -325,7 +328,7 @@ export function NewRequestForm({
         )}
 
         {/* 有給: 区分 */}
-        {type === "LEAVE_PAID" && (
+        {type === "LEAVE_PAID" && canHalfDay && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">区分</label>
             <select name="halfDay" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">

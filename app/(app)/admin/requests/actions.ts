@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache"
 import { resolveEarlyLeaveBreakAnswer, breakAnswerMinutes, formatHHMMfromDate, parseBreakRequestMinutes } from "@/lib/attendance"
 import { holidayWorkDateError, recomputeDay } from "@/lib/clock-pipeline-db"
 import { getCurrentStep, isFinalStep, isStepApprover } from "@/lib/approval"
-import { scheduledMinutesForRecord, findCorrectionLog, planFieldRevert, planInputRevert } from "@/lib/clock-pipeline"
+import { canTakeHalfDay, paidLeaveMinutesFor, findCorrectionLog, planFieldRevert, planInputRevert } from "@/lib/clock-pipeline"
 import { resolveRestKind, validateHolidayWorkTimes, validateRestDate } from "@/lib/holiday-work"
 import { restDateTakenError } from "@/lib/holiday-work-db"
 
@@ -304,7 +304,7 @@ async function checkAdmin() {
 function findRequest(id: string) {
   return prisma.request.findUnique({
     where: { id },
-    include: { user: { select: { workStartTime: true, workEndTime: true, employmentType: true, breakMinutes: true, department: true } } },
+    include: { user: { select: { workStartTime: true, workEndTime: true, employmentType: true, isFullTimePart: true, breakMinutes: true, department: true } } },
   })
 }
 
@@ -370,7 +370,7 @@ async function applyRequestEffects(
     if (minutes !== null) await applyApprovedBreak(req, minutes)
   }
 
-  // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存（本人所定時間ベース。半休は所定時間の半分を四捨五入）
+  // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存（本人所定時間ベース。半休はその人の実際の半分）
   if (req.type === "LEAVE" && detail?.leaveType === "paid") {
     const setting = await prisma.setting.findUnique({ where: { id: 1 } })
     // 承認日の記録の⑤スナップショットに従う（記録が無い日は現在の設定）
@@ -378,9 +378,9 @@ async function applyRequestEffects(
       where: { userId_date: { userId: req.userId, date: req.targetDate } },
       select: { switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true, switchNewCalc: true },
     })
-    const scheduledMins = scheduledMinutesForRecord(req.user, setting, existingRec)
     const halfDay = detail?.halfDay
-    const paidMins = halfDay === "am" || halfDay === "pm" ? Math.round(scheduledMins / 2) : scheduledMins
+    // 半休は所定の半分ではなく、その人の実際の半分（午前休＝始業〜昼休憩の開始、午後休＝昼休憩の終わり〜終業）
+    const paidMins = paidLeaveMinutesFor({ user: req.user, setting, saved: existingRec, halfDay: halfDay === "am" || halfDay === "pm" ? halfDay : null })
     await prisma.attendanceRecord.upsert({
       where:  { userId_date: { userId: req.userId, date: req.targetDate } },
       update: { paidLeaveMinutes: paidMins },
@@ -681,6 +681,11 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
         halfDay:   (formData.get("halfDay")   as string) || "full",
         workDate:  (formData.get("workDate")  as string) || "",
       }
+      // 半休は正社員とフルタイムパートだけ（それ以外のパートは受け付けない）
+      if (before && (detail.halfDay === "am" || detail.halfDay === "pm")) {
+        const owner = await prisma.user.findUnique({ where: { id: before.userId }, select: { employmentType: true, isFullTimePart: true } })
+        if (!canTakeHalfDay(owner)) return { ok: false, error: "半休はフルタイムパート・正社員だけが取れます" }
+      }
       break
   }
 
@@ -730,6 +735,25 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
   // 承認済みの残業・早出・休暇（半休）申請の時刻・日付・種別を直したら、入力が変わるので記録を打刻パイプラインで計算し直す
   const affects = (t: string | undefined) => t === "OVERTIME" || t === "LEAVE"
   if (before?.status === "APPROVED" && (affects(before.type) || affects(type))) {
+    // 承認済みの有給の区分（全休↔半休）・日付を直したら、記録に保存した有給の分数も入れ直す
+    if (type === "LEAVE" && detail.leaveType === "paid") {
+      const owner = await prisma.user.findUnique({
+        where: { id: before.userId },
+        select: { workStartTime: true, workEndTime: true, employmentType: true, breakMinutes: true },
+      })
+      const setting = await prisma.setting.findUnique({ where: { id: 1 } })
+      const newDate = new Date(targetDate)
+      const rec = await prisma.attendanceRecord.findUnique({
+        where: { userId_date: { userId: before.userId, date: newDate } },
+        select: { switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true, switchNewCalc: true },
+      })
+      const paidMins = paidLeaveMinutesFor({ user: owner, setting, saved: rec, halfDay: detail.halfDay === "am" || detail.halfDay === "pm" ? detail.halfDay : null })
+      await prisma.attendanceRecord.upsert({
+        where:  { userId_date: { userId: before.userId, date: newDate } },
+        update: { paidLeaveMinutes: paidMins },
+        create: { userId: before.userId, date: newDate, paidLeaveMinutes: paidMins },
+      })
+    }
     await recomputeDay(before.userId, before.targetDate)
     const newDate = new Date(targetDate)
     if (newDate.getTime() !== before.targetDate.getTime()) {

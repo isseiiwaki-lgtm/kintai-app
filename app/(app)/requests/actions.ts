@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 import { parseBreakRequestMinutes } from "@/lib/attendance"
 import { holidayWorkDateError } from "@/lib/clock-pipeline-db"
+import { canTakeHalfDay } from "@/lib/clock-pipeline"
 import { resolveRestKind, validateHolidayWorkTimes, validateRestDate } from "@/lib/holiday-work"
 import { restDateTakenError } from "@/lib/holiday-work-db"
 
@@ -101,6 +102,11 @@ export async function actionCreateRequest(formData: FormData): Promise<CreateReq
         leaveType: formData.get("leaveType") as string,
         halfDay:   (formData.get("halfDay") as string) || "full",
         workDate:  (formData.get("workDate") as string) || "",
+      }
+      // 半休は正社員とフルタイムパートだけ（それ以外のパートは受け付けない）
+      if (detail.halfDay === "am" || detail.halfDay === "pm") {
+        const me = await prisma.user.findUnique({ where: { id: userId }, select: { employmentType: true, isFullTimePart: true } })
+        if (!canTakeHalfDay(me)) return { ok: false, error: "半休はフルタイムパート・正社員だけが申請できます" }
       }
       break
     case "CORRECTION": {

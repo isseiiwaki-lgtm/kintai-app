@@ -109,6 +109,15 @@ export default function NewUserPage() {
             <p className="mt-1 text-xs text-gray-400">所定の勤務時間（拘束時間 − 所定休憩）と、正社員の休憩の規定値に使います。パートの休憩は休憩ボタン・休憩申請で記録します。</p>
           </div>
 
+          {/* フルタイムパート（パートのみ有効） */}
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" name="isFullTimePart" className="w-4 h-4 accent-blue-600" />
+              <span className="text-xs font-medium text-gray-600">フルタイムパート</span>
+            </label>
+            <p className="mt-1 text-xs text-gray-400">半日有給を取れるパート（フルタイムと変わらない時間働く人）。雇用形態がパートのときだけ有効です。</p>
+          </div>
+
           {/* 所定出勤曜日 */}
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-2">所定出勤曜日</label>

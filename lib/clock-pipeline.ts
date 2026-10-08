@@ -265,17 +265,79 @@ export function pickHolidayWorkRequest<T extends { type: string; status: string;
   return list[0] ?? null
 }
 
+/** 半休を取れる人か：正社員、またはフルタイムパート（isFullTimePart）。半休の可否はここ一か所で決める */
+export function canTakeHalfDay(u: { employmentType?: string | null; isFullTimePart?: boolean | null } | null | undefined): boolean {
+  return u?.employmentType === "full" || (u?.employmentType === "part" && !!u?.isFullTimePart)
+}
+
+/**
+ * 半休の有給の分数。所定の半分ではなく、その人の実際の半分：
+ * 午前休 ＝ 始業〜昼休憩の開始、午後休 ＝ 昼休憩の終わり（開始＋本人の休憩の長さ）〜終業。
+ * 例：8:30〜17:30・休憩60・昼12:00 → 午前休 210、午後休 270。定時が不明なら null（呼び出し側で従来の値にする）
+ */
+export function halfDayPaidMinutes(p: {
+  halfDay: "am" | "pm"
+  workStartTime: string | null | undefined
+  workEndTime: string | null | undefined
+  breakMinutes: number
+  lunchStartTime: string | null | undefined
+}): number | null {
+  const s = parseHHMM(p.workStartTime)
+  const e = parseHHMM(p.workEndTime)
+  if (s === null || e === null) return null
+  const lunchStart = parseHHMM(p.lunchStartTime) ?? 12 * 60
+  const lunchEnd = lunchStart + p.breakMinutes
+  return Math.max(0, p.halfDay === "am" ? lunchStart - s : e - lunchEnd)
+}
+
+/** 有給 1 件の日数：全休 1、半休（am/pm）0.5。分数から求めず、申請の区分から決める（Excel の日数列・合計が使う） */
+export function paidLeaveDays(detail: unknown): number {
+  const h = (detail as { halfDay?: string } | null | undefined)?.halfDay
+  return h === "am" || h === "pm" ? 0.5 : 1
+}
+
+/**
+ * 有給承認で記録に保存する分数（paidLeaveMinutes）。全休 ＝ 記録の⑤に従う所定勤務時間。
+ * 半休 ＝ その人の実際の半分（halfDayPaidMinutes）。昼休憩の長さは⑤ON＝本人の所定休憩・会社設定、⑤OFF＝法定休憩
+ * 定時が不明なときだけ従来どおり所定の半分
+ */
+export function paidLeaveMinutesFor(p: {
+  user: { workStartTime?: string | null; workEndTime?: string | null; employmentType?: string | null; breakMinutes?: number | null } | null | undefined
+  setting: (SwitchSetting & { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number; lunchStartTime?: string | null }) | null | undefined
+  saved: SavedSwitches | null | undefined
+  halfDay: "am" | "pm" | null
+}): number {
+  const full = scheduledMinutesForRecord(p.user, p.setting, p.saved)
+  if (!p.halfDay) return full
+  const s = parseHHMM(p.user?.workStartTime)
+  const e = parseHHMM(p.user?.workEndTime)
+  const brk = resolveSwitches(p.saved, p.setting).newCalc
+    ? calcDefaultBreakMinutes(
+        { userBreakMinutes: p.user?.breakMinutes, workStartTime: p.user?.workStartTime ?? null, workEndTime: p.user?.workEndTime ?? null },
+        p.setting,
+      )
+    : s !== null && e !== null && e > s ? calcLegalBreak(e - s) : 0
+  const half = halfDayPaidMinutes({
+    halfDay: p.halfDay,
+    workStartTime: p.user?.workStartTime, workEndTime: p.user?.workEndTime,
+    breakMinutes: brk, lunchStartTime: p.setting?.lunchStartTime,
+  })
+  return half ?? Math.round(full / 2)
+}
+
 export type ScheduleParams = {
   workStartTime:  string | null
   workEndTime:    string | null
   employmentType: string | null | undefined
+  /** フルタイムパート（半休を取れるパート） */
+  isFullTimePart?: boolean | null
   /** 本人の休憩の長さ（分）。昼休憩の終わり＝開始＋これ */
   breakMinutes:   number
   /** 昼休憩の開始時刻（Setting.lunchStartTime） */
   lunchStartTime: string | null | undefined
   /** 休日（休日カレンダー・本人の休みの曜日）で、労働日になる振替でない日 */
   isRestDay:      boolean
-  /** 承認済み LEAVE の halfDay（"am"/"pm"）。無ければ null。パートには半休が無いので無視する */
+  /** 承認済み LEAVE の halfDay（"am"/"pm"）。無ければ null。半休を取れない人（canTakeHalfDay）は無視する */
   halfDay:        "am" | "pm" | null
   /**
    * 承認済みの休日出勤申請の「開始〜終了」。定時の代わりになる（pickHolidayWorkSchedule）
@@ -297,7 +359,7 @@ export function resolveDaySchedule(p: ScheduleParams): DaySchedule {
   const s = parseHHMM(p.workStartTime)
   const e = parseHHMM(p.workEndTime)
   if (s === null || e === null) return null
-  if (p.employmentType === "full" && p.halfDay) {
+  if (canTakeHalfDay(p) && p.halfDay) {
     const lunchStart = parseHHMM(p.lunchStartTime) ?? 12 * 60
     const lunchEnd = lunchStart + p.breakMinutes
     if (p.halfDay === "am") return { start: formatHHMM(lunchEnd), end: formatHHMM(e) }
@@ -344,7 +406,7 @@ export function isHolidayWorkEligibleDate(
 export function resolveScheduleForDate(p: {
   date: Date
   user: {
-    workStartTime: string | null; workEndTime: string | null; employmentType: string | null | undefined; breakMinutes: number | null | undefined
+    workStartTime: string | null; workEndTime: string | null; employmentType: string | null | undefined; isFullTimePart?: boolean | null; breakMinutes: number | null | undefined
     workSun: boolean; workMon: boolean; workTue: boolean; workWed: boolean; workThu: boolean; workFri: boolean; workSat: boolean
   }
   setting: {
@@ -364,6 +426,7 @@ export function resolveScheduleForDate(p: {
     workStartTime: p.user.workStartTime,
     workEndTime: p.user.workEndTime,
     employmentType: p.user.employmentType,
+    isFullTimePart: p.user.isFullTimePart,
     breakMinutes,
     lunchStartTime: p.setting?.lunchStartTime,
     // 休日出勤の印がある日も定時なし。承認済みの休日出勤申請があれば、その開始〜終了が定時の代わりになる（holidayWork）

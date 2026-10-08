@@ -48,7 +48,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     where: { isActive: true, department: { notIn: ["管理者", "管理職"] } },
     orderBy: { employeeCode: "asc" },
     select: {
-      id: true, name: true, email: true, employmentType: true, department: true,
+      id: true, name: true, email: true, employmentType: true, isFullTimePart: true, department: true,
       workStartTime: true, workEndTime: true, breakMinutes: true,
       workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       attendanceRecords: {
