@@ -18,7 +18,8 @@ const DEFAULT_SETTING = {
   lunchStartTime:     "12:00",
 }
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  const { error } = await searchParams
   const session = await auth()
   if (session?.user?.role !== "ADMIN") redirect("/")
 
@@ -29,6 +30,12 @@ export default async function SettingsPage() {
   return (
     <div className="p-4 lg:p-6 max-w-lg">
       <h1 className="text-base font-semibold text-gray-900 mb-6">会社設定</h1>
+
+      {error && (
+        <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          保存できませんでした：{error}
+        </p>
+      )}
 
       <form action={actionSaveSetting} className="space-y-6">
 

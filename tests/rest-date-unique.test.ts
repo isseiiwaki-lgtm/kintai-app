@@ -23,7 +23,7 @@ vi.mock("@/lib/prisma", () => ({
     },
     approval: { create: async () => ({}), findMany: async () => [] },
     approvalRoute: { findMany: async () => [] },
-    user: { findUnique: async () => ({ employmentType: "part", workSun: false, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: false }) },
+    user: { findUnique: async () => ({ employmentType: "full", workSun: false, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: false }) },
     holiday: { findUnique: async () => null },
     setting: { findUnique: async () => null },
   },

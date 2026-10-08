@@ -69,6 +69,7 @@ export function NewRequestForm({
   defaultEndTime,
   weekStartDay,
   isPartTimer,
+  breakSetting,
 }: {
   /** 休日出勤申請の予定時刻の初期値（本人の所定の定時。未設定なら空） */
   defaultStartTime: string
@@ -77,6 +78,8 @@ export function NewRequestForm({
   weekStartDay: number
   /** パートは休憩ボタンがあるので、早退申請で休憩を聞かない */
   isPartTimer: boolean
+  /** 会社設定の休憩時間控除ルール（休日出勤の休憩の初期値に使う）。無ければ法定休憩 */
+  breakSetting: { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number } | null
 }) {
   const router       = useRouter()
   const searchParams = useSearchParams()
@@ -89,14 +92,14 @@ export function NewRequestForm({
   const [absenceKind, setAbsenceKind] = useState<"late" | "early">(searchParams.get("absenceType") === "early" ? "early" : "late")
   const [tookBreak, setTookBreak]     = useState<"" | "no" | "yes">("")
   const [breakMins, setBreakMins]     = useState("")
-  // 休日出勤申請：予定の開始・終了と休憩（分）。休憩の初期値は予定の長さから旧い法定休憩の規則で出す（本人が直したら追従しない）
+  // 休日出勤申請：予定の開始・終了と休憩（分）。休憩の初期値は予定の長さに会社設定の休憩ルールを当てて出す（本人が直したら追従しない）
   const [hwStart, setHwStart] = useState(defaultStartTime)
   const [hwEnd, setHwEnd]     = useState(defaultEndTime)
-  const [hwBreak, setHwBreak] = useState(String(defaultHolidayBreakMinutes(defaultStartTime, defaultEndTime)))
+  const [hwBreak, setHwBreak] = useState(String(defaultHolidayBreakMinutes(defaultStartTime, defaultEndTime, breakSetting)))
   const [hwBreakTouched, setHwBreakTouched] = useState(false)
   function changeHwTime(start: string, end: string) {
     setHwStart(start); setHwEnd(end)
-    if (!hwBreakTouched) setHwBreak(String(defaultHolidayBreakMinutes(start, end)))
+    if (!hwBreakTouched) setHwBreak(String(defaultHolidayBreakMinutes(start, end, breakSetting)))
   }
 
   // URL params からプリセット（/records の修正依頼リンク用）
@@ -408,7 +411,7 @@ export function NewRequestForm({
                 ))}
               </select>
               <p className="mt-1.5 text-xs text-gray-500">
-                予定の長さから目安（6時間超45分・8時間超60分）を入れています。休日出勤の休憩は、承認されたときに初めて勤務時間から引かれます。
+                予定の長さに会社の休憩ルールを当てた目安を入れています。休日出勤の休憩は、承認されたときに初めて勤務時間から引かれます。
               </p>
             </div>
             <div>

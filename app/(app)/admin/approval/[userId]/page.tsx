@@ -337,6 +337,8 @@ export default async function UserApprovalPage({
         isAdmin={role === "ADMIN"}
         openCount={openCount}
         approvedCount={approvedCount}
+        periodYear={year}
+        periodMonth={month}
       />
     </div>
   )

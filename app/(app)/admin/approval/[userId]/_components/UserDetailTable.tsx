@@ -53,7 +53,7 @@ function hasPunch(rec: Pick<Rec, "clockIn" | "clockOut" | "rawClockIn" | "rawClo
 }
 
 
-const selectClass = "border border-gray-200 rounded px-2 py-1 text-xs font-mono w-[72px] focus:outline-none focus:ring-1 focus:ring-blue-500"
+const selectClass = "border border-gray-200 rounded px-2 py-1 text-xs font-mono w-28 focus:outline-none focus:ring-1 focus:ring-blue-500"
 
 type Props = {
   records:     Rec[]
@@ -64,9 +64,12 @@ type Props = {
   isAdmin:     boolean
   openCount:     number
   approvedCount: number
+  /** 表示中の締め期間の年月（lib/closing の締め期間。「申請あり」リンクで申請の一覧を同じ期間で開く） */
+  periodYear:  number
+  periodMonth: number
 }
 
-export function UserDetailTable({ records, restOnlyRows = [], firstDayISO, lastDayISO, userId, isAdmin, openCount, approvedCount }: Props) {
+export function UserDetailTable({ records, restOnlyRows = [], firstDayISO, lastDayISO, userId, isAdmin, openCount, approvedCount, periodYear, periodMonth }: Props) {
   const [editRec, setEditRec]   = useState<Rec | null>(null)
   const [unrestricted, setUnrestricted] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -269,7 +272,7 @@ export function UserDetailTable({ records, restOnlyRows = [], firstDayISO, lastD
                   <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
                     {rec.requestId && (
                       <Link
-                        href={`/admin/requests?highlight=${rec.requestId}`}
+                        href={`/admin/requests?year=${periodYear}&month=${periodMonth}&highlight=${rec.requestId}`}
                         className="text-xs text-blue-500 hover:underline whitespace-nowrap"
                       >
                         申請あり
@@ -315,7 +318,7 @@ export function UserDetailTable({ records, restOnlyRows = [], firstDayISO, lastD
               })}
               <div key={`break-${editRec.id}`} className="flex items-center justify-between">
                 <label className="text-xs text-gray-600 w-20">休憩（分）</label>
-                <select name="breakMinutes" defaultValue={editRec.breakMinutes != null ? String(editRec.breakMinutes) : ""} className={selectClass}>
+                <select name="breakMinutes" defaultValue={editRec.breakMinutes != null ? String(editRec.breakMinutes) : ""} className={selectClass.replace("w-28", "w-48")}>
                   <option value="">変更なし</option>
                   {editRec.breakMinutes != null && <option value="unset">未設定に戻す（規定値）</option>}
                   {Array.from({ length: BREAK_REQUEST_MAX_MINUTES / BREAK_REQUEST_STEP_MINUTES + 1 }, (_, i) => i * BREAK_REQUEST_STEP_MINUTES).map((m) => (

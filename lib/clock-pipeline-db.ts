@@ -172,6 +172,7 @@ export function buildRecordUpdate(
     const breakMinutes = resolveBreakMinutes({
       savedBreakMinutes: rec.breakMinutes,
       breakStart: rec.breakStart, breakEnd: rec.breakEnd,
+      goOutAt: rec.goOutAt, returnAt: rec.returnAt,
       halfDay: pickHalfDay(dayRequests),
       employmentType: ctx.user.employmentType,
       userBreakMinutes: ctx.user.breakMinutes,
@@ -248,7 +249,7 @@ export async function holidayWorkDateError(userId: string, date: Date): Promise<
   const [user, holiday] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
-      select: { workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true },
+      select: { employmentType: true, workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true },
     }),
     prisma.holiday.findUnique({ where: { date }, select: { id: true } }),
   ])

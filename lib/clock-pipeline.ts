@@ -16,6 +16,7 @@ import {
   calcLegacyScheduledMinutes,
   calcMetrics,
   calcScheduledMinutes,
+  breakPunchMs,
   hhmmToUTCDate,
   isNormalOvertime,
   jstDayStartUTC,
@@ -195,6 +196,9 @@ export function resolveBreakMinutes(p: {
   savedBreakMinutes: number | null | undefined
   breakStart?: Date | null
   breakEnd?: Date | null
+  /** 外出。休憩打刻が外出と重なる分は二重に引かないために使う */
+  goOutAt?: Date | null
+  returnAt?: Date | null
   halfDay: "am" | "pm" | null
   employmentType: string | null | undefined
   userBreakMinutes: number | null | undefined
@@ -211,7 +215,8 @@ export function resolveBreakMinutes(p: {
 }): number {
   if (p.savedBreakMinutes != null) return p.savedBreakMinutes
   if (p.breakStart && p.breakEnd) {
-    return Math.max(0, Math.floor((p.breakEnd.getTime() - p.breakStart.getTime()) / 60000))
+    // 外出と重なる分は外出側で引くので、休憩は重ならない部分だけ（二重に引かない）
+    return Math.floor(breakPunchMs(p.breakStart, p.breakEnd, p.goOutAt, p.returnAt) / 60000)
   }
   if (p.employmentType === "part") return 0
   // ⑤OFF：旧方式（a1d25ca）。在席時間に法定休憩を当てる（定時・本人の所定休憩・会社設定は見ない）。半休の日も同じ
@@ -304,12 +309,15 @@ export function resolveDaySchedule(p: ScheduleParams): DaySchedule {
 /** 本人の休みの曜日（workSun〜workSat）と休日カレンダーから、その日が休日か。date は UTC 0時＝その日（JST の暦日） */
 export function isRestDay(
   date: Date,
-  user: { workSun: boolean; workMon: boolean; workTue: boolean; workWed: boolean; workThu: boolean; workFri: boolean; workSat: boolean },
+  user: { employmentType?: string | null; workSun: boolean; workMon: boolean; workTue: boolean; workWed: boolean; workThu: boolean; workFri: boolean; workSat: boolean },
   isHoliday: boolean,
   isSubstituteWorkday = false,
 ): boolean {
   if (isSubstituteWorkday) return false  // 振替で労働日になった休日は、通常の労働日（本人の定時）
   if (isHoliday) return true
+  // パートが所定出勤曜日でない平日に出る＝シフト交換。休日ではなく通常の労働日（本人の定時で遅刻・早退を出す）。
+  // 休日カレンダーの休み（祝日・会社の休み）は上の isHoliday で休日のまま
+  if (user.employmentType === "part") return false
   const flags = [user.workSun, user.workMon, user.workTue, user.workWed, user.workThu, user.workFri, user.workSat]
   return !flags[date.getUTCDay()]
 }

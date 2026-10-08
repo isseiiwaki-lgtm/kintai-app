@@ -4,7 +4,7 @@ import { RequestsTable } from "./_components/RequestsTable"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 import { getCurrentStep, isStepApprover, approvalProgress, type RouteStep } from "@/lib/approval"
 
-type SearchParams = Promise<{ year?: string; month?: string; sort?: string }>
+type SearchParams = Promise<{ year?: string; month?: string; sort?: string; highlight?: string }>
 
 export default async function AdminRequestsPage({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams
@@ -116,6 +116,7 @@ export default async function AdminRequestsPage({ searchParams }: { searchParams
         pending={pending}
         processed={processed}
         processedNav={{ year, month, prevLink, nextLink, sort, sortUserLink, sortDateLink }}
+        highlightId={params.highlight ?? null}
       />
     </div>
   )

@@ -11,7 +11,7 @@
  * 代休の残り時間は管理しない。代休は休日出勤申請1件にひも付く（restDate をその申請に持つ）
  */
 
-import { calcLegalBreak } from "@/config/attendance.config"
+import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, calcLegalBreak } from "@/config/attendance.config"
 
 export type RestKind = "furikyu" | "daikyu"
 
@@ -44,14 +44,24 @@ export function validateHolidayWorkTimes(startTime: string | undefined, endTime:
 }
 
 /**
- * 休日出勤申請フォームの「休憩（分）」の初期値の目安：予定の開始〜終了の長さに旧い法定休憩の規則を当てる（6時間超45分・8時間超60分）。
+ * 休日出勤申請フォームの「休憩（分）」の初期値の目安：予定の開始〜終了の長さに会社設定の休憩時間控除ルール
+ * （Setting の break1 系・break2 系。calcDefaultBreakMinutes と同じ「閾値を超えたら控除分」）を当てる。会社設定が無ければ法定休憩。
+ * 選択肢が15分刻みなので、設定の分数は15分単位に切り上げる（上限は休憩申請の最大）。
  * 開始・終了が不正なら 0。あくまで目安で、本人が15分刻みで直せる
  */
-export function defaultHolidayBreakMinutes(startTime: string | undefined, endTime: string | undefined): number {
+export function defaultHolidayBreakMinutes(
+  startTime: string | undefined,
+  endTime: string | undefined,
+  setting?: { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number } | null,
+): number {
   const s = toMinutes(startTime)
   const e = toMinutes(endTime)
   if (s === null || e === null || e <= s) return 0
-  return calcLegalBreak(e - s)
+  const span = e - s
+  if (!setting) return calcLegalBreak(span)
+  const raw = span > setting.break2Threshold ? setting.break2Minutes : span > setting.break1Threshold ? setting.break1Minutes : 0
+  const stepped = Math.ceil(raw / BREAK_REQUEST_STEP_MINUTES) * BREAK_REQUEST_STEP_MINUTES
+  return Math.min(BREAK_REQUEST_MAX_MINUTES, Math.max(0, stepped))
 }
 
 /** 休む日の検証（空欄は許可）。休日出勤の日と同じ日は不可。問題なければ null */
