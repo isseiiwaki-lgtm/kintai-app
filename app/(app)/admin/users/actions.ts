@@ -217,6 +217,8 @@ export async function actionUpdateUser(formData: FormData): Promise<{ error: str
   const workEndTime    = formData.get("workEndTime")    as string
   const breakInput     = formData.get("breakMinutes")   as string | null
   const isActive       = formData.get("isActive") === "true"
+  // フルタイムパート（半日有給を取れるパート）。パート以外では常に false
+  const isFullTimePart = employmentType === "part" && formData.get("isFullTimePart") === "on"
   const workSun        = formData.get("workSun")  === "on"
   const workMon        = formData.get("workMon")  === "on"
   const workTue        = formData.get("workTue")  === "on"
@@ -274,6 +276,7 @@ export async function actionUpdateUser(formData: FormData): Promise<{ error: str
       salaryCode:     salaryCode     || null,
       role:           role as "EMPLOYEE" | "APPROVER" | "ADMIN",
       employmentType,
+      isFullTimePart,
       department:     department     || null,
       workStartTime:  workStartTime  || null,
       workEndTime:    workEndTime    || null,
@@ -352,6 +355,7 @@ export async function actionCreateUser(formData: FormData): Promise<{ error: str
       name:           name           || null,
       role:           role as "EMPLOYEE" | "APPROVER" | "ADMIN",
       employmentType: employmentType || "full",
+      isFullTimePart: employmentType === "part" && formData.get("isFullTimePart") === "on",
       department:     department     || null,
       workStartTime:  workStartTime  || null,
       workEndTime:    workEndTime    || null,
@@ -369,7 +373,7 @@ export async function actionDuplicateUser(sourceId: string) {
   const src = await prisma.user.findUnique({
     where: { id: sourceId },
     select: {
-      role: true, employmentType: true, department: true, jobTitle: true,
+      role: true, employmentType: true, isFullTimePart: true, department: true, jobTitle: true,
       workStartTime: true, workEndTime: true, breakMinutes: true,
       workSun: true, workMon: true, workTue: true,
       workWed: true, workThu: true, workFri: true, workSat: true,
@@ -383,6 +387,7 @@ export async function actionDuplicateUser(sourceId: string) {
       email:          tempEmail,
       role:           src.role,
       employmentType: src.employmentType,
+      isFullTimePart: src.isFullTimePart,
       department:     src.department,
       jobTitle:       src.jobTitle,
       workStartTime:  src.workStartTime,

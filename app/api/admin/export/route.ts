@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
     where: { isActive: true },
     orderBy: { name: "asc" },
     select: {
-      id: true, name: true, email: true, employmentType: true, department: true,
+      id: true, name: true, email: true, employmentType: true, isFullTimePart: true, department: true,
       workStartTime: true, workEndTime: true, breakMinutes: true,
       workSun: true, workMon: true, workTue: true, workWed: true, workThu: true, workFri: true, workSat: true,
       attendanceRecords: {

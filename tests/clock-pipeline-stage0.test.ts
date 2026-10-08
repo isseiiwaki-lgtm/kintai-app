@@ -44,7 +44,7 @@ describe("段0：正社員の半休（昼休憩を除いた前半か後半）", 
     expect(resolveDaySchedule({ ...base, lunchStartTime: "12:30", halfDay: "pm" })).toEqual({ start: "09:00", end: "12:30" })
     expect(resolveDaySchedule({ ...base, lunchStartTime: "12:30", halfDay: "am" })).toEqual({ start: "13:30", end: "17:30" })
   })
-  it("パートには半休が無い（半休の指定は無視して通常の定時）", () => {
+  it("フルタイムパートでないパートには半休が無い（半休の指定は無視して通常の定時）", () => {
     expect(resolveDaySchedule({ ...base, employmentType: "part", halfDay: "am" })).toEqual({ start: "09:00", end: "17:30" })
   })
   it("午前半休の日：13:10 出勤 → 遅刻10分（定時 13:00）、9:00 の定時では遅刻にならない", () => {
