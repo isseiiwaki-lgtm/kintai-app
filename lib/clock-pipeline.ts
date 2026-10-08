@@ -298,7 +298,7 @@ export function paidLeaveDays(detail: unknown): number {
 
 /**
  * 有給承認で記録に保存する分数（paidLeaveMinutes）。全休 ＝ 記録の⑤に従う所定勤務時間。
- * 半休 ＝ その人の実際の半分（halfDayPaidMinutes）。昼休憩の長さは⑤ON＝本人の所定休憩・会社設定、⑤OFF＝法定休憩
+ * 半休 ＝ その人の実際の半分（halfDayPaidMinutes）。昼休憩の長さは段0と同じ（本人の所定休憩・会社設定。⑤ON/OFF 共通。全休の分数だけ⑤に従う）
  * 定時が不明なときだけ従来どおり所定の半分
  */
 export function paidLeaveMinutesFor(p: {
@@ -309,14 +309,11 @@ export function paidLeaveMinutesFor(p: {
 }): number {
   const full = scheduledMinutesForRecord(p.user, p.setting, p.saved)
   if (!p.halfDay) return full
-  const s = parseHHMM(p.user?.workStartTime)
-  const e = parseHHMM(p.user?.workEndTime)
-  const brk = resolveSwitches(p.saved, p.setting).newCalc
-    ? calcDefaultBreakMinutes(
-        { userBreakMinutes: p.user?.breakMinutes, workStartTime: p.user?.workStartTime ?? null, workEndTime: p.user?.workEndTime ?? null },
-        p.setting,
-      )
-    : s !== null && e !== null && e > s ? calcLegalBreak(e - s) : 0
+  // 昼休憩の長さは段0（resolveScheduleForDate）と同じ決め方（⑤ON/OFF 共通）。有給の半分と半休の定時の境目をそろえる
+  const brk = calcDefaultBreakMinutes(
+    { userBreakMinutes: p.user?.breakMinutes, workStartTime: p.user?.workStartTime ?? null, workEndTime: p.user?.workEndTime ?? null },
+    p.setting,
+  )
   const half = halfDayPaidMinutes({
     halfDay: p.halfDay,
     workStartTime: p.user?.workStartTime, workEndTime: p.user?.workEndTime,

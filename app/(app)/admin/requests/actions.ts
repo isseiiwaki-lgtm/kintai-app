@@ -322,6 +322,38 @@ function findRoute(department: string | null) {
  * 承認確定時の勤怠反映（最終ステップ承認時のみ呼ぶ）
  * 欠勤 → isAbsent / 有給 → paidLeaveMinutes / 打刻修正 → 対象フィールド更新 + ChangeLog
  */
+/** 有給の分数を記録に保存する（半休はその人の実際の半分）。記録が無ければ作る */
+async function writePaidLeaveMinutes(userId: string, date: Date, halfDay: "am" | "pm" | null) {
+  const [owner, setting, rec] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { workStartTime: true, workEndTime: true, employmentType: true, breakMinutes: true } }),
+    prisma.setting.findUnique({ where: { id: 1 } }),
+    prisma.attendanceRecord.findUnique({
+      where: { userId_date: { userId, date } },
+      select: { switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true, switchNewCalc: true },
+    }),
+  ])
+  const paidMins = paidLeaveMinutesFor({ user: owner, setting, saved: rec, halfDay })
+  await prisma.attendanceRecord.upsert({
+    where:  { userId_date: { userId, date } },
+    update: { paidLeaveMinutes: paidMins },
+    create: { userId, date, paidLeaveMinutes: paidMins },
+  })
+}
+
+/** その日の有給の分数を消す（申請の削除・日付や種別の変更で元の日に残さない）。記録が無ければ何もしない */
+async function clearPaidLeaveMinutes(userId: string, date: Date) {
+  await prisma.attendanceRecord.updateMany({ where: { userId, date }, data: { paidLeaveMinutes: null } })
+}
+
+/** 半休を取れない人（フルタイムパートでないパート）の半休の承認は拒否する */
+function halfDayApprovalError(req: { type: string; detail?: unknown; user: { employmentType?: string | null; isFullTimePart?: boolean | null } }): string | null {
+  const d = req.detail as { leaveType?: string; halfDay?: string } | null
+  if (req.type === "LEAVE" && (d?.halfDay === "am" || d?.halfDay === "pm") && !canTakeHalfDay(req.user)) {
+    return "半休はフルタイムパート・正社員だけが取れます（申請者の設定を確認してください）"
+  }
+  return null
+}
+
 async function applyRequestEffects(
   req: NonNullable<Awaited<ReturnType<typeof findRequest>>>,
   changedById: string,
@@ -372,20 +404,9 @@ async function applyRequestEffects(
 
   // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存（本人所定時間ベース。半休はその人の実際の半分）
   if (req.type === "LEAVE" && detail?.leaveType === "paid") {
-    const setting = await prisma.setting.findUnique({ where: { id: 1 } })
-    // 承認日の記録の⑤スナップショットに従う（記録が無い日は現在の設定）
-    const existingRec = await prisma.attendanceRecord.findUnique({
-      where: { userId_date: { userId: req.userId, date: req.targetDate } },
-      select: { switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true, switchNewCalc: true },
-    })
     const halfDay = detail?.halfDay
     // 半休は所定の半分ではなく、その人の実際の半分（午前休＝始業〜昼休憩の開始、午後休＝昼休憩の終わり〜終業）
-    const paidMins = paidLeaveMinutesFor({ user: req.user, setting, saved: existingRec, halfDay: halfDay === "am" || halfDay === "pm" ? halfDay : null })
-    await prisma.attendanceRecord.upsert({
-      where:  { userId_date: { userId: req.userId, date: req.targetDate } },
-      update: { paidLeaveMinutes: paidMins },
-      create: { userId: req.userId, date: req.targetDate, paidLeaveMinutes: paidMins },
-    })
+    await writePaidLeaveMinutes(req.userId, req.targetDate, halfDay === "am" || halfDay === "pm" ? halfDay : null)
     // 半休は段0の定時が変わる（正社員は昼休憩を除いた前半か後半）ので、打刻のある日は計算し直す
     if (halfDay === "am" || halfDay === "pm") await recomputeDay(req.userId, req.targetDate)
     revalidatePath("/records")
@@ -475,7 +496,7 @@ export async function actionApproveRequest(id: string): Promise<ActionResult> {
 
   const req = await findRequest(id)
   if (!req || req.status !== "PENDING") return { ok: true }
-  const locked = (await lockedCorrectionError(req)) ?? (await holidayWorkApprovalError(req))
+  const locked = (await lockedCorrectionError(req)) ?? (await holidayWorkApprovalError(req)) ?? halfDayApprovalError(req)
   if (locked) return { ok: false, error: locked }
 
   const route = await findRoute(req.user.department)
@@ -519,7 +540,7 @@ export async function actionForceApproveRequest(id: string): Promise<ActionResul
 
   const req = await findRequest(id)
   if (!req || req.status !== "PENDING") return { ok: true }
-  const locked = (await lockedCorrectionError(req)) ?? (await holidayWorkApprovalError(req))
+  const locked = (await lockedCorrectionError(req)) ?? (await holidayWorkApprovalError(req)) ?? halfDayApprovalError(req)
   if (locked) return { ok: false, error: locked }
 
   const route = await findRoute(req.user.department)
@@ -722,6 +743,18 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
     }
   }
 
+  // 承認済みの有給（LEAVE paid）の区分・日付・種別を直すと、記録の有給の分数を書き換えるので、締め済みの日（元・新）は拒否する
+  const beforePaid = before?.status === "APPROVED" && before.type === "LEAVE" && beforeDetail.leaveType === "paid"
+  const afterPaid = before?.status === "APPROVED" && type === "LEAVE" && detail.leaveType === "paid"
+  const paidChanged = !!before && (beforePaid || afterPaid) && (
+    !beforePaid || !afterPaid || before.targetDate.getTime() !== newTargetDate.getTime() || (beforeDetail.halfDay ?? "full") !== (detail.halfDay ?? "full")
+  )
+  if (before && paidChanged) {
+    if ((await isLockedDay(before.userId, before.targetDate)) || (await isLockedDay(before.userId, newTargetDate))) {
+      return { ok: false, error: "締め済みの日の有給申請は修正できません（締め解除してから修正してください）" }
+    }
+  }
+
   await prisma.request.update({
     where: { id },
     data: {
@@ -735,24 +768,10 @@ export async function actionUpdateRequest(id: string, formData: FormData): Promi
   // 承認済みの残業・早出・休暇（半休）申請の時刻・日付・種別を直したら、入力が変わるので記録を打刻パイプラインで計算し直す
   const affects = (t: string | undefined) => t === "OVERTIME" || t === "LEAVE"
   if (before?.status === "APPROVED" && (affects(before.type) || affects(type))) {
-    // 承認済みの有給の区分（全休↔半休）・日付を直したら、記録に保存した有給の分数も入れ直す
-    if (type === "LEAVE" && detail.leaveType === "paid") {
-      const owner = await prisma.user.findUnique({
-        where: { id: before.userId },
-        select: { workStartTime: true, workEndTime: true, employmentType: true, breakMinutes: true },
-      })
-      const setting = await prisma.setting.findUnique({ where: { id: 1 } })
-      const newDate = new Date(targetDate)
-      const rec = await prisma.attendanceRecord.findUnique({
-        where: { userId_date: { userId: before.userId, date: newDate } },
-        select: { switchRoundEarly: true, switchRoundNear: true, switchRoundQuarter: true, switchCapOvertime: true, switchNewCalc: true },
-      })
-      const paidMins = paidLeaveMinutesFor({ user: owner, setting, saved: rec, halfDay: detail.halfDay === "am" || detail.halfDay === "pm" ? detail.halfDay : null })
-      await prisma.attendanceRecord.upsert({
-        where:  { userId_date: { userId: before.userId, date: newDate } },
-        update: { paidLeaveMinutes: paidMins },
-        create: { userId: before.userId, date: newDate, paidLeaveMinutes: paidMins },
-      })
+    // 承認済みの有給の区分・日付・種別が変わったら、記録に保存した有給の分数を入れ直す（元の日は消す。変わらなければ触らない）
+    if (paidChanged) {
+      if (beforePaid) await clearPaidLeaveMinutes(before.userId, before.targetDate)
+      if (afterPaid) await writePaidLeaveMinutes(before.userId, newTargetDate, detail.halfDay === "am" || detail.halfDay === "pm" ? detail.halfDay : null)
     }
     await recomputeDay(before.userId, before.targetDate)
     const newDate = new Date(targetDate)
@@ -824,6 +843,11 @@ export async function actionDeleteRequest(id: string): Promise<ActionResult> {
   if (req?.status === "APPROVED" && req.type === "HOLIDAY_WORK" && (await isLockedDay(req.userId, req.targetDate))) {
     return { ok: false, error: "締め済みの日の休日出勤申請は削除できません（締め解除してから削除してください）" }
   }
+  // 承認済みの有給を削除するときは、記録に保存した有給の分数を消すので締め済みの日は拒否する
+  const isApprovedPaidLeave = req?.status === "APPROVED" && req.type === "LEAVE" && (req.detail as { leaveType?: string } | null)?.leaveType === "paid"
+  if (req && isApprovedPaidLeave && (await isLockedDay(req.userId, req.targetDate))) {
+    return { ok: false, error: "締め済みの日の有給申請は削除できません（締め解除してから削除してください）" }
+  }
   if (req?.status === "APPROVED" && req.type === "ABSENCE") {
     const detail = req.detail as Record<string, string> | null
     if (detail?.absenceType === "absent") {
@@ -859,6 +883,7 @@ export async function actionDeleteRequest(id: string): Promise<ActionResult> {
 
   // 承認済みの残業・早出・休暇（半休）申請を削除したら、入力から外れるので記録を打刻パイプラインで計算し直す
   if (req?.status === "APPROVED" && (req.type === "OVERTIME" || req.type === "LEAVE")) {
+    if (isApprovedPaidLeave) await clearPaidLeaveMinutes(req.userId, req.targetDate)
     await recomputeDay(req.userId, req.targetDate)
     revalidatePath("/records")
   }
