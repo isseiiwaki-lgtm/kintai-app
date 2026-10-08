@@ -116,6 +116,20 @@ export function calcWorkingMinutes({
  *   breakMinutes → 過去の休憩打刻（開始・終了）→ 逆算（在席時間 − 外出 − 実働）
  * 保存した実働が無い日は null（呼び出し側が resolveBreakMinutes で決める）
  */
+/**
+ * 休憩打刻（開始・終了）の長さ（ミリ秒）から、外出（goOutAt〜returnAt）と重なる部分を除いた値。
+ * 外出中の時間は在席時間から別に引くので、休憩打刻が外出と重なる分まで引くと同じ時間を二重に引いてしまう。
+ * 外出が無い（片方だけ・時刻が逆）ときは休憩打刻の長さそのまま
+ */
+export function breakPunchMs(
+  breakStart: Date, breakEnd: Date, goOutAt: Date | null | undefined, returnAt: Date | null | undefined,
+): number {
+  const total = Math.max(0, breakEnd.getTime() - breakStart.getTime())
+  if (!goOutAt || !returnAt || returnAt.getTime() <= goOutAt.getTime()) return total
+  const overlap = Math.min(breakEnd.getTime(), returnAt.getTime()) - Math.max(breakStart.getTime(), goOutAt.getTime())
+  return Math.max(0, total - Math.max(0, overlap))
+}
+
 export function storedBreakMinutes(rec: {
   breakMinutes: number | null
   breakStart: Date | null
@@ -128,7 +142,8 @@ export function storedBreakMinutes(rec: {
 }): number | null {
   if (rec.breakMinutes != null) return rec.breakMinutes
   if (rec.breakStart && rec.breakEnd) {
-    return Math.round((rec.breakEnd.getTime() - rec.breakStart.getTime()) / 60000)
+    // 外出と重なる分は外出側で引いているので除く（二重に引かない）
+    return Math.round(breakPunchMs(rec.breakStart, rec.breakEnd, rec.goOutAt, rec.returnAt) / 60000)
   }
   if (rec.clockIn && rec.clockOut && rec.workingMinutes != null) {
     const goOutMins = rec.goOutAt && rec.returnAt ? Math.round((rec.returnAt.getTime() - rec.goOutAt.getTime()) / 60000) : 0

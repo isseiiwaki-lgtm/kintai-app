@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { initialLeaveType, leaveTypeOptions } from "@/lib/leave-type"
 import { holidayWorkSummary, type HolidayWorkDetail } from "@/lib/holiday-work"
 import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
@@ -236,33 +236,39 @@ function DetailFields({ type, detail, isPartTimer = false }: { type: string; det
       </>
     )
   }
-  if (type === "LEAVE") {
-    return (
-      <>
-        <div>
-          <label className={labelClass}>休暇種別</label>
-          <select name="leaveType" defaultValue={initialLeaveType(detail.leaveType)} className={inputClass}>
-            {leaveTypeOptions(detail.leaveType).map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className={labelClass}>半日</label>
-          <select name="halfDay" defaultValue={detail.halfDay ?? "full"} className={inputClass}>
-            <option value="full">全日</option>
-            <option value="am">午前</option>
-            <option value="pm">午後</option>
-          </select>
-        </div>
+  if (type === "LEAVE") return <LeaveFields detail={detail} />
+  return null
+}
+
+/** 休暇申請の修正欄。振替出勤日は休暇種別が振休（substitute）のときだけ出す（保存する値は変えない） */
+function LeaveFields({ detail }: { detail: Record<string, string> }) {
+  const [leaveType, setLeaveType] = useState(initialLeaveType(detail.leaveType))
+  return (
+    <>
+      <div>
+        <label className={labelClass}>休暇種別</label>
+        <select name="leaveType" value={leaveType} onChange={(e) => setLeaveType(e.target.value)} className={inputClass}>
+          {leaveTypeOptions(detail.leaveType).map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className={labelClass}>取得単位</label>
+        <select name="halfDay" defaultValue={detail.halfDay ?? "full"} className={inputClass}>
+          <option value="full">全日</option>
+          <option value="am">午前</option>
+          <option value="pm">午後</option>
+        </select>
+      </div>
+      {leaveType === "substitute" && (
         <div>
           <label className={labelClass}>振替出勤日（振休の場合）</label>
           <input type="date" name="workDate" defaultValue={detail.workDate ?? ""} className={inputClass} />
         </div>
-      </>
-    )
-  }
-  return null
+      )}
+    </>
+  )
 }
 
 const TableHeader = () => (
@@ -294,10 +300,13 @@ export function RequestsTable({
   pending,
   processed,
   processedNav,
+  highlightId = null,
 }: {
   pending:      ReqRow[]
   processed:    ReqRow[]
   processedNav: ProcessedNav
+  /** 勤怠承認の「申請あり」から開いたとき、強調してスクロールする申請の ID */
+  highlightId?: string | null
 }) {
   const [editTarget, setEditTarget]     = useState<EditState | null>(null)
   const [editType, setEditType]         = useState("")
@@ -305,6 +314,12 @@ export function RequestsTable({
   const [isPending, startTransition]    = useTransition()
   // 承認・削除を拒否したときの理由（締め済みの日の打刻修正など）
   const [actionError, setActionError]   = useState<string | null>(null)
+
+  // 強調する申請（審査中・処理済みどちらの一覧にあっても）へスクロールする。開いたときの1回だけ
+  useEffect(() => {
+    if (!highlightId) return
+    document.getElementById(`req-${highlightId}`)?.scrollIntoView({ block: "center" })
+  }, [highlightId])
 
   function openEdit(r: ReqRow) {
     setActionError(null)
@@ -362,7 +377,8 @@ export function RequestsTable({
     })
   }
 
-  const Row = ({ r, showApproveActions, groupStart, repeatUser }: {
+  // 行は関数として呼ぶ（コンポーネントにすると再描画のたびに全行が作り直され、モーダルを開くとスクロール位置が飛ぶ）
+  const renderRow = ({ r, showApproveActions, groupStart, repeatUser }: {
     r: ReqRow
     showApproveActions: boolean
     groupStart?: boolean  // 申請者順表示で申請者が切り替わる行（区切り線を濃く）
@@ -372,7 +388,11 @@ export function RequestsTable({
     // 多段階承認の進捗（審査中 1/2 のように表示）
     const progress = r.status === "PENDING" && r.approvalTotal ? ` ${r.approvalDone}/${r.approvalTotal}` : ""
     return (
-      <tr className={`border-b border-gray-50 last:border-0 hover:bg-gray-50 ${groupStart ? "border-t border-t-gray-200" : ""}`}>
+      <tr
+        key={r.id}
+        id={`req-${r.id}`}
+        className={`border-b border-gray-50 last:border-0 hover:bg-gray-50 ${groupStart ? "border-t border-t-gray-200" : ""} ${r.id === highlightId ? "bg-yellow-50 outline outline-2 -outline-offset-2 outline-yellow-400" : ""}`}
+      >
         <td className="px-3 py-2.5 text-gray-800 font-medium whitespace-nowrap">
           {repeatUser
             ? <span className="text-gray-300">〃</span>
@@ -461,7 +481,7 @@ export function RequestsTable({
           <tbody>
             {pending.length === 0
               ? <tr><td colSpan={8} className="px-4 py-6 text-center text-sm text-gray-400">審査中の申請はありません</td></tr>
-              : pending.map(r => <Row key={r.id} r={r} showApproveActions={true} />)
+              : pending.map(r => renderRow({ r, showApproveActions: true }))
             }
           </tbody>
         </table>
@@ -502,15 +522,12 @@ export function RequestsTable({
               : processed.map((r, i) => {
                   // 申請者順のときは同一申請者をグルーピング表示
                   const sameAsPrev = processedNav.sort === "user" && i > 0 && processed[i - 1].user.email === r.user.email
-                  return (
-                    <Row
-                      key={r.id}
-                      r={r}
-                      showApproveActions={false}
-                      groupStart={processedNav.sort === "user" && i > 0 && !sameAsPrev}
-                      repeatUser={sameAsPrev}
-                    />
-                  )
+                  return renderRow({
+                    r,
+                    showApproveActions: false,
+                    groupStart: processedNav.sort === "user" && i > 0 && !sameAsPrev,
+                    repeatUser: sameAsPrev,
+                  })
                 })
             }
           </tbody>

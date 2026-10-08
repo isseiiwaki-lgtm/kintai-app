@@ -268,6 +268,7 @@ export async function GET(req: NextRequest) {
         breakMinutes = stored ?? resolveBreakMinutes({
           savedBreakMinutes: rec.breakMinutes,
           breakStart: rec.breakStart, breakEnd: rec.breakEnd,
+          goOutAt: rec.goOutAt, returnAt: rec.returnAt,
           halfDay: pickHalfDay(dayRequests),
           employmentType: user.employmentType, userBreakMinutes: user.breakMinutes,
           workStartTime: user.workStartTime, workEndTime: user.workEndTime,

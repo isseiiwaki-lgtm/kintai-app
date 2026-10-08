@@ -3,6 +3,8 @@
 import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import { revalidatePath } from "next/cache"
+import { redirect } from "next/navigation"
+import { validateSettingNumbers } from "@/lib/setting-validation"
 
 async function checkAdmin() {
   const session = await auth()
@@ -11,6 +13,16 @@ async function checkAdmin() {
 
 export async function actionSaveSetting(formData: FormData) {
   await checkAdmin()
+
+  // 数値の検証（空・非数・負・閾値0以下は保存せず、理由を付けて設定画面へ戻す）
+  const numberError = validateSettingNumbers({
+    closingDay: formData.get("closingDay"),
+    break1Threshold: formData.get("break1Threshold"),
+    break1Minutes: formData.get("break1Minutes"),
+    break2Threshold: formData.get("break2Threshold"),
+    break2Minutes: formData.get("break2Minutes"),
+  })
+  if (numberError) redirect(`/admin/settings?error=${encodeURIComponent(numberError)}`)
 
   const closingDay         = Number(formData.get("closingDay"))
   const break1Threshold    = Number(formData.get("break1Threshold"))
@@ -35,4 +47,6 @@ export async function actionSaveSetting(formData: FormData) {
   revalidatePath("/admin/settings")
   revalidatePath("/records")
   revalidatePath("/admin/attendance")
+  // エラー表示つきの URL から保存した場合も、エラーの無い URL に戻す
+  redirect("/admin/settings")
 }

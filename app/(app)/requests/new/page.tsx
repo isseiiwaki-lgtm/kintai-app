@@ -12,7 +12,7 @@ export default async function NewRequestPage() {
   const userId = session!.user!.id!
   const [user, setting] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { workStartTime: true, workEndTime: true, employmentType: true } }),
-    prisma.setting.findUnique({ where: { id: 1 }, select: { weekStartDay: true } }),
+    prisma.setting.findUnique({ where: { id: 1 }, select: { weekStartDay: true, break1Threshold: true, break1Minutes: true, break2Threshold: true, break2Minutes: true } }),
   ])
   return (
     <Suspense>
@@ -21,6 +21,7 @@ export default async function NewRequestPage() {
         defaultEndTime={user?.workEndTime ?? ""}
         weekStartDay={setting?.weekStartDay ?? 0}
         isPartTimer={user?.employmentType === "part"}
+        breakSetting={setting ? { break1Threshold: setting.break1Threshold, break1Minutes: setting.break1Minutes, break2Threshold: setting.break2Threshold, break2Minutes: setting.break2Minutes } : null}
       />
     </Suspense>
   )

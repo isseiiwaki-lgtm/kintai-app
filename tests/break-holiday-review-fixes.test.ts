@@ -161,7 +161,17 @@ describe("休日出勤申請の作成：対象日が休日か", () => {
     expect(mocks.requestCreate).not.toHaveBeenCalled()
   })
 
-  it("本人の休みの曜日（土）・休日カレンダーの日 → 作れる", async () => {
+  it("パートは所定でない曜日（土）では出せない（シフト交換）。休日カレンダーの日なら作れる", async () => {
+    const res = await actionCreateRequest(hwForm("2026-10-10"))
+    expect(res && !res.ok).toBe(true)
+    expect(mocks.requestCreate).not.toHaveBeenCalled()
+    mocks.holidayFind.mockResolvedValue({ id: 1 } as never)
+    await actionCreateRequest(hwForm("2026-10-07"))
+    expect(mocks.requestCreate).toHaveBeenCalledTimes(1)
+  })
+
+  it("正社員は本人の休みの曜日（土）・休日カレンダーの日 → 作れる", async () => {
+    mocks.userFind.mockResolvedValue({ ...WEEKDAY_USER, employmentType: "full" })
     await actionCreateRequest(hwForm("2026-10-10"))
     expect(mocks.requestCreate).toHaveBeenCalledTimes(1)
     mocks.holidayFind.mockResolvedValue({ id: 1 } as never)
