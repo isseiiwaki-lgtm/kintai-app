@@ -418,7 +418,7 @@ export function NewRequestForm({
               </p>
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">代わりに休む日（任意）</label>
+              <label className="block text-xs font-medium text-gray-600 mb-1">代わりに休む日</label>
               <input
                 type="date" name="restDate"
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
