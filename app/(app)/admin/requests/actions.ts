@@ -409,6 +409,8 @@ async function applyRequestEffects(
   }
 
   // 有給承認時: paidLeaveMinutes を AttendanceRecord に保存（本人所定時間ベース。半休はその人の実際の半分）
+  // 2026-10-13〜 有給は日数だけで扱う（時間は給与システムが算定）。この値は「有給の日の印」（代理打刻の候補から外す等）にだけ使い、
+  // 画面・Excel に時間として出さない
   if (req.type === "LEAVE" && detail?.leaveType === "paid") {
     const halfDay = detail?.halfDay
     // 半休は所定の半分ではなく、その人の実際の半分（午前休＝始業〜昼休憩の開始、午後休＝昼休憩の終わり〜終業）
@@ -559,13 +561,14 @@ export async function actionForceApproveRequest(id: string): Promise<ActionResul
       approvals.filter(a => a.action === "APPROVED" || a.action === "SKIPPED").map(a => a.step),
     )
     const finalStep = Math.max(...route.map(r => r.step))
-    const logs = route
-      .filter(r => !done.has(r.step))
-      .map(r => ({
+    // 同じステップに複数の承認者がいても、ステップごとに1件だけ記録する
+    const logs = [...new Set(route.map(r => r.step))]
+      .filter(step => !done.has(step))
+      .map(step => ({
         requestId:  id,
         approverId: changedById,
-        step:       r.step,
-        action:     (r.step === finalStep ? "APPROVED" : "SKIPPED") as "APPROVED" | "SKIPPED",
+        step,
+        action:     (step === finalStep ? "APPROVED" : "SKIPPED") as "APPROVED" | "SKIPPED",
       }))
     if (logs.length > 0) await prisma.approval.createMany({ data: logs })
   } else {

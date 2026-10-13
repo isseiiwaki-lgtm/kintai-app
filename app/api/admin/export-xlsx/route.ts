@@ -148,7 +148,7 @@ export async function GET(req: NextRequest) {
     const sheetName = (user.name ?? user.email ?? user.id).slice(0, 31)
     const sheet = workbook.addWorksheet(sheetName)
 
-    // 有給使用合計（締め期間内・承認済）。日数は半日=0.5固定、時間はAttendanceRecordの保存値（本人所定時間ベース）を合算
+    // 有給使用合計（締め期間内・承認済）。日数だけ（全休1・半休0.5）。時間は給与システムが算定するので出さない（2026-10-13 決定）
     let paidDaysTotal = 0
     for (const r of user.requests) {
       if (r.type !== "LEAVE") continue
@@ -156,7 +156,6 @@ export async function GET(req: NextRequest) {
       if (det?.leaveType !== "paid") continue
       paidDaysTotal += paidLeaveDaysOf(det)
     }
-    const paidMinutesTotal = user.attendanceRecords.reduce((sum, r) => sum + (r.paidLeaveMinutes ?? 0), 0)
 
     // --- 情報ヘッダー（2行）---
     sheet.mergeCells("A1:AH1")
@@ -189,7 +188,7 @@ export async function GET(req: NextRequest) {
     sheet.getCell("N2").value = periodLabel
     sheet.mergeCells("N2:Q2")
     sheet.getCell("R2").value = "有給使用"; sheet.getCell("R2").font = { bold: true }
-    sheet.getCell("S2").value = `${paidDaysTotal}日 / ${fmtMin(paidMinutesTotal)}`
+    sheet.getCell("S2").value = `${paidDaysTotal}日`
     sheet.mergeCells("S2:U2")
 
     sheet.getRow(3).height = 4  // 空白行
@@ -271,9 +270,8 @@ export async function GET(req: NextRequest) {
           halfDay: pickHalfDay(dayRequests),
           employmentType: user.employmentType, userBreakMinutes: user.breakMinutes,
           workStartTime: user.workStartTime, workEndTime: user.workEndTime,
-          daySchedule: schedule, presenceMinutes: rawMinutes, setting,
+          daySchedule: schedule, setting,
           isRestDay: !!rec?.isHolidayWork || isRestDay(dayDate, user, !!holidayName),
-          newCalc: resolveSwitches(rec, setting).newCalc,
         })
         workingMinutes = rec.workingMinutes ?? Math.max(0, rawMinutes - breakMinutes)
       }

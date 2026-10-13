@@ -62,3 +62,28 @@ describe("approvalProgress", () => {
     expect(approvalProgress(route2, [{ step: 9, action: "APPROVED" }])).toEqual({ done: 0, total: 2 })
   })
 })
+
+describe("同じステップに複数の承認者（いずれか1名。IMPLEMENTATION_PLAN L の具体例）", () => {
+  // 総務部 step1 に A・B、step2 に C
+  const route = [
+    { step: 1, approverId: "A" },
+    { step: 1, approverId: "B" },
+    { step: 2, approverId: "C" },
+  ]
+  it("step1 は A・B どちらも承認できる。C はまだできない", () => {
+    expect(getCurrentStep(route, [])).toBe(1)
+    expect(isStepApprover(route, 1, "A")).toBe(true)
+    expect(isStepApprover(route, 1, "B")).toBe(true)
+    expect(isStepApprover(route, 1, "C")).toBe(false)
+  })
+  it("A が承認すれば step2 へ（B は操作不要）。進捗は 0/2 → 1/2 → 2/2", () => {
+    expect(approvalProgress(route, [])).toEqual({ done: 0, total: 2 })
+    const afterA = [{ step: 1, action: "APPROVED" }]
+    expect(getCurrentStep(route, afterA)).toBe(2)
+    expect(isFinalStep(route, 1)).toBe(false)
+    expect(approvalProgress(route, afterA)).toEqual({ done: 1, total: 2 })
+    const afterC = [...afterA, { step: 2, action: "APPROVED" }]
+    expect(getCurrentStep(route, afterC)).toBeNull()
+    expect(approvalProgress(route, afterC)).toEqual({ done: 2, total: 2 })
+  })
+})

@@ -23,6 +23,7 @@ export default async function NewRequestPage() {
         weekStartDay={setting?.weekStartDay ?? 0}
         isPartTimer={user?.employmentType === "part"}
         canHalfDay={canTakeHalfDay(user)}
+        needsOvertimeStart={!user?.workStartTime || !user?.workEndTime}
         breakSetting={setting ? { break1Threshold: setting.break1Threshold, break1Minutes: setting.break1Minutes, break2Threshold: setting.break2Threshold, break2Minutes: setting.break2Minutes } : null}
       />
     </Suspense>

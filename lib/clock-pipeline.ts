@@ -24,7 +24,7 @@ import {
   type DaySchedule,
   type OvertimeRequestLike,
 } from "@/lib/attendance"
-import { REQUEST_TIME_STEP_MINUTES, calcLegalBreak } from "@/config/attendance.config"
+import { REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 
 // 段7の規定値は lib/attendance.ts に置く（所定勤務時間の計算と共有し、循環 import を避ける）
 export { calcDefaultBreakMinutes }
@@ -35,13 +35,13 @@ export { calcDefaultBreakMinutes }
  */
 export function legacyOvertimeInput(
   rec: SavedSwitches & { workingMinutes: number | null },
-  setting: SwitchSetting | null | undefined,
-  user: { workStartTime: string | null; workEndTime: string | null; employmentType: string | null } | null | undefined,
+  setting: (SwitchSetting & { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number }) | null | undefined,
+  user: { workStartTime: string | null; workEndTime: string | null; employmentType: string | null; breakMinutes: number | null } | null | undefined,
 ): { workingMinutes: number | null; legacyScheduledMinutes: number } | undefined {
   if (resolveSwitches(rec, setting).newCalc) return undefined
   return {
     workingMinutes: rec.workingMinutes,
-    legacyScheduledMinutes: calcLegacyScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType),
+    legacyScheduledMinutes: calcLegacyScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType, { userBreakMinutes: user?.breakMinutes, setting }),
   }
 }
 
@@ -57,7 +57,13 @@ export function resolveOvertimeMinutes(p: {
   workingMinutes: number | null
   legacyScheduledMinutes: number
   hasSchedule: boolean
+  /**
+   * パートの残業（2026-10-13〜。⑤に関係なくこちら）。定時の外は残業にせず、8時間超と承認された申請の時間帯を合わせた長さ。
+   * 休日で休日出勤申請が承認されていない日は渡さない（勤務が成立していないので残業0）
+   */
+  part?: { overtimeMinutes: number }
 }): number {
+  if (p.part) return p.part.overtimeMinutes
   if (p.newCalc) return p.pipelineOvertime
   if (!p.hasSchedule || p.workingMinutes == null || p.legacyScheduledMinutes <= 0) return 0
   return Math.max(0, p.workingMinutes - p.legacyScheduledMinutes)
@@ -158,7 +164,7 @@ export function scheduledMinutesForRecord(
   saved: SavedSwitches | null | undefined,
 ): number {
   const sw = resolveSwitches(saved, setting)
-  if (!sw.newCalc) return calcLegacyScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType)
+  if (!sw.newCalc) return calcLegacyScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType, { userBreakMinutes: user?.breakMinutes, setting })
   return calcScheduledMinutes(user?.workStartTime, user?.workEndTime, user?.employmentType, {
     userBreakMinutes: user?.breakMinutes, setting,
   })
@@ -182,15 +188,13 @@ function formatHHMM(mins: number): string {
  * 段7：その日の休憩分数（上から順に決める）
  * 1. その日の breakMinutes に値がある（パートの休憩ボタン・承認済みの休憩申請）→ その値（0を含む）
  * 2. 値が無く、過去の休憩打刻（開始・終了）が両方ある → 打刻の差（休憩ボタン導入前の記録。再計算で実働が増えないように）
- * 3. パート → 0（休憩申請漏れの知らせの対象になりうる）
- * 4. ⑤OFF（旧方式）は半休の日も在席時間に法定休憩（5 の OFF と同じ）。⑤ON の半休の日 → 0
- * 5. 正社員 → 規定値。⑤ON（新しい計算方式）：本人の User.breakMinutes、無ければ会社設定の休憩ルールを定時の拘束時間に当てた値。
- *    ⑤OFF（旧方式。リリース2より前の規則）：在席時間（外出を除く）に法定休憩（6時間超45分・8時間超60分）を当てた値
- * 1・2 は事実（休憩ボタン・承認済みの休憩申請・早退申請の休憩の申告・過去の休憩打刻）なので、⑤ON/OFF どちらでも同じ
+ * 3. 半休の日 → 0
+ * 4. 規定値（正社員・パート共通）：本人の User.breakMinutes、無ければ会社設定の休憩ルールを定時の拘束時間に当てた値。定時が無い人は 0
+ * 勤務時間・在席時間から休憩を推定しない（2026-10-13 決定。⑤ON/OFF で変わらない。旧方式の「在席時間に法定休憩」とパートの一律0は廃止）
  * 審査中の休憩申請は差し引かない（承認されて breakMinutes に入った時点で反映される）。
  * daySchedule は段0の結果。休日出勤の日はその申請の開始〜終了を拘束時間にする。
- * 休日（isRestDay）で休日出勤申請が無い日は、⑤ON/OFF とも本人の所定休憩を使わず「在席時間」（presenceMinutes）に法定休憩を当てる
- * （休日に2時間だけ出た人に、平日の所定休憩60分を引かない）。承認済みの休日出勤申請の休憩は 1 で breakMinutes に入っている
+ * 休日（isRestDay）で休日出勤申請が承認されていない日は 0（勤務も休憩も申請の承認で初めて成立する）。
+ * 承認済みの休日出勤申請の休憩は 1 で breakMinutes に入っている
  */
 export function resolveBreakMinutes(p: {
   savedBreakMinutes: number | null | undefined
@@ -207,26 +211,19 @@ export function resolveBreakMinutes(p: {
   daySchedule: DaySchedule
   /** その日が休日（休日カレンダー・本人の休みの曜日・休日出勤の印）か。段0と同じ判定。省略は false（平日扱い） */
   isRestDay?: boolean
-  /** 外出を除いた在席時間（分）。定時なしの日の規定値に使う */
-  presenceMinutes?: number | null
   setting?: { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number } | null
-  /** ⑤（記録に保存した値）。省略は ON（新しい計算方式）。本番の呼び出しは必ず渡す */
-  newCalc?: boolean
 }): number {
   if (p.savedBreakMinutes != null) return p.savedBreakMinutes
   if (p.breakStart && p.breakEnd) {
     // 外出と重なる分は外出側で引くので、休憩は重ならない部分だけ（二重に引かない）
     return Math.floor(breakPunchMs(p.breakStart, p.breakEnd, p.goOutAt, p.returnAt) / 60000)
   }
-  if (p.employmentType === "part") return 0
-  // ⑤OFF：旧方式（a1d25ca）。在席時間に法定休憩を当てる（定時・本人の所定休憩・会社設定は見ない）。半休の日も同じ
-  if (p.newCalc === false) return calcLegalBreak(Math.max(0, p.presenceMinutes ?? 0))
-  // ⑤ON：半休の日は 0（仕様）
+  // 半休の日は 0（仕様）
   if (p.halfDay) return 0
-  // 休日で承認済みの休日出勤申請が無い日：本人の所定休憩は使わず、在席時間に法定休憩を当てる（⑤ON/OFF 共通。
-  // 休日は誰も確かめられないので、休憩は上長が承認した申請でだけ決まる。申請が無い間は在席時間の規定値）。
-  // 平日で定時が無い（本人の始業・終業が未設定）日は対象外＝従来どおり所定休憩・会社設定の規定値
-  if (p.isRestDay && !p.daySchedule && p.presenceMinutes != null) return calcLegalBreak(Math.max(0, p.presenceMinutes))
+  // 休日で承認済みの休日出勤申請が無い日：0（2026-10-13 決定）。休日の勤務と休憩は上長が承認した申請（休憩の申告は必須）で
+  // 初めて成立する。申請が無い間は会社が休憩を与えた事実も無いとみなし、知らせで申請を促す。
+  // 平日で定時が無い（本人の始業・終業が未設定）日は対象外＝所定休憩・会社設定の規定値
+  if (p.isRestDay && !p.daySchedule) return 0
   return calcDefaultBreakMinutes(
     {
       userBreakMinutes: p.userBreakMinutes,
@@ -471,6 +468,11 @@ export type PipelineInput = {
   switches: PipelineSwitches
   /** その日の承認済みの残業申請・早出申請（承認済み以外は渡しても無視する） */
   requests: PipelineRequest[]
+  /**
+   * 定時を登録していないパートの勤務日（シフト勤務。2026-10-13〜）。schedule が null でも休日ではない。
+   * ①②は効かない（定時が基準のため）。③は毎時 00/15/30/45 で区切る。④は承認済みの残業申請の終了時刻で打ち切る（申請が無ければ打ち切らない）
+   */
+  shiftWork?: boolean
 }
 
 export type PipelineOutput = {
@@ -499,6 +501,44 @@ export function pickEarlyStartTime(requests: PipelineRequest[]): string | null {
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
   if (list.length === 0) return null
   return (list[0].detail as { startTime: string }).startTime
+}
+
+/**
+ * パートの残業に数える申請の時間帯（承認済みのみ。複数あれば最後に出した申請。④の上限と同じ選び方）
+ * - 残業申請：［開始, 終了］。申請は終了時刻だけを保存し、開始は定時の終業（detail.startTime があればそれ）。
+ *   開始が決まらない（定時が無く startTime も無い）申請は数えない
+ * - 早出申請：［開始, 定時の始業］（定時が無ければ数えない）
+ * dayStart は記録の日付の JST 0:00。終了が開始より前なら翌日とみなす
+ */
+export function partOvertimeWindows(requests: PipelineRequest[], schedule: DaySchedule, dayStart: Date): { start: Date; end: Date }[] {
+  const latest = (list: PipelineRequest[]) => [...list].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]
+  const valid = (v: unknown): v is string => /^\d{1,2}:\d{2}$/.test(String(v ?? ""))
+  const windows: { start: Date; end: Date }[] = []
+  const approved = requests.filter((r) => r.type === "OVERTIME" && r.status === "APPROVED")
+  // 選び方は④の上限（pickOvertimeCapEnd）と同じ：終了時刻のある承認済み残業申請のうち最後に出したもの
+  const ot = latest(approved.filter((r) => isNormalOvertime(r) && valid((r.detail as { endTime?: string } | null | undefined)?.endTime)))
+  const otStart = ot ? ((ot.detail as { startTime?: string }).startTime ?? schedule?.end) : null
+  if (ot && valid(otStart)) {
+    const d = ot.detail as { endTime: string }
+    const start = hhmmToUTCDate(otStart, dayStart)
+    let end = hhmmToUTCDate(d.endTime, dayStart)
+    if (end.getTime() <= start.getTime()) end = new Date(end.getTime() + 24 * 60 * 60 * 1000)
+    windows.push({ start, end })
+  }
+  const early = pickEarlyStartTime(requests)
+  if (early && schedule) {
+    const start = hhmmToUTCDate(early, dayStart)
+    const end = hhmmToUTCDate(schedule.start, dayStart)
+    if (start.getTime() < end.getTime()) windows.push({ start, end })
+  }
+  return windows
+}
+
+/** 秒を落として刻みへ切り捨てる（時計の 0:00 起点）。例：17:07 → 17:00 */
+function floorToStep(d: Date, stepMinutes: number): Date {
+  const base = jstDayStartUTC(d).getTime()
+  const minutes = Math.floor((d.getTime() - base) / 60000)
+  return new Date(base + Math.floor(minutes / stepMinutes) * stepMinutes * 60000)
 }
 
 /** 秒を落として「申請の時刻の刻み」へ切り上げる（時計の 0:00 起点）。例：7:40 → 7:45 */
@@ -613,6 +653,23 @@ export function computeClockPipeline(input: PipelineInput): PipelineOutput {
       const r = computeClockOut(clockOut, clockIn, schedule, switches, requests, dayStart)
       clockOut = r.clockOut
       capBeforeClockIn = r.capBeforeClockIn
+    }
+  } else if (input.shiftWork) {
+    // 定時を登録していないパート（シフト勤務）：③は時計の 00/15/30/45 で区切る（出勤は切り上げ・退勤は切り捨て）
+    if (clockIn && !input.clockInIsFinal && switches.roundQuarter) clockIn = ceilToRequestStep(clockIn, 15)
+    if (clockOut && !input.clockOutIsFinal) {
+      if (switches.roundQuarter) clockOut = floorToStep(clockOut, 15)
+      // ④：承認済みの残業申請の終了時刻で打ち切る（申請が無ければ定時も無いので打ち切らない）
+      const capHHMM = switches.capOvertime ? pickOvertimeCapEnd(requests.filter((r) => r.status === "APPROVED")) : null
+      if (capHHMM) {
+        const cap = hhmmToUTCDate(capHHMM, dayStart)
+        if (clockIn && cap.getTime() <= clockIn.getTime()) {
+          clockOut = clockIn
+          capBeforeClockIn = true
+        } else if (clockOut.getTime() > cap.getTime()) {
+          clockOut = cap
+        }
+      }
     }
   }
 

@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
       breakMinutes: true,
       workingMinutes: true,
       user: {
-        select: { name: true, employeeCode: true, department: true, employmentType: true, breakMinutes: true },
+        select: { name: true, employeeCode: true, department: true, employmentType: true, breakMinutes: true, workStartTime: true, workEndTime: true },
       },
     },
   })
@@ -92,6 +92,8 @@ export async function GET(req: NextRequest) {
     select: { userId: true },
   })
   const pendingBreakUsers = new Set(pendingBreak.map((q) => q.userId))
+  // 休憩の既定値と知らせの境目は会社設定の休憩時間控除ルールから決める
+  const breakSetting = await prisma.setting.findUnique({ where: { id: 1 } })
 
   const anomalies: Anomaly[] = []
   for (const r of records) {
@@ -125,6 +127,7 @@ export async function GET(req: NextRequest) {
       // パートの休憩申請漏れ（所定休憩が設定されているのに記録が無い／実働6時間超で記録が無い）。休憩の記録は休憩ボタン・承認済みの休憩申請
       if (needsBreakRecordNotice({
         employmentType: r.user.employmentType, userBreakMinutes: r.user.breakMinutes,
+        workStartTime: r.user.workStartTime, workEndTime: r.user.workEndTime, setting: breakSetting,
         breakMinutes: r.breakMinutes, breakStart: r.breakStart, breakEnd: r.breakEnd,
         clockIn: r.clockIn, clockOut: r.clockOut, goOutAt: r.goOutAt, returnAt: r.returnAt,
         hasPendingBreakRequest: pendingBreakUsers.has(r.userId),

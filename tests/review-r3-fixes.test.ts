@@ -1,6 +1,6 @@
 /**
  * ⑤切替の再レビュー対応
- * - 所定勤務時間（有給の分・所定の表示）は記録の⑤スナップショットに従う
+ * - 所定勤務時間（有給の分・所定の表示）は 2026-10-13 から⑤に関係なく同じ
  * - 早退申請の休憩の申告は管理者の修正でもパートに受け付けない
  * - 早退の促しは承認済みの休日出勤申請がある日・定時なしの日に出さない
  */
@@ -18,18 +18,11 @@ const SAVED = (newCalc: boolean) => ({
   switchRoundEarly: false, switchRoundNear: false, switchRoundQuarter: false, switchCapOvertime: false, switchNewCalc: newCalc,
 })
 
-describe("所定勤務時間は記録の⑤スナップショットに従う", () => {
-  it("9:00〜17:30・本人の休憩45：OFF は法定休憩60で450、ON は本人の休憩45で465", () => {
-    expect(scheduledMinutesForRecord(USER, SETTING, SAVED(false))).toBe(450)
+describe("所定勤務時間は⑤に関係なく本人の所定休憩・会社設定から（2026-10-13〜）", () => {
+  it("9:00〜17:30・本人の休憩45：⑤ON/OFF・保存値なしとも 465", () => {
+    expect(scheduledMinutesForRecord(USER, SETTING, SAVED(false))).toBe(465)
     expect(scheduledMinutesForRecord(USER, SETTING, SAVED(true))).toBe(465)
-  })
-  it("現在の設定を切り替えても、保存した記録は変わらない", () => {
-    expect(scheduledMinutesForRecord(USER, { ...SETTING, newCalcMethod: false }, SAVED(true))).toBe(465)
-    expect(scheduledMinutesForRecord(USER, SETTING, SAVED(false))).toBe(450)
-  })
-  it("記録が無い日（保存値なし）は現在の設定", () => {
-    expect(scheduledMinutesForRecord(USER, SETTING, null)).toBe(465)
-    expect(scheduledMinutesForRecord(USER, { ...SETTING, newCalcMethod: false }, null)).toBe(450)
+    expect(scheduledMinutesForRecord(USER, { ...SETTING, newCalcMethod: false }, null)).toBe(465)
   })
 })
 

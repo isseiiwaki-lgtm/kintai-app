@@ -224,6 +224,7 @@ export default async function UserApprovalPage({
     const pendingBreakRequest = dayExtraReqs.some((q) => q.type === "BREAK")
     const noBreakRecord = needsBreakRecordNotice({
       employmentType: user.employmentType, userBreakMinutes: user.breakMinutes,
+      workStartTime: user.workStartTime, workEndTime: user.workEndTime, setting,
       breakMinutes: r.breakMinutes, breakStart: r.breakStart, breakEnd: r.breakEnd,
       clockIn: r.clockIn, clockOut: r.clockOut, goOutAt: r.goOutAt, returnAt: r.returnAt,
       hasPendingBreakRequest: pendingBreakRequest,

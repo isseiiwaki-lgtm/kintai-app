@@ -39,15 +39,12 @@ function proxyPunch(opts: {
     clockOut: out.clockOut,
     goOutAt:    t(opts.goOutAt),
     returnAt:   t(opts.returnAt),
-    // 段7：休憩分数（過去の休憩打刻は打刻の差、無ければ パート0／正社員は定時の拘束時間から求めた規定値）
+    // 段7：休憩分数（過去の休憩打刻は打刻の差、無ければ所定休憩・定時の拘束時間から求めた規定値（正社員・パート共通））
     breakMinutes: resolveBreakMinutes({
       savedBreakMinutes: null,
       breakStart: t(opts.breakStart), breakEnd: t(opts.breakEnd),
       halfDay: null, employmentType: opts.employmentType, userBreakMinutes: null,
       workStartTime: opts.workStartTime, workEndTime: opts.workEndTime, daySchedule: schedule, isRestDay: !!opts.isHolidayWork,
-      presenceMinutes: out.clockIn && out.clockOut
-        ? Math.floor((out.clockOut.getTime() - out.clockIn.getTime() - (t(opts.goOutAt) && t(opts.returnAt) ? t(opts.returnAt)!.getTime() - t(opts.goOutAt)!.getTime() : 0)) / 60000)
-        : null,
     }),
   })
   return {
@@ -77,11 +74,11 @@ describe("代理打刻の集計値", () => {
       .toEqual({ workingMinutes: 240, lateMinutes: 90, earlyLeaveMinutes: 150, overtimeMinutes: 0 }) // 定時の日の正社員は拘束時間（9h）から規定の休憩60分を引く（段7）
   })
 
-  it("(e) パートは休憩打刻がなければ法定休憩を控除しない。残業は定時との差なので 0（実働−所定の差し引きではない）", () => {
+  it("(e) パートも休憩打刻がなければ定時の拘束時間から規定値を控除する（9:00〜16:00＝7h → このテストの設定で45分）。残業は定時との差なので 0", () => {
     expect(proxyPunch({
       dateISO: "2026-07-28", clockIn: "09:00", clockOut: "16:00",
       workStartTime: "09:00", workEndTime: "16:00", employmentType: "part",
-    })).toEqual({ workingMinutes: 420, lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: 0 })
+    })).toEqual({ workingMinutes: 375, lateMinutes: 0, earlyLeaveMinutes: 0, overtimeMinutes: 0 })
   })
 
   it("パートの休憩打刻ありは実休憩分だけ控除する", () => {

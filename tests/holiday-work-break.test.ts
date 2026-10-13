@@ -77,32 +77,25 @@ describe("休日出勤申請の休憩の目安（旧い法定休憩の規則を�
   })
 })
 
-describe("休日（定時なし・休日出勤申請なし）の休憩の規定値：在席時間の法定休憩（本人の所定休憩は使わない）", () => {
+describe("休日（定時なし・休日出勤申請なし）の休憩：申請が承認されるまで0", () => {
   const base = {
     savedBreakMinutes: null, halfDay: null, employmentType: "full", userBreakMinutes: 60,
     workStartTime: "09:00", workEndTime: "18:00", daySchedule: null, isRestDay: true, setting: SETTING,
   } as const
-  for (const newCalc of [true, false]) {
-    it(`⑤${newCalc ? "ON" : "OFF"}：所定休憩60分の社員が日曜 10:00〜12:00（在席120分）→ 休憩0・実働120`, () => {
-      const presence = 120
-      const b = resolveBreakMinutes({ ...base, presenceMinutes: presence, newCalc })
-      expect(b).toBe(0)
-      expect(presence - b).toBe(120)
-    })
-    it(`⑤${newCalc ? "ON" : "OFF"}：在席6時間超 → 45、8時間超 → 60`, () => {
-      expect(resolveBreakMinutes({ ...base, presenceMinutes: 361, newCalc })).toBe(45)
-      expect(resolveBreakMinutes({ ...base, presenceMinutes: 481, newCalc })).toBe(60)
-    })
-    it(`⑤${newCalc ? "ON" : "OFF"}：パートは従来どおり 0（事実が無ければ）`, () => {
-      expect(resolveBreakMinutes({ ...base, employmentType: "part", presenceMinutes: 500, newCalc })).toBe(0)
-    })
-  }
-  it("休日出勤が承認された日（定時あり）は従来どおり定時から決める（⑤ON）", () => {
-    expect(resolveBreakMinutes({ ...base, daySchedule: { start: "09:00", end: "18:00" }, presenceMinutes: 120, newCalc: true }))
+  // 2026-10-13 決定：申請が承認されるまで休憩0（勤務も休憩も申請の承認で成立する。在席時間から推定しない）
+  it("所定休憩60分の社員が日曜 10:00〜12:00 → 休憩0", () => {
+    expect(resolveBreakMinutes({ ...base })).toBe(0)
+  })
+  it("長く居ても休憩0（申請で休憩を申告する）", () => {
+    expect(resolveBreakMinutes({ ...base })).toBe(0)
+    expect(resolveBreakMinutes({ ...base, employmentType: "part" })).toBe(0)
+  })
+  it("休日出勤が承認された日（定時あり）は定時から決める", () => {
+    expect(resolveBreakMinutes({ ...base, daySchedule: { start: "09:00", end: "18:00" } }))
       .toBe(calcDefaultBreakMinutes({ userBreakMinutes: 60, workStartTime: "09:00", workEndTime: "18:00" }, SETTING))
   })
   it("保存済みの休憩分数（承認済みの休日出勤申請が入れた値）が最優先", () => {
-    expect(resolveBreakMinutes({ ...base, savedBreakMinutes: 30, daySchedule: { start: "09:00", end: "15:00" }, presenceMinutes: 600 })).toBe(30)
+    expect(resolveBreakMinutes({ ...base, savedBreakMinutes: 30, daySchedule: { start: "09:00", end: "15:00" } })).toBe(30)
   })
 })
 

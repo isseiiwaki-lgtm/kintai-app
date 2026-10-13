@@ -12,11 +12,12 @@
 
 import type { Prisma } from "@prisma/client"
 import { prisma } from "@/lib/prisma"
-import { calcLegacyScheduledMinutes, calcWorkingMinutes } from "@/lib/attendance"
+import { calcLegacyScheduledMinutes, calcPartOvertimeMinutes, calcWorkingMinutes } from "@/lib/attendance"
 import {
   computeClockPipeline,
   isRestDay,
   isHolidayWorkEligibleDate,
+  partOvertimeWindows,
   pickHalfDay,
   resolveBreakMinutes,
   resolveInputTime,
@@ -150,6 +151,10 @@ export function buildRecordUpdate(
     isHolidayWork: rec.isHolidayWork,
     requests: dayRequests,
   })
+  const restDay = !!rec.isHolidayWork || isRestDay(rec.date, ctx.user, ctx.holidayKeys.has(dateKey(rec.date)))
+  const isPart = ctx.user.employmentType === "part"
+  // 定時を登録していないパートの勤務日（シフト勤務）。休日は含めない
+  const shiftWork = isPart && !schedule && !restDay
 
   const out = computeClockPipeline({
     inputClockIn: inIn.time,
@@ -162,6 +167,7 @@ export function buildRecordUpdate(
     schedule,
     switches,
     requests: dayRequests,
+    shiftWork,
   })
 
   const data: Prisma.AttendanceRecordUncheckedUpdateInput = {}
@@ -179,10 +185,8 @@ export function buildRecordUpdate(
       userBreakMinutes: ctx.user.breakMinutes,
       workStartTime: ctx.user.workStartTime, workEndTime: ctx.user.workEndTime,
       daySchedule: schedule,
-      isRestDay: !!rec.isHolidayWork || isRestDay(rec.date, ctx.user, ctx.holidayKeys.has(dateKey(rec.date))),
-      presenceMinutes: Math.floor((out.clockOut.getTime() - out.clockIn.getTime() - (rec.goOutAt && rec.returnAt ? rec.returnAt.getTime() - rec.goOutAt.getTime() : 0)) / 60000),
+      isRestDay: restDay,
       setting: ctx.setting,
-      newCalc: switches.newCalc,
     })
     data.workingMinutes = out.capBeforeClockIn
       ? 0
@@ -191,12 +195,24 @@ export function buildRecordUpdate(
           goOutAt: rec.goOutAt, returnAt: rec.returnAt,
           breakMinutes,
         })
-    // 段8：残業。⑤ON＝早出 ＋ 終業後、⑤OFF＝旧方式（実働 − 所定）。退勤時の保存・承認時の保存・画面の計算で同じ式
+    // 段8：残業。パート＝8時間超と承認された申請の時間帯を合わせた長さ（⑤に関係なく。休日で定時なしの日は0）。
+    // 正社員は ⑤ON＝早出 ＋ 終業後、⑤OFF＝旧方式（実働 − 所定）。退勤時の保存・承認時の保存・画面の計算で同じ式
+    const goOutMinutes = rec.goOutAt && rec.returnAt ? Math.max(0, Math.floor((rec.returnAt.getTime() - rec.goOutAt.getTime()) / 60000)) : 0
+    const part = !isPart ? undefined : {
+      overtimeMinutes: out.capBeforeClockIn || (restDay && !schedule)
+        ? 0
+        : calcPartOvertimeMinutes({
+            clockIn: out.clockIn, clockOut: out.clockOut,
+            nonWorkMinutes: breakMinutes + goOutMinutes,
+            windows: partOvertimeWindows(dayRequests, schedule, new Date(rec.date.getTime() - 9 * 60 * 60 * 1000)),
+          }),
+    }
     data.overtimeMinutes = resolveOvertimeMinutes({
+      part,
       newCalc: switches.newCalc,
       pipelineOvertime: out.overtimeMinutes,
       workingMinutes: data.workingMinutes ?? null,
-      legacyScheduledMinutes: calcLegacyScheduledMinutes(ctx.user.workStartTime, ctx.user.workEndTime, ctx.user.employmentType),
+      legacyScheduledMinutes: calcLegacyScheduledMinutes(ctx.user.workStartTime, ctx.user.workEndTime, ctx.user.employmentType, { userBreakMinutes: ctx.user.breakMinutes, setting: ctx.setting }),
       hasSchedule: !!schedule,
     })
   }

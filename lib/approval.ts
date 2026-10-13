@@ -34,11 +34,14 @@ export function isStepApprover(route: RouteStep[], step: number, userId: string)
   return route.some(r => r.step === step && r.approverId === userId)
 }
 
-/** 表示用の承認進捗（消化済みステップ数 / 総ステップ数） */
+/**
+ * 表示用の承認進捗（消化済みステップ数 / 総ステップ数）。
+ * 同じステップに複数の承認者がいても1ステップと数える（経路の行数ではなくステップ数。いずれか1名の承認で消化）
+ */
 export function approvalProgress(route: RouteStep[], approvals: ApprovalLog[]): { done: number; total: number } {
   const done = new Set(
     approvals.filter(a => a.action === "APPROVED" || a.action === "SKIPPED").map(a => a.step),
   )
-  const consumed = route.filter(r => done.has(r.step)).length
-  return { done: consumed, total: route.length }
+  const steps = [...new Set(route.map(r => r.step))]
+  return { done: steps.filter(s => done.has(s)).length, total: steps.length }
 }

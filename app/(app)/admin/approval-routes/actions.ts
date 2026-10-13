@@ -9,7 +9,10 @@ async function checkAdminOnly() {
   if (session?.user?.role !== "ADMIN") throw new Error("Forbidden")
 }
 
-/** 経路の追加・更新（部署×ステップは一意。既存があれば承認者を差し替え） */
+/**
+ * 経路に承認者を追加する。同じ部署・ステップに複数名を置ける（いずれか1名の承認で次のステップへ）。
+ * 同じ人を同じステップに重ねて登録しようとしたときは何もしない。承認者を入れ替えるときは、追加してから古い行を削除する
+ */
 export async function actionUpsertRoute(formData: FormData) {
   await checkAdminOnly()
 
@@ -19,8 +22,8 @@ export async function actionUpsertRoute(formData: FormData) {
   if (!department || !approverId || !Number.isInteger(step) || step < 1 || step > 9) return
 
   await prisma.approvalRoute.upsert({
-    where:  { department_step: { department, step } },
-    update: { approverId },
+    where:  { department_step_approverId: { department, step, approverId } },
+    update: {},
     create: { department, step, approverId },
   })
   revalidatePath("/admin/approval-routes")

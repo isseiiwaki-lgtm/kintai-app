@@ -213,7 +213,8 @@ model ApprovalRoute {
   approverId String
   approver   User   @relation(fields: [approverId], references: [id], onDelete: Cascade)
 
-  @@unique([department, step])
+  // 同じステップに複数の承認者を置ける（いずれか1名の承認で次のステップへ。2026-10 リリース3）
+  @@unique([department, step, approverId])
 }
 
 // 承認ログ（多段階）

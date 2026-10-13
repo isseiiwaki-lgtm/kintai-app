@@ -47,6 +47,7 @@ export default async function ApprovalRoutesPage() {
       <h1 className="text-base font-semibold text-gray-900 mb-1">承認経路（申請承認の多段階化）</h1>
       <p className="text-xs text-gray-500 mb-5">
         経路を設定した部署の申請は step 順に承認が必要になります（最終ステップの承認で確定）。
+        同じ step に複数の承認者を置くと、そのうち誰か1名が承認すれば次の step へ進みます（全員の承認が必要なときは step を分けてください）。
         未設定の部署は従来どおり一段階承認です。承認者に指定できるのは ADMIN / APPROVER のみ。
       </p>
 
@@ -62,9 +63,17 @@ export default async function ApprovalRoutesPage() {
             <div className="px-4 py-2.5 border-b border-gray-100 text-sm font-medium text-gray-800">{dept}</div>
             <table className="w-full text-sm">
               <tbody>
-                {list.map(r => (
+                {list.map((r, i) => (
                   <tr key={r.id} className="border-b border-gray-50 last:border-0">
-                    <td className="px-4 py-2 w-24 text-gray-500 text-xs">step {r.step}{r.step === Math.max(...list.map(x => x.step)) ? "（決裁）" : ""}</td>
+                    <td className="px-4 py-2 w-36 text-gray-500 text-xs">
+                      {/* 同じ step の2人目以降は step 名を繰り返さない */}
+                      {i > 0 && list[i - 1].step === r.step ? "" : (
+                        <>
+                          step {r.step}{r.step === Math.max(...list.map(x => x.step)) ? "（決裁）" : ""}
+                          {list.filter(x => x.step === r.step).length > 1 && <span className="block text-[11px] text-gray-400">いずれか1名</span>}
+                        </>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-gray-800">{r.approver.name ?? r.approver.email}</td>
                     <td className="px-3 py-2 text-gray-400 text-xs">{r.approver.role}</td>
                     <td className="px-3 py-2 w-20 text-right">
@@ -84,7 +93,7 @@ export default async function ApprovalRoutesPage() {
 
       {/* 追加フォーム */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-4 py-4">
-        <h2 className="text-sm font-medium text-gray-700 mb-3">経路を追加 / 変更（同じ部署×stepは上書き）</h2>
+        <h2 className="text-sm font-medium text-gray-700 mb-3">承認者を追加（同じ部署・step に追加すると「いずれか1名」になります。入れ替えるときは追加してから古い行を削除）</h2>
         <form action={actionUpsertRoute} className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-xs text-gray-500 mb-1">部署</label>
@@ -109,7 +118,7 @@ export default async function ApprovalRoutesPage() {
             </select>
           </div>
           <button type="submit" className="px-4 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-            保存
+            追加
           </button>
         </form>
       </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { actionCreateRequest } from "../actions"
+import { TimeInput } from "@/components/time-input"
 import { defaultHolidayBreakMinutes, isSameWeek, validateHolidayWorkTimes } from "@/lib/holiday-work"
 import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 
@@ -71,6 +72,7 @@ export function NewRequestForm({
   isPartTimer,
   canHalfDay,
   breakSetting,
+  needsOvertimeStart,
 }: {
   /** 休日出勤申請の予定時刻の初期値（本人の所定の定時。未設定なら空） */
   defaultStartTime: string
@@ -83,14 +85,14 @@ export function NewRequestForm({
   canHalfDay: boolean
   /** 会社設定の休憩時間控除ルール（休日出勤の休憩の初期値に使う）。無ければ法定休憩 */
   breakSetting: { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number } | null
+  /** 定時の無い人（シフト勤務のパート）。残業申請に開始時刻を入れる（開始＝定時の終業が決まらないため） */
+  needsOvertimeStart: boolean
 }) {
   const router       = useRouter()
   const searchParams = useSearchParams()
   const [type, setType]       = useState<RequestType>("OVERTIME")
   const [pending, setPending] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
-  const [showAllOvertimeTimes,   setShowAllOvertimeTimes]   = useState(false)
-  const [showAllEarlyStartTimes, setShowAllEarlyStartTimes] = useState(false)
   // 遅刻・早退申請：種別と、早退の休憩の申告（正社員のみ。取らなかった=0／取った=15分刻みの分数）
   const [absenceKind, setAbsenceKind] = useState<"late" | "early">(searchParams.get("absenceType") === "early" ? "early" : "late")
   const [tookBreak, setTookBreak]     = useState<"" | "no" | "yes">("")
@@ -224,23 +226,18 @@ export function NewRequestForm({
         </div>
 
         {/* 残業: 終了時刻 */}
+        {type === "OVERTIME" && needsOvertimeStart && (
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">残業開始時刻</label>
+            <TimeInput name="startTime" required options={ALL_TIME_OPTIONS} />
+            <p className="mt-1 text-xs text-gray-400">定時が決まっていないため、残業として働く時間の始まりを選んでください</p>
+          </div>
+        )}
         {type === "OVERTIME" && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">残業終了時刻</label>
-            <select name="endTime" required defaultValue="" className={selectClass}>
-              <option value="" disabled>-- 時刻を選択 --</option>
-              {(showAllOvertimeTimes ? ALL_TIME_OPTIONS : buildTimeOptions(13, 23)).map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            <label className="flex items-center gap-1.5 mt-1.5 text-xs text-gray-500">
-              <input
-                type="checkbox"
-                checked={showAllOvertimeTimes}
-                onChange={(e) => setShowAllOvertimeTimes(e.target.checked)}
-              />
-              すべての時間を表示（午前のみ出勤等の例外用）
-            </label>
+            {/* 初期値は本人の退勤時刻（定時の無い人は空欄） */}
+            <TimeInput name="endTime" required defaultValue={defaultEndTime} options={buildTimeOptions(13, 23)} />
           </div>
         )}
 
@@ -248,20 +245,8 @@ export function NewRequestForm({
         {type === "EARLY_START" && (
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">早出開始時刻</label>
-            <select name="startTime" required defaultValue="" className={selectClass}>
-              <option value="" disabled>-- 時刻を選択 --</option>
-              {(showAllEarlyStartTimes ? ALL_TIME_OPTIONS : buildTimeOptions(5, 12)).map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-            <label className="flex items-center gap-1.5 mt-1.5 text-xs text-gray-500">
-              <input
-                type="checkbox"
-                checked={showAllEarlyStartTimes}
-                onChange={(e) => setShowAllEarlyStartTimes(e.target.checked)}
-              />
-              すべての時間を表示
-            </label>
+            {/* 初期値は本人の出勤時刻 */}
+            <TimeInput name="startTime" required defaultValue={defaultStartTime} options={buildTimeOptions(5, 12)} />
           </div>
         )}
 
@@ -288,12 +273,7 @@ export function NewRequestForm({
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">時刻</label>
-              <select name="time" required defaultValue={presetTime} className={selectClass}>
-                <option value="" disabled>-- 選択 --</option>
-                {withPresetOption(buildTimeOptions(6, 20), presetTime).map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              <TimeInput name="time" required defaultValue={presetTime} options={withPresetOption(buildTimeOptions(6, 20), presetTime)} />
             </div>
           </div>
         )}
@@ -353,12 +333,7 @@ export function NewRequestForm({
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">修正後の時刻</label>
-              <select name="correctedTime" required defaultValue="" className={selectClass}>
-                <option value="" disabled>-- 時刻を選択 --</option>
-                {ALL_TIME_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+              <TimeInput name="correctedTime" required options={ALL_TIME_OPTIONS} />
             </div>
           </div>
         )}
@@ -385,21 +360,11 @@ export function NewRequestForm({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">予定の開始時刻</label>
-                <select name="startTime" required value={hwStart} onChange={(e) => changeHwTime(e.target.value, hwEnd)} className={selectClass}>
-                  <option value="" disabled>-- 選択 --</option>
-                  {ALL_TIME_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+                <TimeInput name="startTime" required value={hwStart} onChange={(v) => changeHwTime(v, hwEnd)} options={ALL_TIME_OPTIONS} />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">予定の終了時刻</label>
-                <select name="endTime" required value={hwEnd} onChange={(e) => changeHwTime(hwStart, e.target.value)} className={selectClass}>
-                  <option value="" disabled>-- 選択 --</option>
-                  {ALL_TIME_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+                <TimeInput name="endTime" required value={hwEnd} onChange={(v) => changeHwTime(hwStart, v)} options={ALL_TIME_OPTIONS} />
               </div>
             </div>
             <div>

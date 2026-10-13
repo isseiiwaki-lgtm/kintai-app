@@ -27,10 +27,18 @@ export async function actionCreateRequest(formData: FormData): Promise<CreateReq
   switch (type) {
     case "OVERTIME": {
       // 定時（修正前ベースライン）を記録
-      const user = await prisma.user.findUnique({ where: { id: userId }, select: { workEndTime: true } })
+      const user = await prisma.user.findUnique({ where: { id: userId }, select: { workStartTime: true, workEndTime: true } })
+      const endTime = formData.get("endTime") as string
       detail = {
-        endTime:          formData.get("endTime") as string,
+        endTime,
         scheduledEndTime: user?.workEndTime ?? "",
+      }
+      // 定時の無い人（シフト勤務のパート）は開始時刻も持つ。開始は定時の終業が前提だが、定時が無いと決まらないため（2026-10-13〜）
+      if (!user?.workStartTime || !user?.workEndTime) {
+        const startTime = (formData.get("startTime") as string | null) ?? ""
+        if (!/^\d{2}:\d{2}$/.test(startTime)) return { ok: false, error: "残業開始時刻を選んでください" }
+        if (startTime >= endTime) return { ok: false, error: "残業開始時刻は終了時刻より前にしてください" }
+        detail.startTime = startTime
       }
       break
     }

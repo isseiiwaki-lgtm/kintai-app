@@ -38,6 +38,8 @@ function detailSummary(type: string, detail: unknown): string {
         return d.startTime ? `早出開始 ${d.startTime}${scheduled}` : ""
       }
       const scheduled = d.scheduledEndTime ? `（定時 ${d.scheduledEndTime}）` : ""
+      // 定時の無いパートは申請に開始時刻を持つ（2026-10-13〜）
+      if (d.startTime && d.endTime) return `残業 ${d.startTime}〜${d.endTime}`
       return d.endTime ? `残業終了 ${d.endTime}${scheduled}` : ""
     }
     case "HOLIDAY_WORK": return holidayWorkSummary(d as HolidayWorkDetail)

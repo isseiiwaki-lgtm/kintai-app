@@ -119,10 +119,10 @@ describe("修正：承認済みの有給", () => {
     expect(rec(DAY1)?.paidLeaveMinutes).toBeNull()
     expect(rec(DAY2)?.paidLeaveMinutes).toBe(240)
   })
-  it("全休に変えると入れ直す（半休 240 → 全休 435。設定なし・⑤未保存は旧方式＝法定休憩45）", async () => {
+  it("全休に変えると入れ直す（半休 240 → 全休 420。所定は⑤に関係なく本人の所定休憩・会社設定から。2026-10-13〜）", async () => {
     addLeave("APPROVED", "pm"); setRec(DAY1, 240)
     expect(await actionUpdateRequest("L1", form({ halfDay: "full" }))).toEqual({ ok: true })
-    expect(rec(DAY1)?.paidLeaveMinutes).toBe(435)
+    expect(rec(DAY1)?.paidLeaveMinutes).toBe(420)
   })
   it("有給でなくなる（特別休暇へ変更）と分数を消す", async () => {
     addLeave("APPROVED", "full"); setRec(DAY1, 420)

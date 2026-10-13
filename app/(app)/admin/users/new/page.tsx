@@ -96,6 +96,7 @@ export default function NewUserPage() {
               </select>
             </div>
           </div>
+          <p className="-mt-2 text-xs text-gray-400">パートでシフト勤務の人（勤務時間帯が日によって変わる人）は、出勤・退勤とも空欄にしてください。遅刻・早退を判定しません</p>
 
           {/* 所定休憩（任意）。空なら会社設定の休憩ルール（定時の拘束時間から）で求める */}
           <div>
@@ -106,7 +107,7 @@ export default function NewUserPage() {
                 <option key={m} value={m}>{m}分</option>
               ))}
             </select>
-            <p className="mt-1 text-xs text-gray-400">所定の勤務時間（拘束時間 − 所定休憩）と、正社員の休憩の規定値に使います。パートの休憩は休憩ボタン・休憩申請で記録します。</p>
+            <p className="mt-1 text-xs text-gray-400">ふだん取る休憩です（正社員・パート共通）。休憩の記録が無い日はこの分数を引きます。未設定なら、会社設定の休憩ルールを定時の長さに当てて決めます（定時が無い人は0分）。</p>
           </div>
 
           {/* フルタイムパート（パートのみ有効） */}

@@ -118,6 +118,7 @@ export async function loadDayNotices(userId: string, today: Date): Promise<DayNo
     }),
     breakRecord: needsBreakRecordNotice({
       employmentType: user.employmentType, userBreakMinutes: user.breakMinutes,
+      workStartTime: user.workStartTime, workEndTime: user.workEndTime, setting: sched.setting,
       breakMinutes: record.breakMinutes, breakStart: record.breakStart, breakEnd: record.breakEnd,
       clockIn: record.clockIn, clockOut: record.clockOut, goOutAt: record.goOutAt, returnAt: record.returnAt,
       hasPendingBreakRequest: requests.some((r) => r.type === "BREAK"),

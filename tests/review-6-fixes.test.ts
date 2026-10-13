@@ -43,24 +43,21 @@ describe("withPresetOption：範囲外の初期時刻を選択肢に足す", () 
   })
 })
 
-describe("resolveBreakMinutes：在席時間の法定休憩は「休日で休日出勤申請なし」だけ", () => {
+describe("resolveBreakMinutes：定時なしの日（2026-10-13〜 在席時間から推定しない）", () => {
   const base = {
     savedBreakMinutes: null, halfDay: null, employmentType: "full", userBreakMinutes: 60,
-    workStartTime: null, workEndTime: null, daySchedule: null, presenceMinutes: 120, setting: SETTING,
+    workStartTime: null, workEndTime: null, daySchedule: null, setting: SETTING,
   } as const
-  it("休日（isRestDay）・定時なし → 在席120分は休憩0（⑤ON/OFF 共通）", () => {
-    expect(resolveBreakMinutes({ ...base, isRestDay: true, newCalc: true })).toBe(0)
-    expect(resolveBreakMinutes({ ...base, isRestDay: true, newCalc: false })).toBe(0)
+  it("休日（isRestDay）・休日出勤申請なし → 休憩0（申請の承認で成立する）", () => {
+    expect(resolveBreakMinutes({ ...base, isRestDay: true })).toBe(0)
   })
-  it("平日で本人の始業・終業が未設定（定時なし）→ ⑤ON は従来の規定値（本人の所定休憩）", () => {
-    expect(resolveBreakMinutes({ ...base, isRestDay: false, newCalc: true }))
-      .toBe(calcDefaultBreakMinutes({ userBreakMinutes: 60, workStartTime: null, workEndTime: null }, SETTING))
-    expect(resolveBreakMinutes({ ...base, newCalc: true }))
+  it("平日で本人の始業・終業が未設定（定時なし）→ 本人の所定休憩", () => {
+    expect(resolveBreakMinutes({ ...base, isRestDay: false })).toBe(60)
+    expect(resolveBreakMinutes({ ...base }))
       .toBe(calcDefaultBreakMinutes({ userBreakMinutes: 60, workStartTime: null, workEndTime: null }, SETTING))
   })
-  it("平日で定時なし → ⑤OFF は旧方式（在席時間の法定休憩）", () => {
-    expect(resolveBreakMinutes({ ...base, isRestDay: false, presenceMinutes: 500, newCalc: false })).toBe(60)
-    expect(resolveBreakMinutes({ ...base, isRestDay: false, presenceMinutes: 120, newCalc: false })).toBe(0)
+  it("平日で定時なし・所定休憩なし → 0（シフト勤務のパートなど。申告だけで決まる）", () => {
+    expect(resolveBreakMinutes({ ...base, userBreakMinutes: null, employmentType: "part" })).toBe(0)
   })
 })
 

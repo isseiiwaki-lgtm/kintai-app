@@ -67,21 +67,20 @@ export function calcScheduledMinutes(
 }
 
 /**
- * 旧方式（⑤OFF）の本人所定勤務時間（分）＝ 拘束時間（定時の終業−始業）− 法定休憩（6時間超45分・8時間超60分）。
- * 本番 a1d25ca の calcScheduledMinutes と同じ。本人の休憩設定・会社設定は見ない。未設定は雇用形態で fallback（正社員480・他0）
+ * 旧方式（⑤OFF）の残業「実働 − 所定」に使う本人所定勤務時間（分）。
+ * 2026-10-13 から calcScheduledMinutes と同じ（本人の所定休憩 → 会社設定の休憩ルール）。旧来の「法定休憩（45/60分の固定値）」は
+ * 会社の休憩と食い違う（例：9:00〜17:00 で所定7:15になる）ため使わない。未設定は雇用形態で fallback（正社員480・他0）
  */
 export function calcLegacyScheduledMinutes(
   workStartTime: string | null | undefined,
   workEndTime:   string | null | undefined,
   employmentType: string | null | undefined,
+  breakOpts: {
+    userBreakMinutes: number | null | undefined
+    setting: { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number } | null | undefined
+  },
 ): number {
-  const startMins = parseHHMM(workStartTime)
-  const endMins   = parseHHMM(workEndTime)
-  if (startMins !== null && endMins !== null && endMins > startMins) {
-    const raw = endMins - startMins
-    return raw - calcLegalBreak(raw)
-  }
-  return employmentType === "full" ? 480 : 0
+  return calcScheduledMinutes(workStartTime, workEndTime, employmentType, breakOpts)
 }
 
 /**
@@ -214,6 +213,52 @@ export function calcMetrics({
     earlyStartMinutes,
     afterHoursMinutes,
   }
+}
+
+/** パートの1日の法定労働時間（分）。これを超えた時間帯は残業（CLOCK_PIPELINE 2026-10-13 の見直し） */
+export const PART_DAILY_LIMIT_MINUTES = 480
+
+/**
+ * パートの残業（分）。定時の外は残業にしない（2026-10-13 決定）。次の2つの時間帯を合わせた長さ（重なりは1回だけ数える。足し算にしない）
+ * - 8時間を超えた時間帯 ＝ ［出勤 ＋ 8時間 ＋ その日の休憩・外出, 退勤］（休憩の時間帯は記録しないので、8時間に達する時刻は休憩・外出を足して推定する）
+ * - 承認された残業申請の時間帯のうち、実際に働いていた部分 ＝ ［申請開始, 申請終了］∩［出勤, 退勤］
+ * 出勤・退勤は丸め・④を通した後の記録時刻。windows はその日の承認済みの申請の時間帯
+ */
+export function calcPartOvertimeMinutes(p: {
+  clockIn: Date
+  clockOut: Date
+  /** その日の休憩分数 ＋ 外出の分数（勤務に数えない時間） */
+  nonWorkMinutes: number
+  windows: { start: Date; end: Date }[]
+}): number {
+  const toMin = (d: Date) => Math.floor(d.getTime() / 60000)
+  const inM = toMin(p.clockIn)
+  const outM = toMin(p.clockOut)
+  if (outM <= inM) return 0
+  const segs: [number, number][] = []
+  const overStart = inM + PART_DAILY_LIMIT_MINUTES + Math.max(0, p.nonWorkMinutes)
+  if (overStart < outM) segs.push([overStart, outM])
+  for (const w of p.windows) {
+    const s = Math.max(inM, toMin(w.start))
+    const e = Math.min(outM, toMin(w.end))
+    if (s < e) segs.push([s, e])
+  }
+  // 区間を合わせた長さ
+  segs.sort((a, b) => a[0] - b[0])
+  let total = 0
+  let curS = -Infinity
+  let curE = -Infinity
+  for (const [s, e] of segs) {
+    if (s > curE) {
+      if (curE > curS) total += curE - curS
+      curS = s
+      curE = e
+    } else if (e > curE) {
+      curE = e
+    }
+  }
+  if (curE > curS) total += curE - curS
+  return total
 }
 
 /** 日時の属する JST 日付の 0:00 を UTC の Date で返す（先に +9h して日付部品を取る。JST 0:00〜8:59 のズレ防止） */
@@ -393,19 +438,22 @@ export function earlyLeaveNudgeTime(p: {
   return `${String(Math.floor(floored / 60)).padStart(2, "0")}:${String(floored % 60).padStart(2, "0")}`
 }
 
-/** 6時間（分）。パートの休憩申請漏れの判定（実働がこれを超えたら休憩の記録が要る） */
-const BREAK_NOTICE_WORK_MINUTES = 360
+/** 会社設定が読めないときだけ使う境目（分）。通常は会社設定のルール1の時間（break1Threshold） */
+const BREAK_NOTICE_FALLBACK_MINUTES = 360
 
 /**
- * パートの休憩申請漏れの判定（CLOCK_PIPELINE「知らせる」）。次のどちらかで、休憩の記録が無い日
- * ① 所定休憩（User.breakMinutes）が設定されている（0より大きい）
- * ② 実働（外出を除く在席時間）が6時間を超えた
+ * パートの休憩申請漏れの判定（CLOCK_PIPELINE「知らせる」）。休憩の記録が無く、次の両方にあてはまる日
+ * - 休憩の既定値（本人の所定休憩 → 定時の拘束時間＋会社設定）が 0（既定値で休憩を引く人には出さない。2026-10-13〜）
+ * - 実働（外出を除く在席時間）が会社設定のルール1の時間（6時間）を超えた
  * 休憩の記録 ＝ その日の breakMinutes（休憩ボタン・承認済みの休憩申請。0分を含む）か、過去の休憩打刻（開始・終了）。
  * 審査中の休憩申請がある日は、申請済みなので出さない。退勤まで済んだ日だけ判定する。要確認の状態・件数には入れない
  */
 export function needsBreakRecordNotice(p: {
   employmentType: string | null | undefined
   userBreakMinutes: number | null | undefined
+  workStartTime: string | null
+  workEndTime: string | null
+  setting: { break1Threshold: number; break1Minutes: number; break2Threshold: number; break2Minutes: number } | null | undefined
   breakMinutes: number | null | undefined
   breakStart?: Date | null
   breakEnd?: Date | null
@@ -419,10 +467,13 @@ export function needsBreakRecordNotice(p: {
   if (!p.clockIn || !p.clockOut) return false
   if (p.breakMinutes != null || (p.breakStart && p.breakEnd)) return false
   if (p.hasPendingBreakRequest) return false
-  if ((p.userBreakMinutes ?? 0) > 0) return true
+  const defaultBreak = calcDefaultBreakMinutes(
+    { userBreakMinutes: p.userBreakMinutes, workStartTime: p.workStartTime, workEndTime: p.workEndTime }, p.setting,
+  )
+  if (defaultBreak > 0) return false
   const goOutMs = p.goOutAt && p.returnAt ? p.returnAt.getTime() - p.goOutAt.getTime() : 0
   const presence = Math.floor((p.clockOut.getTime() - p.clockIn.getTime() - goOutMs) / 60000)
-  return presence > BREAK_NOTICE_WORK_MINUTES
+  return presence > (p.setting?.break1Threshold ?? BREAK_NOTICE_FALLBACK_MINUTES)
 }
 
 /**

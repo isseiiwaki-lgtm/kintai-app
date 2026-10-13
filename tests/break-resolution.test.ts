@@ -66,12 +66,12 @@ describe("段7：休憩分数の決め方（IMPLEMENTATION_PLAN I の具体例�
     expect(calcScheduledMinutes("09:00", "15:00", "part", { userBreakMinutes: 60, setting: c.setting })).toBe(300)
   })
 
-  it("野木さん：押し忘れ → 実働360（休憩を引かない）・休憩申請漏れの知らせ", () => {
-    expect(working(rec(jst(9, 0), jst(15, 0)), ctx(NOGI))).toBe(360)
+  it("野木さん（所定休憩60）：記録なし → 所定休憩60を引いて実働300・知らせなし（既定値で引くため。2026-10-13〜）", () => {
+    expect(working(rec(jst(9, 0), jst(15, 0)), ctx(NOGI))).toBe(300)
     expect(needsBreakRecordNotice({
-      employmentType: "part", userBreakMinutes: 60, breakMinutes: null,
+      employmentType: "part", workStartTime: "09:00", workEndTime: "15:00", setting: SETTING, userBreakMinutes: 60, breakMinutes: null,
       clockIn: jst(9, 0), clockOut: jst(15, 0),
-    })).toBe(true)
+    })).toBe(false)
   })
 
   it("野木さん：半休（所定の半分）は 150分", () => {
@@ -83,7 +83,7 @@ describe("段7：休憩分数の決め方（IMPLEMENTATION_PLAN I の具体例�
     const user = { ...NOGI, breakMinutes: null }
     expect(working(rec(jst(9, 0), jst(14, 0)), ctx(user))).toBe(300)
     expect(needsBreakRecordNotice({
-      employmentType: "part", userBreakMinutes: null, breakMinutes: null, clockIn: jst(9, 0), clockOut: jst(14, 0),
+      employmentType: "part", workStartTime: "09:00", workEndTime: "15:00", setting: SETTING, userBreakMinutes: null, breakMinutes: null, clockIn: jst(9, 0), clockOut: jst(14, 0),
     })).toBe(false)
   })
 
@@ -91,13 +91,13 @@ describe("段7：休憩分数の決め方（IMPLEMENTATION_PLAN I の具体例�
     const user = { ...NOGI, breakMinutes: null }
     expect(working(rec(jst(9, 0), jst(16, 0)), ctx(user))).toBe(420)
     expect(needsBreakRecordNotice({
-      employmentType: "part", userBreakMinutes: null, breakMinutes: null, clockIn: jst(9, 0), clockOut: jst(16, 0),
+      employmentType: "part", workStartTime: "09:00", workEndTime: "15:00", setting: SETTING, userBreakMinutes: null, breakMinutes: null, clockIn: jst(9, 0), clockOut: jst(16, 0),
     })).toBe(true)
   })
 
   it("パート・ちょうど6時間は知らせなし（6時間を超えたら）", () => {
     expect(needsBreakRecordNotice({
-      employmentType: "part", userBreakMinutes: null, breakMinutes: null, clockIn: jst(9, 0), clockOut: jst(15, 0),
+      employmentType: "part", workStartTime: "09:00", workEndTime: "15:00", setting: SETTING, userBreakMinutes: null, breakMinutes: null, clockIn: jst(9, 0), clockOut: jst(15, 0),
     })).toBe(false)
   })
 
@@ -128,13 +128,13 @@ describe("段7：休憩分数の決め方（IMPLEMENTATION_PLAN I の具体例�
   it("休憩0分を押した日は0分を引く（規定値を引かない）。[0] は「記録あり」で知らせも出ない", () => {
     expect(working(rec(jst(9, 0), jst(18, 0), { breakMinutes: 0 }), ctx(FULL_18))).toBe(540)
     expect(needsBreakRecordNotice({
-      employmentType: "part", userBreakMinutes: 60, breakMinutes: 0, clockIn: jst(9, 0), clockOut: jst(15, 0),
+      employmentType: "part", workStartTime: "09:00", workEndTime: "15:00", setting: SETTING, userBreakMinutes: 60, breakMinutes: 0, clockIn: jst(9, 0), clockOut: jst(15, 0),
     })).toBe(false)
   })
 
   it("審査中の休憩申請は差し引かない（承認されて breakMinutes に入った時点で反映）", () => {
     const pending = ctx(NOGI, [breakReq("90", "PENDING")])
-    expect(working(rec(jst(9, 0), jst(15, 0)), pending)).toBe(360)
+    expect(working(rec(jst(9, 0), jst(15, 0)), pending)).toBe(300)
   })
 
   it("承認された休憩申請（90分）は breakMinutes に入った値として差し引く", () => {
@@ -152,10 +152,10 @@ describe("段7：休憩分数の決め方（IMPLEMENTATION_PLAN I の具体例�
   })
 
   it("休日（定時なし）に半日出勤した社員は、平日の定時ぶんの休憩を引かず在席時間に会社ルールを当てる", () => {
-    // 在席5時間 → 6時間以内なので0分
+    // 休日で休日出勤申請なし → 申請が承認されるまで0分
     expect(resolveBreakMinutes({
       savedBreakMinutes: null, halfDay: null, employmentType: "full", userBreakMinutes: null,
-      workStartTime: "09:00", workEndTime: "18:00", daySchedule: null, isRestDay: true, presenceMinutes: 300, setting: SETTING,
+      workStartTime: "09:00", workEndTime: "18:00", daySchedule: null, isRestDay: true, setting: SETTING,
     })).toBe(0)
   })
 })
@@ -195,7 +195,23 @@ describe("休憩申請の分数・所定休憩の入力検証", () => {
 })
 
 describe("パートの休憩申請漏れの知らせ", () => {
-  const base = { employmentType: "part", userBreakMinutes: 60, breakMinutes: null, clockIn: jst(9, 0), clockOut: jst(15, 0) }
+  // 既定値0（所定休憩なし・定時6時間）の人が7時間在席・記録なし → 知らせあり。以下はそこから1条件ずつ変える
+  const base = {
+    employmentType: "part", userBreakMinutes: null as number | null, breakMinutes: null,
+    workStartTime: "09:00", workEndTime: "15:00", setting: SETTING, clockIn: jst(9, 0), clockOut: jst(16, 0),
+  }
+  it("基準：既定値0・7時間在席・記録なし → 知らせあり", () => {
+    expect(needsBreakRecordNotice(base)).toBe(true)
+  })
+  it("所定休憩がある人は出さない（既定値で引くため。2026-10-13〜）", () => {
+    expect(needsBreakRecordNotice({ ...base, userBreakMinutes: 60 })).toBe(false)
+  })
+  it("定時が6時間を超える人は出さない（会社設定の既定値で引くため）", () => {
+    expect(needsBreakRecordNotice({ ...base, workEndTime: "16:00" })).toBe(false)
+  })
+  it("境目は会社設定のルール1の時間（ルール1を420分にすると7時間在席では出ない）", () => {
+    expect(needsBreakRecordNotice({ ...base, setting: { ...SETTING, break1Threshold: 420 } })).toBe(false)
+  })
   it("正社員は対象外", () => {
     expect(needsBreakRecordNotice({ ...base, employmentType: "full" })).toBe(false)
   })

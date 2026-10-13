@@ -157,6 +157,7 @@ export default async function AdminAttendancePage({ searchParams }: { searchPara
     const extraReqsOf = (r: Rec) => extraReqMap.get(`${u.id}|${r.date.toISOString()}`) ?? []
     const noBreakRecordDays = recs.filter((r) => needsBreakRecordNotice({
       employmentType: u.employmentType, userBreakMinutes: u.breakMinutes,
+      workStartTime: u.workStartTime, workEndTime: u.workEndTime, setting,
       breakMinutes: r.breakMinutes, breakStart: r.breakStart, breakEnd: r.breakEnd,
       clockIn: r.clockIn, clockOut: r.clockOut, goOutAt: r.goOutAt, returnAt: r.returnAt,
       hasPendingBreakRequest: extraReqsOf(r).includes("BREAK"),

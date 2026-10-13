@@ -1,7 +1,7 @@
 /**
  * ⑤「新しい計算方式」（正社員の休憩の規定値と残業の式）
- * - ⑤OFF＝旧方式（本番 a1d25ca）：休憩の規定値は在席時間に法定休憩、残業は 実働 − 所定勤務時間
- * - ⑤ON＝現行：休憩の規定値は定時の拘束時間から、残業は早出＋終業後
+ * - ⑤OFF＝旧方式：残業は 実働 − 所定勤務時間／⑤ON：残業は早出＋終業後
+ * - 休憩の規定値は 2026-10-13 から⑤に関係なく所定から決める（本人の所定休憩 → 定時の拘束時間＋会社ルール）
  * - 休憩の事実（休憩ボタン・承認済みの休憩申請・早退申請の休憩の申告）は ON/OFF どちらでも同じ
  * - 記録に保存した⑤に従い、設定を切り替えても保存した記録は変わらない
  */
@@ -45,14 +45,14 @@ function rec(clockIn: Date, clockOut: Date, newCalc: boolean | null, over: Recor
 
 const calc = (r: RecordRow, c: PipelineContext, opts = {}) => buildRecordUpdate(r, c, opts)!.data as Data
 
-describe("⑤ 正社員の休憩の規定値（事実が無い日）", () => {
-  it("8:30〜17:30 の社員が 15:00 に退勤：OFF は在席390分に45分 → 実働345、ON は定時の拘束540分に60分 → 実働330", () => {
-    expect(calc(rec(jst(8, 30), jst(15, 0), false), ctx(FULL_830)).workingMinutes).toBe(345)
+describe("休憩の規定値（事実が無い日。2026-10-13〜 ⑤に関係なく所定から決める）", () => {
+  it("8:30〜17:30 の社員が 15:00 に退勤：ON/OFF とも定時の拘束540分に60分 → 実働330（在席時間から推定しない）", () => {
+    expect(calc(rec(jst(8, 30), jst(15, 0), false), ctx(FULL_830)).workingMinutes).toBe(330)
     expect(calc(rec(jst(8, 30), jst(15, 0), true), ctx(FULL_830)).workingMinutes).toBe(330)
   })
 
-  it("12:00 に退勤（在席210分）：OFF は休憩0、ON は休憩60", () => {
-    expect(calc(rec(jst(8, 30), jst(12, 0), false), ctx(FULL_830)).workingMinutes).toBe(210)
+  it("12:00 に退勤（在席210分）：ON/OFF とも休憩60", () => {
+    expect(calc(rec(jst(8, 30), jst(12, 0), false), ctx(FULL_830)).workingMinutes).toBe(150)
     expect(calc(rec(jst(8, 30), jst(12, 0), true), ctx(FULL_830)).workingMinutes).toBe(150)
   })
 
@@ -61,27 +61,37 @@ describe("⑤ 正社員の休憩の規定値（事実が無い日）", () => {
     expect(calc(rec(jst(8, 30), jst(17, 30), true), ctx(FULL_830)).workingMinutes).toBe(480)
   })
 
-  it("在席が360分ちょうどは法定休憩なし（6時間超から45分）", () => {
+  it("在席時間は見ない（在席360分でも定時の拘束で決める）", () => {
     expect(resolveBreakMinutes({
       savedBreakMinutes: null, halfDay: null, employmentType: "full", userBreakMinutes: null,
-      workStartTime: "08:30", workEndTime: "17:30", daySchedule: { start: "08:30", end: "17:30" }, presenceMinutes: 360, newCalc: false,
-    })).toBe(0)
+      workStartTime: "08:30", workEndTime: "17:30", daySchedule: { start: "08:30", end: "17:30" },
+    })).toBe(60)
   })
 
-  it("OFF は外出を除いた在席時間で判定する（15:00 退勤・外出60分 → 在席330分 → 休憩0）", () => {
+  it("外出は休憩とは別に引く（15:00 退勤・外出60分 → 在席330分 − 休憩60 = 270）", () => {
     const r = calc(rec(jst(8, 30), jst(15, 0), false, { goOutAt: jst(12, 0), returnAt: jst(13, 0) }), ctx(FULL_830))
-    expect(r.workingMinutes).toBe(330)
+    expect(r.workingMinutes).toBe(270)
   })
 
-  it("本人の所定休憩（User.breakMinutes）も OFF では見ない（旧方式は法定休憩のみ）", () => {
+  it("本人の所定休憩（User.breakMinutes）を ON/OFF とも使う", () => {
     const user = { ...FULL_830, breakMinutes: 30 }
-    expect(calc(rec(jst(8, 30), jst(15, 0), false), ctx(user)).workingMinutes).toBe(345)
+    expect(calc(rec(jst(8, 30), jst(15, 0), false), ctx(user)).workingMinutes).toBe(360)
     expect(calc(rec(jst(8, 30), jst(15, 0), true), ctx(user)).workingMinutes).toBe(360)
   })
 
-  it("パート：休憩の記録が無ければ ON/OFF とも 0（法定休憩を当てない）", () => {
-    expect(calc(rec(jst(9, 0), jst(15, 0), false), ctx(PART_900)).workingMinutes).toBe(360)
-    expect(calc(rec(jst(9, 0), jst(15, 0), true), ctx(PART_900)).workingMinutes).toBe(360)
+  it("パート：所定休憩60分の人は記録が無くても60分引く（ON/OFF とも）", () => {
+    expect(calc(rec(jst(9, 0), jst(15, 0), false), ctx(PART_900)).workingMinutes).toBe(300)
+    expect(calc(rec(jst(9, 0), jst(15, 0), true), ctx(PART_900)).workingMinutes).toBe(300)
+  })
+
+  it("パート：所定休憩なし・定時6時間以下は休憩0（定時の長さで決める）", () => {
+    const user = { ...PART_900, breakMinutes: null }
+    expect(calc(rec(jst(9, 0), jst(16, 0), true), ctx(user)).workingMinutes).toBe(420)
+  })
+
+  it("パート：所定休憩なし・定時が6時間超（9:00〜16:00）は会社ルールの値（このテストの設定は45分）", () => {
+    const user = { ...PART_900, workEndTime: "16:00", breakMinutes: null }
+    expect(calc(rec(jst(9, 0), jst(16, 0), true), ctx(user)).workingMinutes).toBe(375)
   })
 })
 
@@ -106,15 +116,12 @@ describe("休憩の事実は ⑤ON/OFF どちらでも同じ", () => {
     expect(calc(r, ctx(FULL_830)).workingMinutes).toBe(370)
   })
 
-  it("半休の日は事実が無ければ、ON は 0（仕様）・OFF は旧方式（在席時間に法定休憩。a1d25ca と同じ）", () => {
+  it("半休の日は事実が無ければ 0（ON/OFF とも。在席時間から推定しない）", () => {
     const base = {
       savedBreakMinutes: null, halfDay: "pm" as const, employmentType: "full", userBreakMinutes: null,
-      workStartTime: "09:00", workEndTime: "17:30", daySchedule: { start: "09:00", end: "12:00" }, presenceMinutes: 400,
+      workStartTime: "09:00", workEndTime: "17:30", daySchedule: { start: "09:00", end: "12:00" },
     }
-    expect(resolveBreakMinutes({ ...base, newCalc: true })).toBe(0)
-    expect(resolveBreakMinutes({ ...base, newCalc: false })).toBe(45)
-    expect(resolveBreakMinutes({ ...base, newCalc: false, presenceMinutes: 500 })).toBe(60)
-    expect(resolveBreakMinutes({ ...base, newCalc: false, presenceMinutes: 300 })).toBe(0)
+    expect(resolveBreakMinutes(base)).toBe(0)
   })
 })
 
@@ -135,13 +142,16 @@ describe("⑤ 残業の式", () => {
   })
 
   it("所定が0（時刻未設定のパート）の OFF は 0", () => {
-    expect(calcLegacyScheduledMinutes(null, null, "part")).toBe(0)
+    expect(calcLegacyScheduledMinutes(null, null, "part", { userBreakMinutes: null, setting: SETTING })).toBe(0)
     expect(resolveOvertimeMinutes({ newCalc: false, pipelineOvertime: 30, workingMinutes: 600, legacyScheduledMinutes: 0, hasSchedule: true })).toBe(0)
   })
 
-  it("旧所定勤務時間は法定休憩のみ（9:00〜17:30 → 450、時刻未設定の社員は480）", () => {
-    expect(calcLegacyScheduledMinutes("09:00", "17:30", "full")).toBe(450)
-    expect(calcLegacyScheduledMinutes(null, null, "full")).toBe(480)
+  it("旧方式の所定も会社設定・本人の所定休憩から（2026-10-13〜。法定休憩の固定値は使わない）", () => {
+    expect(calcLegacyScheduledMinutes("09:00", "17:30", "full", { userBreakMinutes: null, setting: SETTING })).toBe(450)
+    // 9:00〜17:00（拘束480分）：会社設定のルール1（このテストでは45分）。本番の設定（60分）なら所定7:00
+    expect(calcLegacyScheduledMinutes("09:00", "17:00", "full", { userBreakMinutes: null, setting: { ...SETTING, break1Minutes: 60 } })).toBe(420)
+    expect(calcLegacyScheduledMinutes("09:00", "17:00", "full", { userBreakMinutes: 60, setting: SETTING })).toBe(420)
+    expect(calcLegacyScheduledMinutes(null, null, "full", { userBreakMinutes: null, setting: SETTING })).toBe(480)
   })
 })
 
@@ -175,20 +185,21 @@ describe("画面・Excel：保存した⑤に従う", () => {
 
 describe("⑤のスナップショット", () => {
   it("設定をONにして計算し直しても、保存した⑤がOFFの記録は旧方式のまま（保存値も書き換えない）", () => {
-    const c = ctx(FULL_830, { newCalcMethod: true })
-    const r = rec(jst(8, 30), jst(15, 0), false)
+    // ⑤で変わるのは残業の式（休憩は⑤に関係ない）。9:20〜18:00：OFF＝実働460−所定450＝10、ON＝終業後30
+    const c = ctx(FULL_900, { newCalcMethod: true })
+    const r = rec(jst(9, 20), jst(18, 0), false)
     const data = calc(r, c)
-    expect(data.workingMinutes).toBe(345)
+    expect(data.overtimeMinutes).toBe(10)
     expect(calc(r, c, { snapshot: "ifMissing" })).not.toHaveProperty("switchNewCalc")
-    expect(calc(r, c, { snapshot: "ifMissing" }).workingMinutes).toBe(345)
+    expect(calc(r, c, { snapshot: "ifMissing" }).overtimeMinutes).toBe(10)
   })
 
   it("保存値が無い記録は、最初に書くとき現在の設定を保存する（ifMissing）", () => {
-    const none = rec(jst(8, 30), jst(15, 0), null, { switchRoundEarly: null, switchRoundNear: null, switchRoundQuarter: null, switchCapOvertime: null })
-    const on = calc(none, ctx(FULL_830, { newCalcMethod: true }), { snapshot: "ifMissing" })
-    expect(on).toMatchObject({ switchNewCalc: true, workingMinutes: 330 })
-    const off = calc(none, ctx(FULL_830, { newCalcMethod: false }), { snapshot: "ifMissing" })
-    expect(off).toMatchObject({ switchNewCalc: false, workingMinutes: 345 })
+    const none = rec(jst(9, 20), jst(18, 0), null, { switchRoundEarly: null, switchRoundNear: null, switchRoundQuarter: null, switchCapOvertime: null })
+    const on = calc(none, ctx(FULL_900, { newCalcMethod: true }), { snapshot: "ifMissing" })
+    expect(on).toMatchObject({ switchNewCalc: true, overtimeMinutes: 30 })
+    const off = calc(none, ctx(FULL_900, { newCalcMethod: false }), { snapshot: "ifMissing" })
+    expect(off).toMatchObject({ switchNewCalc: false, overtimeMinutes: 10 })
   })
 
   it("出勤打刻（overwrite）は現在の設定で⑤を保存し直す", () => {
