@@ -48,7 +48,10 @@ const adapter = {
         throw new Error("このGoogleアカウントは、この社員に紐づけられません")
       }
     }
-    await baseAdapter.linkAccount(account)
+    // 紐づけ画面（app/link/actions.ts）と同じ4項目だけ保存する（使わないトークンは持たない）
+    await prisma.account.create({
+      data: { userId: account.userId, type: account.type, provider: account.provider, providerAccountId: account.providerAccountId },
+    })
   },
 }
 
