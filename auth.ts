@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma"
 import { authConfig } from "./auth.config"
 import type { Role } from "@prisma/client"
 import { signLinkState } from "@/lib/link-state"
+import { canLinkGoogleAccount, verifiedEmailFromIdToken } from "@/lib/google-link-guard"
 
 const PENDING_PREFIX = "__pending__"
 
@@ -36,6 +37,18 @@ const adapter = {
         image:  userData.image ?? null,
       },
     })
+  },
+  // 自動紐づけの見張り：Google のメールがその社員のメールと一致するときだけ紐づける。
+  // ログインしたままのブラウザで別の人が Google ログインしても、今ログインしている人に紐づけない（lib/google-link-guard.ts）
+  linkAccount: async (account: Parameters<typeof baseAdapter.linkAccount>[0]) => {
+    if (account.provider === "google") {
+      const googleEmail = verifiedEmailFromIdToken(account.id_token as string | undefined)
+      const target = await prisma.user.findUnique({ where: { id: account.userId }, select: { email: true, companyEmail: true } })
+      if (!canLinkGoogleAccount(target, googleEmail)) {
+        throw new Error("このGoogleアカウントは、この社員に紐づけられません")
+      }
+    }
+    await baseAdapter.linkAccount(account)
   },
 }
 

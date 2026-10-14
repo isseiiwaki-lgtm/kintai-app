@@ -1,15 +1,31 @@
 import { redirect } from "next/navigation"
 import { auth, signIn } from "@/auth"
 
-export default async function LoginPage() {
+/** NextAuth のエラー（?error=）。ログインが止まったときに理由が分かるようにする */
+const ERROR_MESSAGES: Record<string, string> = {
+  OAuthAccountNotLinked: "このGoogleアカウントは社員情報と紐づけられませんでした。管理者に連絡してください。",
+  AccessDenied: "このGoogleアカウントではログインできません。会社のGoogleアカウントでログインしてください。",
+}
+
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const session = await auth()
   if (session?.user) redirect("/")
+  const { error } = await searchParams
+  const errorMessage = error
+    ? (ERROR_MESSAGES[error] ?? "ログインできませんでした。もう一度お試しいただき、続く場合は管理者に連絡してください。")
+    : null
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-sm text-center">
         <h1 className="text-2xl font-bold mb-2">勤怠管理</h1>
         <p className="text-gray-500 text-sm mb-8">社内アカウントでログイン</p>
+        {errorMessage && (
+          <p className="mb-6 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-left text-xs text-red-700">
+            {errorMessage}
+            <span className="block mt-1 text-red-400">（エラー: {error}）</span>
+          </p>
+        )}
         <form
           action={async () => {
             "use server"
