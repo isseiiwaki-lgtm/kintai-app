@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { useSearchParams } from "next/navigation"
 import { actionFindByCompanyEmail, actionLinkAccount } from "./actions"
 import type { LinkState } from "@/lib/link-state"
+import { decodeLinkStateBody } from "@/lib/link-state-display"
 
 type Step = "input" | "confirm" | "done"
 
@@ -16,13 +17,9 @@ export function LinkContent() {
   const [isPending, startTransition] = useTransition()
 
   const rawState = params.get("state") ?? ""
-  let state: LinkState | null = null
-  try {
-    // 署名付き文字列 `<本体>.<署名>` の本体だけ表示用にデコードする（検証はサーバー側）
-    state = JSON.parse(Buffer.from(rawState.split(".")[0], "base64url").toString())
-  } catch {
-    // state が不正
-  }
+  // 署名付き文字列 `<本体>.<署名>` の本体だけ表示用にデコードする（検証はサーバー側）。
+  // ブラウザには Buffer が無いので専用の関数で読む（Buffer を使っていた間は必ず「無効なリンク」になっていた）
+  const state = decodeLinkStateBody<LinkState>(rawState)
 
   if (!state) {
     return (
