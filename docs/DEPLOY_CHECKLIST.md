@@ -20,6 +20,8 @@ VPS（<https://kintai.iwaki-i.online>）反映前に必ず全項目を確認す�
 
 ## 3. VPS 反映
 
+- 注意（2026-10-14）：`git push` と `ssh ...` と `bash ~/deploy.sh` を1回で貼ると、ssh でログインした時点で `deploy.sh` が手元側に残り、VPS では実行されない。**ssh でログインしてから `bash ~/deploy.sh` を打つ**
+
 - [ ] git push 済み（VPS は origin から pull する）
 - [ ] migration がある場合: **実行前に DB バックアップ** `pg_dump -h 127.0.0.1 -U ippcdb db_kintai > ~/backup_$(date +%Y%m%d).sql`
       - VPS の `~/.pgpass`（2026-10-06 作成・chmod 600）に DB パスワードを保存済みなので、パスワード入力は不要。手元から1行で実行できる：`ssh -i "C:\Users\kumag\.ssh\kagoya\kagoya.key" ubuntu@133.18.123.23 'pg_dump -h 127.0.0.1 -U ippcdb db_kintai > ~/backup_YYYYMMDD.sql && chmod 600 ~/backup_YYYYMMDD.sql && ls -lh ~/backup_YYYYMMDD.sql'`（PowerShell では外側をシングルクォートに。`$(date)` は手元で解釈されるので日付は直接書く）

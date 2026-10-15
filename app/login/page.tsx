@@ -3,7 +3,7 @@ import { auth, signIn } from "@/auth"
 
 /** NextAuth のエラー（?error=）。ログインが止まったときに理由が分かるようにする */
 const ERROR_MESSAGES: Record<string, string> = {
-  OAuthAccountNotLinked: "このGoogleアカウントは社員情報と紐づけられませんでした。管理者に連絡してください。",
+  OAuthAccountNotLinked: "このGoogleアカウントは社員情報と紐づけられませんでした。システム管理者に連絡してください。",
   AccessDenied: "このGoogleアカウントではログインできません。会社のGoogleアカウントでログインしてください。",
 }
 
@@ -12,7 +12,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   if (session?.user) redirect("/")
   const { error } = await searchParams
   const errorMessage = error
-    ? (ERROR_MESSAGES[error] ?? "ログインできませんでした。もう一度お試しいただき、続く場合は管理者に連絡してください。")
+    ? (ERROR_MESSAGES[error] ?? "ログインできませんでした。もう一度お試しいただき、続く場合はシステム管理者に連絡してください。")
     : null
 
   return (
