@@ -3,7 +3,7 @@
  */
 import { describe, it, expect } from "vitest"
 import { findCorrectionLog, isClockInCapped, isClockOutCapped, isLatestInputLog, planInputRevert, resolveInputTime } from "../lib/clock-pipeline"
-import { DATE, SCHEDULE, earlyReq, hm, jst, run, sw } from "./helpers/pipeline"
+import { DATE, SCHEDULE, earlyReq, hm, jst, overtimeReq, run, sw } from "./helpers/pipeline"
 
 describe("結論1：申請が無い日の早出は④ONで定時に打ち切る（④ONなら①も効く）", () => {
   it("④ON・①OFF・申請なし：8:10 出勤 → 9:00・残業0", () => {
@@ -137,5 +137,22 @@ describe("結論5・6：修正の取り消し（取り消しの印と、1つ前�
     const a = log("a", "09:00", 9), b = log("b", "09:30", 10)
     expect(isLatestInputLog([a, b], a)).toBe(false)
     expect(isLatestInputLog([a, b], b)).toBe(true)
+  })
+})
+
+describe("④：日付をまたぐ残業申請（2026-10-23 修正）", () => {
+  it("申請の終了 01:00 は翌日の 01:00。翌1:30 退勤 → 翌1:00 で打ち切り（勤務0にならない）", () => {
+    const r = run({ in: jst(9, 0), out: jst(1, 30, 6), switches: sw({ capOvertime: true }), requests: [overtimeReq("01:00")] })
+    expect(r.capBeforeClockIn).toBe(false)
+    expect(hm(r.clockOut)).toBe("01:00")
+    expect(r.clockOut!.getTime()).toBe(jst(1, 0, 6).getTime())
+  })
+  it("日付をまたがない申請は従来どおり（終了 18:00・18:40 退勤 → 18:00）", () => {
+    const r = run({ in: jst(9, 0), out: jst(18, 40), switches: sw({ capOvertime: true }), requests: [overtimeReq("18:00")] })
+    expect(hm(r.clockOut)).toBe("18:00")
+  })
+  it("申請が無い日は定時で打ち切る（定時後に出勤した日は勤務0のまま）", () => {
+    const r = run({ in: jst(18, 0), out: jst(20, 0), switches: sw({ capOvertime: true }) })
+    expect(r.capBeforeClockIn).toBe(true)
   })
 })

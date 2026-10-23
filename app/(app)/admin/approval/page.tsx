@@ -2,6 +2,7 @@ import { auth } from "@/auth"
 import { prisma } from "@/lib/prisma"
 import Link from "next/link"
 import { ApprovalActions } from "./approval-actions"
+import { BulkApprovalActions } from "./bulk-approval-actions"
 import { getClosingPeriod, getDefaultClosingMonth } from "@/lib/closing"
 
 type SearchParams = Promise<{ year?: string; month?: string }>
@@ -75,6 +76,18 @@ export default async function ApprovalPage({ searchParams }: { searchParams: Sea
         </div>
         <Link href={nextLink} className="p-2 rounded-lg hover:bg-gray-100 text-gray-500">▶</Link>
       </div>
+
+      {/* 全員分の一括処理（2026-10-23） */}
+      {rows.length > 0 && (
+        <BulkApprovalActions
+          year={year}
+          month={month}
+          people={rows.length}
+          openCount={rows.reduce((s, r) => s + r.open, 0)}
+          approvedCount={rows.reduce((s, r) => s + r.approved, 0)}
+          isAdmin={isAdmin}
+        />
+      )}
 
       {/* カード一覧 */}
       <div className="space-y-3 mt-5">

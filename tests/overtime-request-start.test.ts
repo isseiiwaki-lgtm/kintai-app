@@ -41,5 +41,7 @@ describe("残業申請の開始時刻", () => {
     expect(mocks.created).toHaveLength(0)
     expect(await submit({ startTime: "16:00", endTime: "18:00" })).toBe("redirected")
     expect(mocks.created[0].data.detail).toMatchObject({ startTime: "16:00", endTime: "18:00" })
+    // 日付をまたぐ残業（22:00〜01:00）も出せる
+    expect(await submit({ startTime: "22:00", endTime: "01:00" })).toBe("redirected")
   })
 })

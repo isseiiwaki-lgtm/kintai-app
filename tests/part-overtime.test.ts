@@ -139,3 +139,11 @@ describe("calcPartOvertimeMinutes（区間を合わせた長さ）", () => {
     expect(calcPartOvertimeMinutes({ clockIn: jst(12, 0), clockOut: jst(17, 0), nonWorkMinutes: 0, windows: [{ start: jst(18, 0), end: jst(20, 0) }] })).toBe(0)
   })
 })
+
+describe("日付をまたぐ残業申請（終了 01:00 など。2026-10-23 修正）", () => {
+  it("定時なしパート・④ON：12:45〜翌1:30 退勤・申請 22:00〜01:00 → 退勤は翌1:00 で打ち切り（勤務0にならない）", () => {
+    const d = calc(rec(jst(12, 45), jst(1, 30, 6), false, true), ctx(SHIFT_0, [otReq("22:00", "01:00")]))
+    expect(hm(d.clockOut as Date)).toBe("01:00")
+    expect(d.workingMinutes).toBe(12 * 60 + 15)
+  })
+})

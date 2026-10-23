@@ -4,9 +4,9 @@
  * 申請フォームの時刻入力（IMPLEMENTATION_PLAN K）。
  * 時・分それぞれ ▲▼（長押しで連続増減）、数字の直接入力も可（欄を離れた時点で刻みに補正）。分は REQUEST_TIME_STEP_MINUTES（15分）刻み。
  * 値の受け渡しは旧セレクトと同じ（name 付きの hidden input に "HH:MM"、未選択は ""）。
- * 利用者アンケートで旧セレクトに戻すときは、末尾の TimeInput を TimeSelect に差し替えるだけでよい。
+ * スピナーと一覧（旧セレクト）は、一人ひとりが申請画面の切り替えで選ぶ（ブラウザに記憶。末尾の TimeInput）。
  */
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 
 type TimeInputProps = {
@@ -165,5 +165,67 @@ export function TimeSelect({ name, value, defaultValue = "", onChange, required,
   )
 }
 
-/** 申請フォームが使う時刻入力。旧セレクトに戻すときは TimeSelect に差し替える */
-export const TimeInput = TimeSpinner
+// ---------------------------------------------------------------------------
+// 入力の形（スピナー／一覧から選ぶ）は一人ひとりが選ぶ。ブラウザに記憶する（DB には持たない。2026-10-23）
+// ---------------------------------------------------------------------------
+
+export type TimeInputMode = "spinner" | "select"
+const MODE_KEY = "kintai.timeInputMode"
+const MODE_EVENT = "kintai:time-input-mode"
+
+function readMode(): TimeInputMode {
+  try {
+    return window.localStorage.getItem(MODE_KEY) === "select" ? "select" : "spinner"
+  } catch {
+    return "spinner"
+  }
+}
+
+function subscribeMode(callback: () => void) {
+  window.addEventListener(MODE_EVENT, callback)
+  window.addEventListener("storage", callback)
+  return () => {
+    window.removeEventListener(MODE_EVENT, callback)
+    window.removeEventListener("storage", callback)
+  }
+}
+
+/** 今の入力の形。サーバーで描くときと記憶が読めないときはスピナー */
+export function useTimeInputMode(): TimeInputMode {
+  return useSyncExternalStore(subscribeMode, readMode, () => "spinner")
+}
+
+export function setTimeInputMode(mode: TimeInputMode) {
+  try {
+    window.localStorage.setItem(MODE_KEY, mode)
+  } catch {
+    // 記憶できない環境（プライベートモード等）でも、この画面の中では切り替える
+  }
+  window.dispatchEvent(new Event(MODE_EVENT))
+}
+
+/** 申請フォームの上に置く切り替え。選んだ形はこのブラウザで次回も使う */
+export function TimeInputModeToggle() {
+  const mode = useTimeInputMode()
+  const btn = (m: TimeInputMode, label: string) => (
+    <button
+      type="button"
+      onClick={() => setTimeInputMode(m)}
+      className={`px-2.5 py-1 rounded-md border text-xs ${mode === m ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-500 hover:bg-gray-50"}`}
+    >
+      {label}
+    </button>
+  )
+  return (
+    <div className="flex items-center gap-2 text-xs text-gray-500">
+      <span>時刻の入れ方</span>
+      {btn("spinner", "▲▼で選ぶ")}
+      {btn("select", "一覧から選ぶ")}
+    </div>
+  )
+}
+
+/** 申請フォームが使う時刻入力。本人が選んだ形（スピナー／一覧）で出す */
+export function TimeInput(props: TimeInputProps) {
+  return useTimeInputMode() === "select" ? <TimeSelect {...props} /> : <TimeSpinner {...props} />
+}

@@ -617,8 +617,11 @@ function computeClockOut(
   if (!sw.capOvertime) return { clockOut: rounded, capBeforeClockIn: false }
 
   // 段6：④。上限 ＝ 承認済みの残業申請（早出申請を除く）のうち最後に出した申請の終了時刻。無ければ定時
-  const capHHMM = pickOvertimeCapEnd(requests.filter((r) => r.status === "APPROVED")) ?? schedule.end
-  const cap = hhmmToUTCDate(capHHMM, dayStart)
+  const requestEnd = pickOvertimeCapEnd(requests.filter((r) => r.status === "APPROVED"))
+  let cap = hhmmToUTCDate(requestEnd ?? schedule.end, dayStart)
+  // 日付をまたぐ残業申請（終了 01:00 など）：終了時刻が定時の始業より前なら翌日の時刻とみなす（2026-10-23 修正。
+  // これまでは当日の 01:00 として出勤より前と判定し、勤務0分になっていた）
+  if (requestEnd && cap.getTime() <= hhmmToUTCDate(schedule.start, dayStart).getTime()) cap = new Date(cap.getTime() + 24 * 60 * 60 * 1000)
   // 上限が出勤より前（定時後に出勤し、申請なしで働いた日など）は勤務0分。退勤を出勤に揃える
   if (clockIn && cap.getTime() <= clockIn.getTime()) {
     return { clockOut: clockIn, capBeforeClockIn: true }
@@ -662,13 +665,10 @@ export function computeClockPipeline(input: PipelineInput): PipelineOutput {
       // ④：承認済みの残業申請の終了時刻で打ち切る（申請が無ければ定時も無いので打ち切らない）
       const capHHMM = switches.capOvertime ? pickOvertimeCapEnd(requests.filter((r) => r.status === "APPROVED")) : null
       if (capHHMM) {
-        const cap = hhmmToUTCDate(capHHMM, dayStart)
-        if (clockIn && cap.getTime() <= clockIn.getTime()) {
-          clockOut = clockIn
-          capBeforeClockIn = true
-        } else if (clockOut.getTime() > cap.getTime()) {
-          clockOut = cap
-        }
+        let cap = hhmmToUTCDate(capHHMM, dayStart)
+        // 日付をまたぐ残業申請：終了時刻が出勤より前なら翌日の時刻とみなす（出勤前に終わる残業申請は無いため）
+        if (clockIn && cap.getTime() <= clockIn.getTime()) cap = new Date(cap.getTime() + 24 * 60 * 60 * 1000)
+        if (clockOut.getTime() > cap.getTime()) clockOut = cap
       }
     }
   }

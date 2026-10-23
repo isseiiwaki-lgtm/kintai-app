@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { actionCreateRequest } from "../actions"
-import { TimeInput } from "@/components/time-input"
+import { TimeInput, TimeInputModeToggle } from "@/components/time-input"
 import { defaultHolidayBreakMinutes, isSameWeek, validateHolidayWorkTimes } from "@/lib/holiday-work"
 import { BREAK_REQUEST_MAX_MINUTES, BREAK_REQUEST_STEP_MINUTES, REQUEST_TIME_STEP_MINUTES } from "@/config/attendance.config"
 
@@ -172,6 +172,7 @@ export function NewRequestForm({
       </div>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 shadow-sm p-5 space-y-4">
+        <TimeInputModeToggle />
         {/* 申請種別 */}
         {correctionMode ? (
           /* 修正依頼モード: 2択ボタン */
@@ -237,7 +238,8 @@ export function NewRequestForm({
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">残業終了時刻</label>
             {/* 初期値は本人の退勤時刻（定時の無い人は空欄） */}
-            <TimeInput name="endTime" required defaultValue={defaultEndTime} options={buildTimeOptions(13, 23)} />
+            <TimeInput name="endTime" required defaultValue={defaultEndTime} options={[...buildTimeOptions(13, 23), ...buildTimeOptions(0, 5)]} />
+            <p className="mt-1 text-xs text-gray-400">日付をまたぐときは、翌日の時刻（例：1:00）を選んでください</p>
           </div>
         )}
 

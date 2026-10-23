@@ -37,7 +37,8 @@ export async function actionCreateRequest(formData: FormData): Promise<CreateReq
       if (!user?.workStartTime || !user?.workEndTime) {
         const startTime = (formData.get("startTime") as string | null) ?? ""
         if (!/^\d{2}:\d{2}$/.test(startTime)) return { ok: false, error: "残業開始時刻を選んでください" }
-        if (startTime >= endTime) return { ok: false, error: "残業開始時刻は終了時刻より前にしてください" }
+        // 終了が開始より前なら日付をまたぐ残業（例 22:00〜01:00）。同じ時刻だけ断る
+        if (startTime === endTime) return { ok: false, error: "残業開始時刻と終了時刻が同じです" }
         detail.startTime = startTime
       }
       break
