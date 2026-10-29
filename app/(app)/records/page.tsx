@@ -32,10 +32,17 @@ function fmtDur(min: number | null | undefined): string {
   return `${Math.floor(min / 60)}:${String(min % 60).padStart(2, "0")}`
 }
 
+/**
+ * ④（申請の時刻での打ち切り）で削った出勤・退勤にも「実」を併記するか。
+ * 2026-10-29：本人が「実」が無いことに違和感を持つため、原則表示にした（申請終了・申請なしの目印は管理者の画面だけのまま）。
+ * 以前の形（④で削った日は本人に実打刻を見せない。2026-10-06 決定）に戻すときは false にする。判定（outCapped/inCapped）は残してある
+ */
+const SHOW_CAPPED_RAW_TO_EMPLOYEE = true
+
 /** 生打刻（丸め前）が記録時刻と異なる場合のみ小さく併記する */
-// hide: ④（申請の時刻での打ち切り）で削った退勤には併記しない（一般社員の画面に④で削った内訳を出さない）
+// hide: ④で削った出勤・退勤（SHOW_CAPPED_RAW_TO_EMPLOYEE が false のときだけ隠す）
 function RawTime({ recorded, raw, hide }: { recorded: Date | null | undefined; raw: Date | null | undefined; hide?: boolean }) {
-  if (hide || !recorded || !raw) return null
+  if ((hide && !SHOW_CAPPED_RAW_TO_EMPLOYEE) || !recorded || !raw) return null
   const label = formatTime(raw)
   if (label === formatTime(recorded)) return null
   return <span className="block text-[10px] text-gray-400 leading-tight">実 {label}</span>
