@@ -48,3 +48,5 @@ next-env.d.ts
 .resource/
 /_archive/
 /_disposal/
+# Claude Code subagent worktrees
+.claude/worktrees/
